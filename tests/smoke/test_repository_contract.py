@@ -36,6 +36,19 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertEqual(channel_payload["channel"], "stable")
         self.assertEqual(release_payload["version"], "0.1.0")
 
+    def test_pages_workflows_define_github_pages_environment(self) -> None:
+        update_center_workflow = (
+            PROJECT_ROOT / ".github/workflows/update-center.yml"
+        ).read_text(encoding="utf-8")
+        release_workflow = (PROJECT_ROOT / ".github/workflows/release.yml").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("environment:", update_center_workflow)
+        self.assertIn("name: github-pages", update_center_workflow)
+        self.assertIn("environment:", release_workflow)
+        self.assertIn("name: github-pages", release_workflow)
+
 
 if __name__ == "__main__":
     unittest.main()
