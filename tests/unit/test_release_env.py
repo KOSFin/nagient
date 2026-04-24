@@ -9,6 +9,25 @@ import unittest
 from tests.bootstrap import PROJECT_ROOT, SRC_ROOT
 
 
+def _isolated_env(**overrides: str) -> dict[str, str]:
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if key
+        not in {
+            "CUSTOM_DOMAIN",
+            "DOCKERHUB_IMAGE_NAME",
+            "DOCKERHUB_NAMESPACE",
+            "GITHUB_REF_NAME",
+            "GITHUB_REF_TYPE",
+            "RELEASE_VERSION",
+            "UPDATE_BASE_URL",
+        }
+    }
+    env.update(overrides)
+    return env
+
+
 class ReleaseEnvResolverTests(unittest.TestCase):
     def test_resolver_derives_defaults_from_github_context(self) -> None:
         process = subprocess.run(
@@ -19,12 +38,11 @@ class ReleaseEnvResolverTests(unittest.TestCase):
                 "json",
             ],
             cwd=PROJECT_ROOT,
-            env={
-                **os.environ,
-                "PYTHONPATH": str(SRC_ROOT),
-                "GITHUB_REPOSITORY": "acme/nagient",
-                "GITHUB_REPOSITORY_OWNER": "Acme",
-            },
+            env=_isolated_env(
+                PYTHONPATH=str(SRC_ROOT),
+                GITHUB_REPOSITORY="acme/nagient",
+                GITHUB_REPOSITORY_OWNER="Acme",
+            ),
             capture_output=True,
             text=True,
             check=True,
@@ -48,16 +66,15 @@ class ReleaseEnvResolverTests(unittest.TestCase):
                 "2.3.4",
             ],
             cwd=PROJECT_ROOT,
-            env={
-                **os.environ,
-                "PYTHONPATH": str(SRC_ROOT),
-                "GITHUB_REPOSITORY": "acme/nagient",
-                "GITHUB_REPOSITORY_OWNER": "Acme",
-                "UPDATE_BASE_URL": "https://updates.your-domain.tld/agent",
-                "CUSTOM_DOMAIN": "updates.your-domain.tld",
-                "DOCKERHUB_NAMESPACE": "mydockerhub",
-                "DOCKERHUB_IMAGE_NAME": "nagient-agent",
-            },
+            env=_isolated_env(
+                PYTHONPATH=str(SRC_ROOT),
+                GITHUB_REPOSITORY="acme/nagient",
+                GITHUB_REPOSITORY_OWNER="Acme",
+                UPDATE_BASE_URL="https://updates.your-domain.tld/agent",
+                CUSTOM_DOMAIN="updates.your-domain.tld",
+                DOCKERHUB_NAMESPACE="mydockerhub",
+                DOCKERHUB_IMAGE_NAME="nagient-agent",
+            ),
             capture_output=True,
             text=True,
             check=True,
