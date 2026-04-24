@@ -1,0 +1,76 @@
+name: Update Center
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: src
+      CUSTOM_DOMAIN: ${{ vars.CUSTOM_DOMAIN }}
+      UPDATE_BASE_URL: ${{ vars.UPDATE_BASE_URL }}
+      DOCKERHUB_NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE }}
+      DOCKERHUB_IMAGE_NAME: ${{ vars.DOCKERHUB_IMAGE_NAME }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Resolve centralized release settings
+        id: meta
+        run: python scripts/release/resolve_release_env.py --format github-output >> "$GITHUB_OUTPUT"
+
+      - name: Assemble static update center
+        id: site
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.meta.outputs.version }}"
+          BASE_URL="${{ steps.meta.outputs.update_base_url }}"
+          SITE_PATH="${RUNNER_TEMP}/site"
+          mkdir -p "${SITE_PATH}/channels" "${SITE_PATH}/manifests" "${SITE_PATH}/${VERSION}"
+          python scripts/release/build_release_manifest.py \
+            --version "${VERSION}" \
+            --channel "${{ steps.meta.outputs.default_channel }}" \
+            --base-url "${BASE_URL}" \
+            --docker-image "${{ steps.meta.outputs.docker_image }}" \
+            --published-at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+            --summary "Repository snapshot ${VERSION}." \
+            --output "${SITE_PATH}/manifests/${VERSION}.json" \
+            --channel-output "${SITE_PATH}/channels/stable.json"
+          python scripts/release/render_release_assets.py \
+            --output-dir "${SITE_PATH}/${VERSION}" \
+            --update-base-url "${BASE_URL}" \
+            --docker-image "${{ steps.meta.outputs.docker_image }}" \
+            --default-channel "${{ steps.meta.outputs.default_channel }}" \
+            --docker-project-name "${{ steps.meta.outputs.docker_project_name }}" \
+            --container-name "${{ steps.meta.outputs.container_name }}"
+          if [[ -n "${CUSTOM_DOMAIN}" ]]; then
+            printf '%s\n' "${CUSTOM_DOMAIN}" > "${SITE_PATH}/CNAME"
+          fi
+          echo "site_path=${SITE_PATH}" >> "$GITHUB_OUTPUT"
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ steps.site.outputs.site_path }}
+
+      - name: Deploy Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

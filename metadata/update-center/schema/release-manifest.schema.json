@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["version", "channel", "published_at", "summary", "docker", "artifacts", "migrations", "notices"],
+  "properties": {
+    "version": { "type": "string" },
+    "channel": { "type": "string" },
+    "published_at": { "type": "string" },
+    "summary": { "type": "string" },
+    "docker": {
+      "type": "object",
+      "required": ["image"],
+      "properties": {
+        "image": { "type": "string" },
+        "compose_url": { "type": ["string", "null"] }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "migrations": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "notices": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    env:
+      PYTHONPATH: src
+      UPDATE_BASE_URL: ${{ vars.UPDATE_BASE_URL }}
+      CUSTOM_DOMAIN: ${{ vars.CUSTOM_DOMAIN }}
+      DOCKERHUB_NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE }}
+      DOCKERHUB_IMAGE_NAME: ${{ vars.DOCKERHUB_IMAGE_NAME }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev]
+
+      - name: Lint source tree
+        run: python -m ruff check src tests scripts/release
+
+      - name: Type-check source tree
+        run: python -m mypy src
+
+      - name: Run automated tests
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
+
+      - name: Compile Python sources
+        run: python -m compileall src
+
+      - name: Validate POSIX shell scripts
+        run: bash -n scripts/install.sh scripts/update.sh scripts/uninstall.sh docker/scripts/entrypoint.sh
+
+      - name: Resolve centralized release settings
+        id: meta
+        run: python scripts/release/resolve_release_env.py --format github-output >> "$GITHUB_OUTPUT"
+
+      - name: Render release manifest smoke test
+        run: |
+          python scripts/release/build_release_manifest.py \
+            --version 9.9.9 \
+            --channel ${{ steps.meta.outputs.default_channel }} \
+            --base-url ${{ steps.meta.outputs.update_base_url }} \
+            --docker-image ${{ steps.meta.outputs.docker_registry }}/${{ steps.meta.outputs.docker_namespace }}/${{ steps.meta.outputs.docker_image_name }}:9.9.9 \
+            --published-at 2026-04-24T00:00:00Z \
+            --output /tmp/manifest.json \
+            --channel-output /tmp/channel.json
+
+      - name: Render release assets smoke test
+        run: |
+          python scripts/release/render_release_assets.py \
+            --output-dir /tmp/nagient-assets \
+            --update-base-url ${{ steps.meta.outputs.update_base_url }} \
+            --docker-image ${{ steps.meta.outputs.docker_image }} \
+            --default-channel ${{ steps.meta.outputs.default_channel }} \
+            --docker-project-name ${{ steps.meta.outputs.docker_project_name }} \
+            --container-name ${{ steps.meta.outputs.container_name }}
+
+  docker-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t nagient:ci .
+
+  windows-installers:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate PowerShell scripts
+        shell: pwsh
+        run: |
+          $null = [ScriptBlock]::Create((Get-Content -Raw scripts/install.ps1))
+          $null = [ScriptBlock]::Create((Get-Content -Raw scripts/update.ps1))
+          $null = [ScriptBlock]::Create((Get-Content -Raw scripts/uninstall.ps1))

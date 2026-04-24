@@ -1,0 +1,139 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  packages: write
+  pages: write
+  id-token: write
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: src
+      UPDATE_BASE_URL: ${{ vars.UPDATE_BASE_URL }}
+      DOCKERHUB_NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE }}
+      DOCKERHUB_IMAGE_NAME: ${{ vars.DOCKERHUB_IMAGE_NAME }}
+      CUSTOM_DOMAIN: ${{ vars.CUSTOM_DOMAIN }}
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      site-path: ${{ steps.meta.outputs.site_path }}
+      docker-image: ${{ steps.meta.outputs.docker_image }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev]
+
+      - name: Run checks
+        run: |
+          python -m ruff check src tests scripts/release
+          python -m mypy src
+          python -m unittest discover -s tests -p 'test_*.py' -v
+          python -m build
+
+      - name: Derive release metadata
+        id: meta
+        run: |
+          python scripts/release/resolve_release_env.py --format github-output >> "$GITHUB_OUTPUT"
+          echo "site_path=${RUNNER_TEMP}/site" >> "$GITHUB_OUTPUT"
+
+      - name: Build update center payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.meta.outputs.version }}"
+          SITE_PATH="${{ steps.meta.outputs.site_path }}"
+          BASE_URL="${{ steps.meta.outputs.update_base_url }}"
+          mkdir -p "${SITE_PATH}/channels" "${SITE_PATH}/manifests" "${SITE_PATH}/${VERSION}"
+          python scripts/release/build_release_manifest.py \
+            --version "${VERSION}" \
+            --channel "${{ steps.meta.outputs.default_channel }}" \
+            --base-url "${BASE_URL}" \
+            --docker-image "${{ steps.meta.outputs.docker_image }}" \
+            --published-at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+            --summary "Automated release ${VERSION}." \
+            --output "${SITE_PATH}/manifests/${VERSION}.json" \
+            --channel-output "${SITE_PATH}/channels/stable.json"
+          python scripts/release/render_release_assets.py \
+            --output-dir "${SITE_PATH}/${VERSION}" \
+            --update-base-url "${BASE_URL}" \
+            --docker-image "${{ steps.meta.outputs.docker_image }}" \
+            --default-channel "${{ steps.meta.outputs.default_channel }}" \
+            --docker-project-name "${{ steps.meta.outputs.docker_project_name }}" \
+            --container-name "${{ steps.meta.outputs.container_name }}"
+          if [[ -n "${CUSTOM_DOMAIN}" ]]; then
+            printf '%s\n' "${CUSTOM_DOMAIN}" > "${SITE_PATH}/CNAME"
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        if: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and optionally push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
+          tags: |
+            ${{ steps.meta.outputs.docker_image }}
+            ${{ steps.meta.outputs.docker_image_latest }}
+
+      - name: Publish GitHub release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.git_tag }}
+          files: |
+            dist/*
+            ${{ steps.meta.outputs.site_path }}/channels/stable.json
+            ${{ steps.meta.outputs.site_path }}/manifests/${{ steps.meta.outputs.version }}.json
+            ${{ steps.meta.outputs.site_path }}/${{ steps.meta.outputs.version }}/install.sh
+            ${{ steps.meta.outputs.site_path }}/${{ steps.meta.outputs.version }}/update.sh
+            ${{ steps.meta.outputs.site_path }}/${{ steps.meta.outputs.version }}/uninstall.sh
+            ${{ steps.meta.outputs.site_path }}/${{ steps.meta.outputs.version }}/install.ps1
+            ${{ steps.meta.outputs.site_path }}/${{ steps.meta.outputs.version }}/update.ps1
+            ${{ steps.meta.outputs.site_path }}/${{ steps.meta.outputs.version }}/uninstall.ps1
+            ${{ steps.meta.outputs.site_path }}/${{ steps.meta.outputs.version }}/docker-compose.yml
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ steps.meta.outputs.site_path }}
+
+  deploy-pages:
+    needs: build-release
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+      - name: Deploy update center
+        id: deployment
+        uses: actions/deploy-pages@v4

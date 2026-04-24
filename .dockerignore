@@ -1,0 +1,12 @@
+.git
+.github
+__pycache__
+.mypy_cache
+.ruff_cache
+.venv
+build
+dist
+tests
+runtime
+state
+

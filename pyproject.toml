@@ -1,0 +1,97 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nagient"
+version = "0.1.0"
+description = "Infrastructure-first scaffold for a lightweight autonomous agent platform."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+  { name = "Nagient Contributors" }
+]
+keywords = ["agent", "docker", "cli", "automation", "updates", "ci-cd"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Build Tools",
+  "Topic :: System :: Installation/Setup",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "build>=1.2.2",
+  "coverage[toml]>=7.8.0",
+  "hatchling>=1.27.0",
+  "mypy>=1.15.0",
+  "ruff>=0.11.0",
+]
+
+[project.scripts]
+nagient = "nagient.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nagient"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/.github",
+  "/ai",
+  "/config",
+  "/developer",
+  "/docker",
+  "/docs",
+  "/metadata",
+  "/scripts",
+  "/src",
+  "/tests",
+  "/.editorconfig",
+  "/.gitignore",
+  "/Makefile",
+  "/README.md",
+  "/README.ru.md",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["src/nagient"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+fail_under = 85
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+  "E",
+  "F",
+  "I",
+  "B",
+  "UP",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["nagient", "tests"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+pretty = true
+warn_unused_ignores = true
+namespace_packages = true
+explicit_package_bases = true
+mypy_path = ["src"]

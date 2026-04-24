@@ -1,0 +1,6 @@
+services:
+  nagient:
+    environment:
+      NAGIENT_HEARTBEAT_INTERVAL: 10
+    command: ["nagient", "serve"]
+

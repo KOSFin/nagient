@@ -1,0 +1,11 @@
+{
+  "channel": "stable",
+  "latest_version": "0.1.0",
+  "manifest_url": "manifests/0.1.0.json",
+  "published_at": "2026-04-24T00:00:00Z",
+  "supported_installers": [
+    "docker",
+    "shell",
+    "powershell"
+  ]
+}

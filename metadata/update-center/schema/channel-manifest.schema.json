@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["channel", "latest_version", "manifest_url", "published_at", "supported_installers"],
+  "properties": {
+    "channel": { "type": "string" },
+    "latest_version": { "type": "string" },
+    "manifest_url": { "type": "string" },
+    "published_at": { "type": "string" },
+    "supported_installers": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}
+

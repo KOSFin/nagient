@@ -1,0 +1,12 @@
+[updates]
+channel = "stable"
+# Set the public URL that serves channels/ and manifests/.
+# Example:
+# base_url = "https://updates.your-domain.tld"
+base_url = ""
+
+[runtime]
+heartbeat_interval_seconds = 30
+
+[docker]
+project_name = "nagient"

@@ -1,0 +1,15 @@
+[project]
+display_name = "Nagient"
+slug = "nagient"
+default_channel = "stable"
+
+[runtime]
+home_dir = "~/.nagient"
+heartbeat_interval_seconds = 30
+docker_project_name = "nagient"
+container_name = "nagient"
+
+[distribution]
+docker_registry = "docker.io"
+docker_image_name = "nagient"
+
