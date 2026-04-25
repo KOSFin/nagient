@@ -64,7 +64,9 @@ class BackupManager:
             cwd=repo_dir,
             env=self._git_env(created_at),
         ).strip()
-        ref_name = f"refs/nagient/snapshots/{created_at}-{uuid.uuid4().hex[:8]}"
+        # Git refs cannot contain ':' characters.
+        ref_timestamp = created_at.replace(":", "")
+        ref_name = f"refs/nagient/snapshots/{ref_timestamp}-{uuid.uuid4().hex[:8]}"
         self._git(["update-ref", ref_name, commit_hash], cwd=repo_dir)
         snapshot = BackupSnapshot(
             snapshot_id=commit_hash,
