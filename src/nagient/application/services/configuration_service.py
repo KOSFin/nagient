@@ -13,8 +13,8 @@ from nagient.app.configuration import (
 from nagient.app.settings import Settings
 from nagient.plugins.scaffold import ScaffoldResult, scaffold_transport_plugin
 from nagient.providers.scaffold import (
-    ScaffoldResult as ProviderScaffoldResult,
     scaffold_provider_plugin,
+    ScaffoldResult as ProviderScaffoldResult,
 )
 
 
