@@ -4,7 +4,7 @@ import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from types import TracebackType
-from typing import Protocol
+from typing import Protocol, cast
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
@@ -38,7 +38,7 @@ class UrlopenLike(Protocol):
 
 
 def _default_urlopen(request: Request, timeout: float = 15.0) -> ResponseContextManager:
-    return urlopen(request, timeout=timeout)
+    return cast(ResponseContextManager, urlopen(request, timeout=timeout))
 
 
 @dataclass(frozen=True)
