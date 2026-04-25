@@ -49,6 +49,19 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertIn("environment:", release_workflow)
         self.assertIn("name: github-pages", release_workflow)
 
+    def test_auto_tag_workflow_dispatches_release_workflow(self) -> None:
+        auto_tag_workflow = (PROJECT_ROOT / ".github/workflows/auto-tag.yml").read_text(
+            encoding="utf-8"
+        )
+        release_workflow = (PROJECT_ROOT / ".github/workflows/release.yml").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("actions: write", auto_tag_workflow)
+        self.assertIn("createWorkflowDispatch", auto_tag_workflow)
+        self.assertIn("workflow_id: 'release.yml'", auto_tag_workflow)
+        self.assertIn("workflow_dispatch:", release_workflow)
+
 
 if __name__ == "__main__":
     unittest.main()

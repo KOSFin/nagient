@@ -7,6 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: write
   contents: write
 
 concurrency:
@@ -15,6 +16,7 @@ concurrency:
 
 jobs:
   create-version-tag:
+    name: create-or-skip-version-tag
     runs-on: ubuntu-latest
     env:
       UPDATE_BASE_URL: ${{ vars.UPDATE_BASE_URL }}
@@ -58,3 +60,37 @@ jobs:
           git tag -a "${{ steps.meta.outputs.git_tag }}" -m "Release ${{ steps.meta.outputs.git_tag }}"
           git push origin "${{ steps.meta.outputs.git_tag }}"
 
+      - name: Dispatch release workflow for created tag
+        if: steps.tag.outputs.exists == 'false'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'release.yml',
+              ref: '${{ steps.meta.outputs.git_tag }}',
+            })
+
+      - name: Publish workflow summary
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ steps.tag.outputs.exists }}" == "true" ]]; then
+            {
+              echo "## Release dispatch skipped"
+              echo
+              echo "Tag \`${{ steps.meta.outputs.git_tag }}\` already exists."
+              echo "Auto Tag only dispatches \`release.yml\` when a new version tag is created."
+              echo
+              echo "To produce a new release, bump \`src/nagient/version.py\` and push to \`main\`."
+              echo "If you need to rebuild the existing release manually, start \`Release\` from the Actions tab."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "## Release dispatched"
+              echo
+              echo "Created tag \`${{ steps.meta.outputs.git_tag }}\` and dispatched \`release.yml\`."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
