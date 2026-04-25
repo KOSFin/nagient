@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+import nagient.providers.scaffold as provider_scaffold
 from nagient.app.configuration import (
     render_credentials_readme,
     render_default_config,
@@ -12,10 +13,6 @@ from nagient.app.configuration import (
 )
 from nagient.app.settings import Settings
 from nagient.plugins.scaffold import ScaffoldResult, scaffold_transport_plugin
-from nagient.providers.scaffold import (
-    scaffold_provider_plugin,
-    ScaffoldResult as ProviderScaffoldResult,
-)
 
 
 @dataclass(frozen=True)
@@ -69,9 +66,9 @@ class ConfigurationService:
         plugin_id: str,
         output_dir: Path | None = None,
         force: bool = False,
-    ) -> ProviderScaffoldResult:
+    ) -> provider_scaffold.ScaffoldResult:
         target_dir = output_dir or self.settings.providers_dir / plugin_id
-        return scaffold_provider_plugin(
+        return provider_scaffold.scaffold_provider_plugin(
             plugin_id=plugin_id,
             output_dir=target_dir,
             force=force,
