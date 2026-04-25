@@ -91,6 +91,12 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Show Docker publish target
+        run: |
+          echo "Primary Docker tag: ${{ steps.meta.outputs.docker_image }}"
+          echo "Latest Docker tag:  ${{ steps.meta.outputs.docker_image_latest }}"
+          echo "Push enabled:       ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}"
+
       - name: Build and optionally push Docker image
         uses: docker/build-push-action@v6
         with:
