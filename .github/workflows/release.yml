@@ -6,11 +6,11 @@ on:
       - "v*"
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 permissions:
   contents: write
-  packages: write
-  pages: write
-  id-token: write
 
 jobs:
   build-release:
@@ -23,10 +23,6 @@ jobs:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
       CUSTOM_DOMAIN: ${{ vars.CUSTOM_DOMAIN }}
-    outputs:
-      version: ${{ steps.meta.outputs.version }}
-      site-path: ${{ steps.meta.outputs.site_path }}
-      docker-image: ${{ steps.meta.outputs.docker_image }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -135,25 +131,3 @@ jobs:
             ${{ steps.meta.outputs.site_path }}/${{ steps.meta.outputs.version }}/update.ps1
             ${{ steps.meta.outputs.site_path }}/${{ steps.meta.outputs.version }}/uninstall.ps1
             ${{ steps.meta.outputs.site_path }}/${{ steps.meta.outputs.version }}/docker-compose.yml
-
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: ${{ steps.meta.outputs.site_path }}
-
-  deploy-pages:
-    needs: build-release
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    permissions:
-      pages: write
-      id-token: write
-    steps:
-      - name: Deploy update center
-        id: deployment
-        uses: actions/deploy-pages@v4

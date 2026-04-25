@@ -11,14 +11,15 @@
 1. `auto-tag.yml` читает версию проекта.
 2. Если тега `vX.Y.Z` ещё нет, workflow создаёт его сам.
 3. После создания нового тега `auto-tag.yml` сразу диспатчит `release.yml` на этот тег.
-4. `release.yml` собирает package, Docker image, release assets и update center.
-5. `update-center.yml` публикует snapshot Pages даже без нового релиза, чтобы update center не отставал от `main`.
+4. `release.yml` собирает package, Docker image и GitHub release assets.
+5. `update-center.yml` публикует update center в GitHub Pages из `main`.
 
 Ключевое правило:
 
 - `Release` не должен запускаться на каждый пуш в `main`.
 - Он запускается только когда версия в [src/nagient/version.py](../src/nagient/version.py) изменилась и для неё ещё нет тега.
 - Если тег уже существует, `Auto Tag` завершится успешно, но релиз будет осознанно пропущен.
+- GitHub Pages не деплоится из тега: Pages теперь принадлежит только `update-center.yml`, потому что environment `github-pages` обычно защищают по branch rules, а не по тегам.
 
 То есть вручную создавать теги больше не нужно. Достаточно:
 
@@ -110,6 +111,7 @@ CUSTOM_DOMAIN=updates.your-domain.tld
 | `DOCKERHUB_TOKEN` | access token Docker Hub |
 
 Без этих секретов release workflow соберёт образ, но не сможет его опубликовать в Docker Hub.
+Если секреты заданы и в логе есть `push: true`, но job потом упал на другом шаге, это не отменяет уже выполненный Docker push.
 
 ## Runtime переменные и где они используются
 
@@ -176,10 +178,17 @@ PYTHONPATH=src python3.12 -m build --no-isolation
 4. Пушишь в `main`.
 5. `auto-tag.yml` создаёт `v0.2.0`, если такого тега ещё нет.
 6. `auto-tag.yml` диспатчит `release.yml` для `v0.2.0`.
-7. `release.yml` публикует артефакты.
+7. `release.yml` публикует артефакты и Docker image.
+8. `update-center.yml` публикует Pages из ветки `main`.
 
 Если тег `vX.Y.Z` уже существует, auto-tag его повторно не создаёт.
 В таком случае новый `Release` run тоже не появится: это не ошибка, а защита от повторной публикации одной и той же версии.
+
+Почему Pages не публикуется из `release.yml`:
+
+- GitHub environment `github-pages` часто ограничен branch protection rules.
+- Tag-based deploy вроде `v0.1.2` из-за этого может быть отклонён GitHub.
+- Поэтому `release.yml` больше не пытается деплоить Pages, а `update-center.yml` остаётся единственным владельцем статического update center.
 
 ## Как настраивать домен для update center
 

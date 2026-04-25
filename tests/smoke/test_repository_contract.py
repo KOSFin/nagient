@@ -36,7 +36,7 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertEqual(channel_payload["channel"], "stable")
         self.assertEqual(release_payload["version"], "0.1.0")
 
-    def test_pages_workflows_define_github_pages_environment(self) -> None:
+    def test_update_center_workflow_defines_github_pages_environment(self) -> None:
         update_center_workflow = (
             PROJECT_ROOT / ".github/workflows/update-center.yml"
         ).read_text(encoding="utf-8")
@@ -46,8 +46,8 @@ class RepositoryContractTests(unittest.TestCase):
 
         self.assertIn("environment:", update_center_workflow)
         self.assertIn("name: github-pages", update_center_workflow)
-        self.assertIn("environment:", release_workflow)
-        self.assertIn("name: github-pages", release_workflow)
+        self.assertNotIn("name: github-pages", release_workflow)
+        self.assertNotIn("actions/deploy-pages", release_workflow)
 
     def test_auto_tag_workflow_dispatches_release_workflow(self) -> None:
         auto_tag_workflow = (PROJECT_ROOT / ".github/workflows/auto-tag.yml").read_text(
@@ -72,6 +72,16 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertIn("steps.docker_publish.outputs.push_enabled", release_workflow)
         self.assertNotIn("if: ${{ secrets.DOCKERHUB_USERNAME", release_workflow)
         self.assertNotIn("push: ${{ secrets.DOCKERHUB_USERNAME", release_workflow)
+
+    def test_workflows_opt_in_to_node_24_for_javascript_actions(self) -> None:
+        for relative_path in [
+            ".github/workflows/auto-tag.yml",
+            ".github/workflows/ci.yml",
+            ".github/workflows/release.yml",
+            ".github/workflows/update-center.yml",
+        ]:
+            workflow = (PROJECT_ROOT / relative_path).read_text(encoding="utf-8")
+            self.assertIn("FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: \"true\"", workflow)
 
 
 if __name__ == "__main__":
