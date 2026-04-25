@@ -4,9 +4,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from nagient.app.configuration import (
+    render_credentials_readme,
     render_default_config,
     render_default_secrets,
-    render_credentials_readme,
     render_plugins_readme,
     render_providers_readme,
 )
@@ -71,4 +71,8 @@ class ConfigurationService:
         force: bool = False,
     ) -> ProviderScaffoldResult:
         target_dir = output_dir or self.settings.providers_dir / plugin_id
-        return scaffold_provider_plugin(plugin_id=plugin_id, output_dir=target_dir, force=force)
+        return scaffold_provider_plugin(
+            plugin_id=plugin_id,
+            output_dir=target_dir,
+            force=force,
+        )
