@@ -29,6 +29,8 @@ class SettingsTests(unittest.TestCase):
                         "[paths]",
                         'secrets_file = "./custom-secrets.env"',
                         'plugins_dir = "./custom-plugins"',
+                        'providers_dir = "./custom-providers"',
+                        'credentials_dir = "./custom-credentials"',
                         "",
                     ]
                 ),
@@ -49,6 +51,11 @@ class SettingsTests(unittest.TestCase):
             self.assertFalse(settings.safe_mode)
             self.assertEqual(settings.secrets_file, (home_dir / "custom-secrets.env").resolve())
             self.assertEqual(settings.plugins_dir, (home_dir / "custom-plugins").resolve())
+            self.assertEqual(settings.providers_dir, (home_dir / "custom-providers").resolve())
+            self.assertEqual(
+                settings.credentials_dir,
+                (home_dir / "custom-credentials").resolve(),
+            )
 
     def test_environment_overrides_file_values(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

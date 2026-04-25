@@ -65,4 +65,13 @@ class RuntimeAgent:
                 }
                 for transport in activation_report.transports
             ]
+            payload["providers"] = [
+                {
+                    "provider_id": provider.provider_id,
+                    "plugin_id": provider.plugin_id,
+                    "status": provider.status,
+                    "authenticated": provider.authenticated,
+                }
+                for provider in activation_report.providers
+            ]
         heartbeat_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")

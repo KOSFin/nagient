@@ -32,6 +32,7 @@ class CliRuntimeFlowsTests(unittest.TestCase):
             init_payload = json.loads(init_process.stdout)
             self.assertTrue((home_dir / "config.toml").exists())
             self.assertTrue((home_dir / "secrets.env").exists())
+            self.assertTrue((home_dir / "providers" / "README.md").exists())
             self.assertIn(str((home_dir / "config.toml").resolve()), init_payload["written_files"])
 
             preflight_process = subprocess.run(
@@ -82,6 +83,42 @@ class CliRuntimeFlowsTests(unittest.TestCase):
             self.assertIn("builtin.console", plugin_ids)
             self.assertIn("custom.echo", plugin_ids)
 
+            provider_scaffold_process = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "nagient",
+                    "provider",
+                    "scaffold",
+                    "--plugin-id",
+                    "custom.provider",
+                    "--format",
+                    "json",
+                ],
+                cwd=PROJECT_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            provider_scaffold_payload = json.loads(provider_scaffold_process.stdout)
+            provider_dir = home_dir / "providers" / "custom.provider"
+            self.assertEqual(provider_scaffold_payload["plugin_id"], "custom.provider")
+            self.assertTrue((provider_dir / "provider.toml").exists())
+
+            provider_list_process = subprocess.run(
+                [sys.executable, "-m", "nagient", "provider", "list", "--format", "json"],
+                cwd=PROJECT_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            provider_list_payload = json.loads(provider_list_process.stdout)
+            provider_plugin_ids = {item["plugin_id"] for item in provider_list_payload["plugins"]}
+            self.assertIn("builtin.openai", provider_plugin_ids)
+            self.assertIn("custom.provider", provider_plugin_ids)
+
     def test_reconcile_and_serve_once_write_activation_state(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             home_dir = Path(temp_dir) / ".nagient"
@@ -125,6 +162,122 @@ class CliRuntimeFlowsTests(unittest.TestCase):
             )
             self.assertEqual(heartbeat["runtime_status"], "ready")
             self.assertEqual(heartbeat["transports"][0]["plugin_id"], "builtin.console")
+
+    def test_auth_login_status_and_provider_models_flow(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir) / ".nagient"
+            env = {
+                **os.environ,
+                "PYTHONPATH": str(SRC_ROOT),
+                "NAGIENT_HOME": str(home_dir),
+            }
+            subprocess.run(
+                [sys.executable, "-m", "nagient", "init", "--format", "json"],
+                cwd=PROJECT_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            config_file = home_dir / "config.toml"
+            config_text = config_file.read_text(encoding="utf-8").replace(
+                'default_provider = ""',
+                'default_provider = "demo"',
+            )
+            config_file.write_text(
+                config_text
+                + "\n".join(
+                    [
+                        "[providers.demo]",
+                        'plugin = "custom.provider"',
+                        "enabled = true",
+                        'auth = "stored_token"',
+                        'base_url = "https://example.invalid"',
+                        'model = "custom-model"',
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "nagient",
+                    "provider",
+                    "scaffold",
+                    "--plugin-id",
+                    "custom.provider",
+                ],
+                cwd=PROJECT_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            login_process = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "nagient",
+                    "auth",
+                    "login",
+                    "demo",
+                    "--token",
+                    "demo-token",
+                    "--format",
+                    "json",
+                ],
+                cwd=PROJECT_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            login_payload = json.loads(login_process.stdout)
+            self.assertTrue(login_payload["provider"]["authenticated"])
+
+            status_process = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "nagient",
+                    "auth",
+                    "status",
+                    "demo",
+                    "--format",
+                    "json",
+                ],
+                cwd=PROJECT_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            status_payload = json.loads(status_process.stdout)
+            self.assertTrue(status_payload["provider"]["authenticated"])
+
+            models_process = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "nagient",
+                    "provider",
+                    "models",
+                    "demo",
+                    "--format",
+                    "json",
+                ],
+                cwd=PROJECT_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            models_payload = json.loads(models_process.stdout)
+            self.assertEqual(models_payload["models"][0]["model_id"], "custom-model")
 
 
 if __name__ == "__main__":

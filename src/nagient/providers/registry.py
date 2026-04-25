@@ -1,0 +1,189 @@
+from __future__ import annotations
+
+import importlib.util
+import sys
+import tomllib
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from nagient.domain.entities.system_state import CheckIssue
+from nagient.providers.base import (
+    REQUIRED_PROVIDER_METHODS,
+    LoadedProviderPlugin,
+    ProviderPluginManifest,
+)
+from nagient.providers.builtin import builtin_providers
+
+
+@dataclass(frozen=True)
+class ProviderDiscovery:
+    plugins: dict[str, LoadedProviderPlugin] = field(default_factory=dict)
+    issues: list[CheckIssue] = field(default_factory=list)
+
+
+class ProviderPluginRegistry:
+    def discover(self, providers_dir: Path) -> ProviderDiscovery:
+        plugins = {
+            plugin.manifest.plugin_id: plugin
+            for plugin in builtin_providers()
+        }
+        issues: list[CheckIssue] = []
+
+        if not providers_dir.exists():
+            return ProviderDiscovery(plugins=plugins, issues=issues)
+
+        for entry in sorted(providers_dir.iterdir()):
+            if not entry.is_dir():
+                continue
+            manifest_path = entry / "provider.toml"
+            if not manifest_path.exists():
+                continue
+            try:
+                plugin = self._load_plugin(entry)
+            except Exception as exc:
+                issues.append(
+                    CheckIssue(
+                        severity="warning",
+                        code="provider_plugin.load_failed",
+                        message=f"Failed to load provider plugin from {entry.name!r}: {exc}",
+                        source=entry.name,
+                        hint="Fix provider.toml or provider.py before enabling this plugin.",
+                    )
+                )
+                continue
+
+            validation_issues = self._validate_plugin(plugin)
+            issues.extend(validation_issues)
+            if any(issue.severity == "error" for issue in validation_issues):
+                continue
+
+            plugin_id = plugin.manifest.plugin_id
+            if plugin_id in plugins:
+                issues.append(
+                    CheckIssue(
+                        severity="warning",
+                        code="provider_plugin.duplicate_id",
+                        message=(
+                            f"Provider plugin id {plugin_id!r} shadows an existing plugin "
+                            "and was skipped."
+                        ),
+                        source=entry.name,
+                    )
+                )
+                continue
+            plugins[plugin_id] = plugin
+
+        return ProviderDiscovery(plugins=plugins, issues=issues)
+
+    def _load_plugin(self, directory: Path) -> LoadedProviderPlugin:
+        manifest = self._parse_manifest(directory / "provider.toml")
+        module_path = directory / manifest.entrypoint
+        if not module_path.exists():
+            raise ValueError(f"Entrypoint file {manifest.entrypoint!r} does not exist.")
+
+        module_name = f"nagient_user_provider_{directory.name.replace('-', '_')}"
+        spec = importlib.util.spec_from_file_location(module_name, module_path)
+        if spec is None or spec.loader is None:
+            raise ValueError(f"Cannot create import spec for {module_path}.")
+
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+
+        factory = getattr(module, "build_plugin", None)
+        if not callable(factory):
+            raise ValueError("Provider entrypoint must export callable build_plugin().")
+
+        implementation = factory()
+        return LoadedProviderPlugin(
+            manifest=manifest,
+            implementation=implementation,
+            source=str(directory),
+        )
+
+    def _parse_manifest(self, manifest_path: Path) -> ProviderPluginManifest:
+        payload = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("provider.toml must define a TOML object.")
+
+        plugin_type = _require_string(payload, "type")
+        if plugin_type != "provider":
+            raise ValueError(f"Unsupported provider plugin type {plugin_type!r}.")
+
+        config_schema_file: str | None = None
+        if "config_schema_file" in payload:
+            config_schema_path = manifest_path.parent / _require_string(
+                payload,
+                "config_schema_file",
+            )
+            if not config_schema_path.exists():
+                raise ValueError(
+                    f"Config schema file {config_schema_path.name!r} does not exist."
+                )
+            config_schema_file = config_schema_path.name
+
+        return ProviderPluginManifest(
+            plugin_id=_require_string(payload, "id"),
+            display_name=_require_string(payload, "display_name"),
+            version=_require_string(payload, "version"),
+            family=_require_string(payload, "family"),
+            entrypoint=_require_string(payload, "entrypoint"),
+            supported_auth_modes=_require_string_list(payload.get("supported_auth_modes")),
+            default_auth_mode=_require_string(payload, "default_auth_mode"),
+            capabilities=_require_string_list(payload.get("capabilities")),
+            required_config=_require_string_list(payload.get("required_config")),
+            optional_config=_require_string_list(payload.get("optional_config")),
+            secret_config=_require_string_list(payload.get("secret_config")),
+            credential_fields=_require_string_list(payload.get("credential_fields")),
+            config_schema_file=config_schema_file,
+        )
+
+    def _validate_plugin(self, plugin: LoadedProviderPlugin) -> list[CheckIssue]:
+        issues: list[CheckIssue] = []
+        manifest = plugin.manifest
+        implementation = plugin.implementation
+
+        if manifest.default_auth_mode not in manifest.supported_auth_modes:
+            issues.append(
+                CheckIssue(
+                    severity="error",
+                    code="provider_plugin.invalid_default_auth_mode",
+                    message=(
+                        f"Provider plugin {manifest.plugin_id!r} uses default_auth_mode "
+                        f"{manifest.default_auth_mode!r}, but it is not listed in "
+                        "supported_auth_modes."
+                    ),
+                    source=manifest.plugin_id,
+                )
+            )
+
+        for method_name in REQUIRED_PROVIDER_METHODS:
+            if not callable(getattr(implementation, method_name, None)):
+                issues.append(
+                    CheckIssue(
+                        severity="error",
+                        code="provider_plugin.missing_method",
+                        message=(
+                            f"Provider plugin {manifest.plugin_id!r} does not expose "
+                            f"callable method {method_name!r}."
+                        ),
+                        source=manifest.plugin_id,
+                    )
+                )
+        return issues
+
+
+def _require_string(payload: dict[str, object], key: str) -> str:
+    value = payload.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"Provider plugin field {key!r} must be a non-empty string.")
+    return value
+
+
+def _require_string_list(value: object) -> list[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ValueError("Provider plugin lists must contain only strings.")
+    return list(value)
+

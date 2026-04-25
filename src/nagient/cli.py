@@ -59,6 +59,65 @@ def build_parser() -> argparse.ArgumentParser:
     transport_scaffold_parser.add_argument("--force", action="store_true")
     transport_scaffold_parser.add_argument("--format", choices=("text", "json"), default="text")
 
+    provider_parser = subparsers.add_parser("provider", help="Manage provider plugins")
+    provider_subparsers = provider_parser.add_subparsers(
+        dest="provider_command",
+        required=True,
+    )
+    provider_list_parser = provider_subparsers.add_parser(
+        "list",
+        help="List discovered provider plugins",
+    )
+    provider_list_parser.add_argument("--format", choices=("text", "json"), default="text")
+    provider_scaffold_parser = provider_subparsers.add_parser(
+        "scaffold",
+        help="Generate a custom provider plugin template",
+    )
+    provider_scaffold_parser.add_argument("--plugin-id", required=True)
+    provider_scaffold_parser.add_argument("--output")
+    provider_scaffold_parser.add_argument("--force", action="store_true")
+    provider_scaffold_parser.add_argument("--format", choices=("text", "json"), default="text")
+    provider_models_parser = provider_subparsers.add_parser(
+        "models",
+        help="List models exposed by a configured provider profile",
+    )
+    provider_models_parser.add_argument("provider_id")
+    provider_models_parser.add_argument("--format", choices=("text", "json"), default="text")
+
+    auth_parser = subparsers.add_parser("auth", help="Manage provider authentication")
+    auth_subparsers = auth_parser.add_subparsers(dest="auth_command", required=True)
+    auth_status_parser = auth_subparsers.add_parser(
+        "status",
+        help="Show auth status for provider profiles",
+    )
+    auth_status_parser.add_argument("provider_id", nargs="?")
+    auth_status_parser.add_argument("--verify", action="store_true")
+    auth_status_parser.add_argument("--format", choices=("text", "json"), default="text")
+    auth_login_parser = auth_subparsers.add_parser(
+        "login",
+        help="Login or register credentials for a provider profile",
+    )
+    auth_login_parser.add_argument("provider_id")
+    auth_login_parser.add_argument("--api-key")
+    auth_login_parser.add_argument("--token")
+    auth_login_parser.add_argument("--secret-name")
+    auth_login_parser.add_argument("--format", choices=("text", "json"), default="text")
+    auth_complete_parser = auth_subparsers.add_parser(
+        "complete",
+        help="Complete a pending browser/device login session",
+    )
+    auth_complete_parser.add_argument("provider_id")
+    auth_complete_parser.add_argument("--session-id", required=True)
+    auth_complete_parser.add_argument("--callback-url")
+    auth_complete_parser.add_argument("--code")
+    auth_complete_parser.add_argument("--format", choices=("text", "json"), default="text")
+    auth_logout_parser = auth_subparsers.add_parser(
+        "logout",
+        help="Delete stored credentials for a provider profile",
+    )
+    auth_logout_parser.add_argument("provider_id")
+    auth_logout_parser.add_argument("--format", choices=("text", "json"), default="text")
+
     update_parser = subparsers.add_parser("update", help="Inspect available updates")
     update_subparsers = update_parser.add_subparsers(dest="update_command", required=True)
     update_check = update_subparsers.add_parser("check", help="Check if an update exists")
@@ -149,6 +208,70 @@ def main(argv: list[str] | None = None) -> int:
             force=args.force,
         )
         return _emit(result.to_dict(), args.format)
+
+    if args.command == "provider" and args.provider_command == "list":
+        discovery = container.provider_registry.discover(container.settings.providers_dir)
+        payload = {
+            "plugins": [
+                {
+                    "plugin_id": plugin.manifest.plugin_id,
+                    "display_name": plugin.manifest.display_name,
+                    "family": plugin.manifest.family,
+                    "source": plugin.source,
+                    "supported_auth_modes": plugin.manifest.supported_auth_modes,
+                    "default_auth_mode": plugin.manifest.default_auth_mode,
+                    "capabilities": plugin.manifest.capabilities,
+                    "required_config": plugin.manifest.required_config,
+                    "optional_config": plugin.manifest.optional_config,
+                    "secret_config": plugin.manifest.secret_config,
+                }
+                for plugin in discovery.plugins.values()
+            ],
+            "issues": [issue.to_dict() for issue in discovery.issues],
+        }
+        return _emit(payload, args.format)
+
+    if args.command == "provider" and args.provider_command == "scaffold":
+        output_dir = Path(args.output) if args.output else None
+        result = container.configuration_service.scaffold_provider(
+            plugin_id=args.plugin_id,
+            output_dir=output_dir,
+            force=args.force,
+        )
+        return _emit(result.to_dict(), args.format)
+
+    if args.command == "provider" and args.provider_command == "models":
+        payload = container.provider_service.list_models(args.provider_id)
+        return _emit(payload, args.format)
+
+    if args.command == "auth" and args.auth_command == "status":
+        payload = container.provider_service.auth_status(
+            provider_id=args.provider_id,
+            verify_remote=args.verify,
+        )
+        return _emit(payload, args.format)
+
+    if args.command == "auth" and args.auth_command == "login":
+        payload = container.provider_service.login(
+            args.provider_id,
+            api_key=args.api_key,
+            token=args.token,
+            secret_name=args.secret_name,
+        )
+        return _emit(payload, args.format)
+
+    if args.command == "auth" and args.auth_command == "complete":
+        payload = container.provider_service.complete_login(
+            args.provider_id,
+            args.session_id,
+            callback_url=args.callback_url,
+            code=args.code,
+        )
+        return _emit(payload, args.format)
+
+    if args.command == "auth" and args.auth_command == "logout":
+        payload = container.provider_service.logout(args.provider_id)
+        return _emit(payload, args.format)
 
     if args.command == "update" and args.update_command == "check":
         notice = container.update_service.check(

@@ -8,6 +8,9 @@ from nagient.app.settings import Settings
 from nagient.application.services.preflight_service import PreflightService
 from nagient.plugins.manager import TransportManager
 from nagient.plugins.registry import TransportPluginRegistry
+from nagient.providers.manager import ProviderManager
+from nagient.providers.registry import ProviderPluginRegistry
+from nagient.providers.storage import FileCredentialStore
 
 
 class PreflightServiceTests(unittest.TestCase):
@@ -45,6 +48,9 @@ class PreflightServiceTests(unittest.TestCase):
                 settings=settings,
                 plugin_registry=TransportPluginRegistry(),
                 transport_manager=TransportManager(),
+                provider_registry=ProviderPluginRegistry(),
+                provider_manager=ProviderManager(),
+                credential_store=FileCredentialStore(settings.credentials_dir),
             )
 
             report = service.inspect()
@@ -82,12 +88,58 @@ class PreflightServiceTests(unittest.TestCase):
                 settings=settings,
                 plugin_registry=TransportPluginRegistry(),
                 transport_manager=TransportManager(),
+                provider_registry=ProviderPluginRegistry(),
+                provider_manager=ProviderManager(),
+                credential_store=FileCredentialStore(settings.credentials_dir),
             )
 
             report = service.inspect()
 
             self.assertEqual(report.status, "degraded")
             self.assertTrue(report.can_activate)
+
+    def test_require_provider_blocks_activation_when_default_provider_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir)
+            config_file = home_dir / "config.toml"
+            config_file.write_text(
+                "\n".join(
+                    [
+                        "[agent]",
+                        'default_provider = "openai"',
+                        "require_provider = true",
+                        "",
+                        "[transports.console]",
+                        'plugin = "builtin.console"',
+                        "enabled = true",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            settings = Settings.from_env(
+                {
+                    "NAGIENT_HOME": str(home_dir),
+                    "NAGIENT_CONFIG": str(config_file),
+                }
+            )
+            service = PreflightService(
+                settings=settings,
+                plugin_registry=TransportPluginRegistry(),
+                transport_manager=TransportManager(),
+                provider_registry=ProviderPluginRegistry(),
+                provider_manager=ProviderManager(),
+                credential_store=FileCredentialStore(settings.credentials_dir),
+            )
+
+            report = service.inspect()
+
+            self.assertEqual(report.status, "blocked")
+            self.assertFalse(report.can_activate)
+            self.assertTrue(
+                any(issue.code == "runtime.no_enabled_providers" for issue in report.issues)
+            )
 
 
 if __name__ == "__main__":

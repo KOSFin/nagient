@@ -6,6 +6,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     NAGIENT_CONFIG=/var/lib/nagient/config/config.toml \
     NAGIENT_SECRETS_FILE=/var/lib/nagient/secrets.env \
     NAGIENT_PLUGINS_DIR=/var/lib/nagient/plugins \
+    NAGIENT_PROVIDERS_DIR=/var/lib/nagient/providers \
+    NAGIENT_CREDENTIALS_DIR=/var/lib/nagient/credentials \
     NAGIENT_STATE_DIR=/var/lib/nagient/state \
     NAGIENT_LOG_DIR=/var/lib/nagient/logs \
     NAGIENT_RELEASES_DIR=/var/lib/nagient/releases \
@@ -23,7 +25,7 @@ RUN python -m pip install --no-cache-dir --upgrade pip \
     && python -m pip install --no-cache-dir .
 
 RUN chmod +x /usr/local/bin/nagient-entrypoint \
-    && mkdir -p /var/lib/nagient/config /var/lib/nagient/plugins /var/lib/nagient/state /var/lib/nagient/logs /var/lib/nagient/releases
+    && mkdir -p /var/lib/nagient/config /var/lib/nagient/plugins /var/lib/nagient/providers /var/lib/nagient/credentials /var/lib/nagient/state /var/lib/nagient/logs /var/lib/nagient/releases
 
 VOLUME ["/var/lib/nagient"]
 

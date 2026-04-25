@@ -25,6 +25,8 @@ class StatusService:
                 "config": str(self.settings.config_file),
                 "secrets": str(self.settings.secrets_file),
                 "plugins": str(self.settings.plugins_dir),
+                "providers": str(self.settings.providers_dir),
+                "credentials": str(self.settings.credentials_dir),
                 "state": str(self.settings.state_dir),
                 "logs": str(self.settings.log_dir),
                 "releases": str(self.settings.releases_dir),

@@ -12,6 +12,8 @@ $EnvFile = Join-Path $NagientHome ".env"
 $ConfigFile = Join-Path $NagientHome "config.toml"
 $SecretsFile = Join-Path $NagientHome "secrets.env"
 $PluginsDir = Join-Path $NagientHome "plugins"
+$ProvidersDir = Join-Path $NagientHome "providers"
+$CredentialsDir = Join-Path $NagientHome "credentials"
 $ReleasesDir = Join-Path $NagientHome "releases"
 $BinDir = Join-Path $NagientHome "bin"
 
@@ -55,7 +57,7 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
   throw "Docker is required."
 }
 
-New-Item -ItemType Directory -Force -Path $NagientHome, $ReleasesDir, $BinDir, $PluginsDir, (Join-Path $NagientHome "runtime") | Out-Null
+New-Item -ItemType Directory -Force -Path $NagientHome, $ReleasesDir, $BinDir, $PluginsDir, $ProvidersDir, $CredentialsDir, (Join-Path $NagientHome "runtime") | Out-Null
 
 $channelPayload = Join-Path ([System.IO.Path]::GetTempPath()) "nagient-channel.json"
 $manifestPayload = Join-Path ([System.IO.Path]::GetTempPath()) "nagient-manifest.json"
@@ -92,6 +94,12 @@ project_name = "nagient"
 [paths]
 secrets_file = "$SecretsFile"
 plugins_dir = "$PluginsDir"
+providers_dir = "$ProvidersDir"
+credentials_dir = "$CredentialsDir"
+
+[agent]
+default_provider = ""
+require_provider = false
 
 [transports.console]
 plugin = "builtin.console"
@@ -110,12 +118,51 @@ plugin = "builtin.telegram"
 enabled = false
 bot_token_secret = "TELEGRAM_BOT_TOKEN"
 default_chat_id = ""
+
+[providers.openai]
+plugin = "builtin.openai"
+enabled = false
+auth = "api_key"
+api_key_secret = "OPENAI_API_KEY"
+model = "gpt-4.1-mini"
+
+[providers.anthropic]
+plugin = "builtin.anthropic"
+enabled = false
+auth = "api_key"
+api_key_secret = "ANTHROPIC_API_KEY"
+model = "claude-sonnet-4-5"
+
+[providers.gemini]
+plugin = "builtin.gemini"
+enabled = false
+auth = "api_key"
+api_key_secret = "GEMINI_API_KEY"
+model = "gemini-2.5-pro"
+
+[providers.deepseek]
+plugin = "builtin.deepseek"
+enabled = false
+auth = "api_key"
+api_key_secret = "DEEPSEEK_API_KEY"
+model = "deepseek-chat"
+
+[providers.ollama]
+plugin = "builtin.ollama"
+enabled = false
+auth = "none"
+base_url = "http://127.0.0.1:11434"
+model = "llama3.1:8b"
 "@ | Set-Content -Path $ConfigFile -Encoding utf8
 }
 
 if (-not (Test-Path $SecretsFile)) {
   @"
 # Fill only the secrets you actually use.
+# OPENAI_API_KEY=
+# ANTHROPIC_API_KEY=
+# GEMINI_API_KEY=
+# DEEPSEEK_API_KEY=
 # TELEGRAM_BOT_TOKEN=
 # NAGIENT_WEBHOOK_SHARED_SECRET=
 "@ | Set-Content -Path $SecretsFile -Encoding utf8

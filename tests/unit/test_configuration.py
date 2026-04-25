@@ -67,6 +67,71 @@ class ConfigurationTests(unittest.TestCase):
             self.assertEqual(runtime_config.transports[0].plugin_id, "builtin.webhook")
             self.assertEqual(runtime_config.transports[0].config["path"], "/ingest")
 
+    def test_configuration_loads_provider_profiles_and_agent_defaults(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir)
+            config_file = home_dir / "config.toml"
+            config_file.write_text(
+                "\n".join(
+                    [
+                        "[agent]",
+                        'default_provider = "openai_main"',
+                        "require_provider = true",
+                        "",
+                        "[providers.openai_main]",
+                        'plugin = "builtin.openai"',
+                        "enabled = true",
+                        'auth = "api_key"',
+                        'api_key_secret = "OPENAI_API_KEY"',
+                        'model = "gpt-4.1-mini"',
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            secrets_file = home_dir / "secrets.env"
+            secrets_file.write_text("OPENAI_API_KEY=sk-test\n", encoding="utf-8")
+
+            settings = Settings.from_env(
+                {
+                    "NAGIENT_HOME": str(home_dir),
+                    "NAGIENT_CONFIG": str(config_file),
+                    "NAGIENT_SECRETS_FILE": str(secrets_file),
+                }
+            )
+            runtime_config = load_runtime_configuration(settings)
+
+            self.assertEqual(runtime_config.default_provider, "openai_main")
+            self.assertTrue(runtime_config.require_provider)
+            self.assertEqual(len(runtime_config.providers), 1)
+            self.assertEqual(runtime_config.providers[0].provider_id, "openai_main")
+            self.assertEqual(runtime_config.providers[0].plugin_id, "builtin.openai")
+            self.assertEqual(runtime_config.providers[0].config["model"], "gpt-4.1-mini")
+
+    def test_environment_provider_overrides_are_merged(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir)
+            settings = Settings.from_env({"NAGIENT_HOME": str(home_dir)})
+
+            runtime_config = load_runtime_configuration(
+                settings,
+                environ={
+                    "NAGIENT_AGENT_DEFAULT_PROVIDER": "openai",
+                    "NAGIENT_AGENT_REQUIRE_PROVIDER": "true",
+                    "NAGIENT_PROVIDER__OPENAI__PLUGIN": "builtin.openai",
+                    "NAGIENT_PROVIDER__OPENAI__ENABLED": "true",
+                    "NAGIENT_PROVIDER__OPENAI__AUTH": "api_key",
+                    "NAGIENT_PROVIDER__OPENAI__API_KEY_SECRET": "OPENAI_API_KEY",
+                    "NAGIENT_PROVIDER__OPENAI__MODEL": "gpt-4.1-mini",
+                },
+            )
+
+            self.assertEqual(runtime_config.default_provider, "openai")
+            self.assertTrue(runtime_config.require_provider)
+            self.assertEqual(len(runtime_config.providers), 1)
+            self.assertEqual(runtime_config.providers[0].provider_id, "openai")
+            self.assertTrue(runtime_config.providers[0].enabled)
+
 
 if __name__ == "__main__":
     unittest.main()

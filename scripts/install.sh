@@ -12,6 +12,8 @@ NAGIENT_ENV_FILE="${NAGIENT_HOME}/.env"
 NAGIENT_CONFIG_FILE="${NAGIENT_HOME}/config.toml"
 NAGIENT_SECRETS_FILE="${NAGIENT_HOME}/secrets.env"
 NAGIENT_PLUGINS_DIR="${NAGIENT_HOME}/plugins"
+NAGIENT_PROVIDERS_DIR="${NAGIENT_HOME}/providers"
+NAGIENT_CREDENTIALS_DIR="${NAGIENT_HOME}/credentials"
 NAGIENT_RELEASES_DIR="${NAGIENT_HOME}/releases"
 NAGIENT_BIN_DIR="${NAGIENT_HOME}/bin"
 
@@ -104,7 +106,7 @@ download_artifact() {
 
 require_cmd docker
 ensure_release_defaults
-mkdir -p "$NAGIENT_HOME" "$NAGIENT_RELEASES_DIR" "$NAGIENT_BIN_DIR" "$NAGIENT_HOME/runtime" "$NAGIENT_PLUGINS_DIR"
+mkdir -p "$NAGIENT_HOME" "$NAGIENT_RELEASES_DIR" "$NAGIENT_BIN_DIR" "$NAGIENT_HOME/runtime" "$NAGIENT_PLUGINS_DIR" "$NAGIENT_PROVIDERS_DIR" "$NAGIENT_CREDENTIALS_DIR"
 
 channel_payload="$(mktemp)"
 manifest_payload="$(mktemp)"
@@ -142,6 +144,12 @@ project_name = "nagient"
 [paths]
 secrets_file = "${NAGIENT_SECRETS_FILE}"
 plugins_dir = "${NAGIENT_PLUGINS_DIR}"
+providers_dir = "${NAGIENT_PROVIDERS_DIR}"
+credentials_dir = "${NAGIENT_CREDENTIALS_DIR}"
+
+[agent]
+default_provider = ""
+require_provider = false
 
 [transports.console]
 plugin = "builtin.console"
@@ -160,12 +168,51 @@ plugin = "builtin.telegram"
 enabled = false
 bot_token_secret = "TELEGRAM_BOT_TOKEN"
 default_chat_id = ""
+
+[providers.openai]
+plugin = "builtin.openai"
+enabled = false
+auth = "api_key"
+api_key_secret = "OPENAI_API_KEY"
+model = "gpt-4.1-mini"
+
+[providers.anthropic]
+plugin = "builtin.anthropic"
+enabled = false
+auth = "api_key"
+api_key_secret = "ANTHROPIC_API_KEY"
+model = "claude-sonnet-4-5"
+
+[providers.gemini]
+plugin = "builtin.gemini"
+enabled = false
+auth = "api_key"
+api_key_secret = "GEMINI_API_KEY"
+model = "gemini-2.5-pro"
+
+[providers.deepseek]
+plugin = "builtin.deepseek"
+enabled = false
+auth = "api_key"
+api_key_secret = "DEEPSEEK_API_KEY"
+model = "deepseek-chat"
+
+[providers.ollama]
+plugin = "builtin.ollama"
+enabled = false
+auth = "none"
+base_url = "http://127.0.0.1:11434"
+model = "llama3.1:8b"
 EOF
 fi
 
 if [ ! -f "$NAGIENT_SECRETS_FILE" ]; then
   cat >"$NAGIENT_SECRETS_FILE" <<EOF
 # Fill only the secrets you actually use.
+# OPENAI_API_KEY=
+# ANTHROPIC_API_KEY=
+# GEMINI_API_KEY=
+# DEEPSEEK_API_KEY=
 # TELEGRAM_BOT_TOKEN=
 # NAGIENT_WEBHOOK_SHARED_SECRET=
 EOF
