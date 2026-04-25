@@ -28,6 +28,7 @@ class WorkspaceMetadata:
 
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> WorkspaceMetadata:
+        policy = payload.get("policy")
         return cls(
             workspace_id=str(payload.get("workspace_id", "")),
             root=str(payload.get("root", "")),
@@ -35,9 +36,7 @@ class WorkspaceMetadata:
             nagient_dir=str(payload.get("nagient_dir", "")),
             created_at=str(payload.get("created_at", "")),
             updated_at=str(payload.get("updated_at", "")),
-            policy=dict(payload.get("policy", {}))
-            if isinstance(payload.get("policy"), dict)
-            else {},
+            policy=dict(policy) if isinstance(policy, dict) else {},
         )
 
 

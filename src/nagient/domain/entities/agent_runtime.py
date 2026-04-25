@@ -25,13 +25,12 @@ class NotificationIntent:
 
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> NotificationIntent:
+        metadata = payload.get("metadata")
         return cls(
             level=str(payload.get("level", "info")),
             message=str(payload.get("message", "")),
             transport_id=str(payload["transport_id"]) if "transport_id" in payload else None,
-            metadata=dict(payload.get("metadata", {}))
-            if isinstance(payload.get("metadata"), dict)
-            else {},
+            metadata=dict(metadata) if isinstance(metadata, dict) else {},
         )
 
 
@@ -102,38 +101,48 @@ class AssistantResponse:
 
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> AssistantResponse:
-        tool_calls = payload.get("tool_calls", [])
-        interaction_requests = payload.get("interaction_requests", [])
-        approval_requests = payload.get("approval_requests", [])
-        notifications = payload.get("notifications", [])
-        config_mutations = payload.get("config_mutations", [])
+        tool_calls = payload.get("tool_calls")
+        interaction_requests = payload.get("interaction_requests")
+        approval_requests = payload.get("approval_requests")
+        notifications = payload.get("notifications")
+        config_mutations = payload.get("config_mutations")
         return cls(
             message=str(payload.get("message", "")),
             tool_calls=[
                 NormalizedToolCall.from_dict(item)
                 for item in tool_calls
                 if isinstance(item, dict)
-            ],
+            ]
+            if isinstance(tool_calls, list)
+            else [],
             interaction_requests=[
                 InteractionRequest.from_dict(item)
                 for item in interaction_requests
                 if isinstance(item, dict)
-            ],
+            ]
+            if isinstance(interaction_requests, list)
+            else [],
             approval_requests=[
                 ApprovalRequest.from_dict(item)
                 for item in approval_requests
                 if isinstance(item, dict)
-            ],
+            ]
+            if isinstance(approval_requests, list)
+            else [],
             notifications=[
                 NotificationIntent.from_dict(item)
                 for item in notifications
                 if isinstance(item, dict)
-            ],
+            ]
+            if isinstance(notifications, list)
+            else [],
             config_mutations=[
                 ConfigMutationIntent.from_dict(item)
                 for item in config_mutations
                 if isinstance(item, dict)
-            ],
+            ]
+            if isinstance(config_mutations, list)
+            else [],
         )
 
 
@@ -161,6 +170,8 @@ class AgentTurnContext:
 
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> AgentTurnContext:
+        previous_results = payload.get("previous_results")
+        metadata = payload.get("metadata")
         return cls(
             session_id=str(payload.get("session_id", "")),
             transport_id=str(payload.get("transport_id", "console")),
@@ -171,13 +182,11 @@ class AgentTurnContext:
                 str(payload["workspace_mode"]) if "workspace_mode" in payload else None
             ),
             previous_results=[
-                item for item in payload.get("previous_results", []) if isinstance(item, dict)
+                dict(item) for item in previous_results if isinstance(item, dict)
             ]
-            if isinstance(payload.get("previous_results"), list)
+            if isinstance(previous_results, list)
             else [],
-            metadata=dict(payload.get("metadata", {}))
-            if isinstance(payload.get("metadata"), dict)
-            else {},
+            metadata=dict(metadata) if isinstance(metadata, dict) else {},
         )
 
 

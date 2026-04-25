@@ -123,12 +123,11 @@ class ToolExecutionRequest:
 
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> ToolExecutionRequest:
+        arguments = payload.get("arguments")
         return cls(
             tool_id=str(payload.get("tool_id", "")),
             function_name=str(payload.get("function_name", "")),
-            arguments=dict(payload.get("arguments", {}))
-            if isinstance(payload.get("arguments"), dict)
-            else {},
+            arguments=dict(arguments) if isinstance(arguments, dict) else {},
             dry_run=bool(payload.get("dry_run", False)),
             batch_id=str(payload["batch_id"]) if "batch_id" in payload else None,
             session_id=str(payload["session_id"]) if "session_id" in payload else None,

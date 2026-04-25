@@ -253,9 +253,12 @@ class WorkspaceShellToolPlugin(BaseToolPlugin):
         command = arguments.get("command")
         if not isinstance(command, str) or not command.strip():
             raise ValueError("workspace.shell.run requires a non-empty command string.")
+        cwd = arguments.get("cwd")
+        if cwd is not None and not isinstance(cwd, (str, Path)):
+            raise ValueError("workspace.shell.run cwd must be a string path when provided.")
         workdir = context.workspace_manager.resolve_workdir(
             context.workspace,
-            arguments.get("cwd"),
+            cwd,
         )
         timeout_seconds = arguments.get("timeout_seconds", 30)
         if not isinstance(timeout_seconds, int) or timeout_seconds <= 0:
@@ -411,6 +414,7 @@ class TransportInteractionToolPlugin(BaseToolPlugin):
             raise ValueError("transport.interaction.request requires a non-empty prompt.")
         interaction_type = str(arguments.get("interaction_type", "secret_input"))
         actions = arguments.get("post_submit_actions", [])
+        metadata = arguments.get("metadata")
         if not isinstance(actions, list):
             raise ValueError("post_submit_actions must be a list of action payloads.")
         interaction = InteractionRequest(
@@ -424,9 +428,7 @@ class TransportInteractionToolPlugin(BaseToolPlugin):
             post_submit_actions=[
                 PostSubmitAction.from_dict(item) for item in actions if isinstance(item, dict)
             ],
-            metadata=dict(arguments.get("metadata", {}))
-            if isinstance(arguments.get("metadata"), dict)
-            else {},
+            metadata=dict(metadata) if isinstance(metadata, dict) else {},
         )
         stored = context.request_interaction(interaction)
         return {

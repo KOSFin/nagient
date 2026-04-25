@@ -46,7 +46,7 @@ class SecretMetadata:
 
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> SecretMetadata:
-        bindings = payload.get("bindings", [])
+        bindings = payload.get("bindings")
         return cls(
             name=str(payload.get("name", "")),
             scope=str(payload.get("scope", "tool")),
@@ -55,7 +55,9 @@ class SecretMetadata:
                 SecretBinding.from_dict(item)
                 for item in bindings
                 if isinstance(item, dict)
-            ],
+            ]
+            if isinstance(bindings, list)
+            else [],
             created_at=str(payload["created_at"]) if "created_at" in payload else None,
             updated_at=str(payload["updated_at"]) if "updated_at" in payload else None,
         )
@@ -74,11 +76,10 @@ class PostSubmitAction:
 
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> PostSubmitAction:
+        action_payload = payload.get("payload")
         return cls(
             action_type=str(payload.get("action_type", "")),
-            payload=dict(payload.get("payload", {}))
-            if isinstance(payload.get("payload"), dict)
-            else {},
+            payload=dict(action_payload) if isinstance(action_payload, dict) else {},
         )
 
 
@@ -111,7 +112,8 @@ class InteractionRequest:
 
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> InteractionRequest:
-        actions = payload.get("post_submit_actions", [])
+        actions = payload.get("post_submit_actions")
+        metadata = payload.get("metadata")
         return cls(
             request_id=str(payload.get("request_id", "")),
             session_id=str(payload.get("session_id", "")),
@@ -124,10 +126,10 @@ class InteractionRequest:
                 PostSubmitAction.from_dict(item)
                 for item in actions
                 if isinstance(item, dict)
-            ],
-            metadata=dict(payload.get("metadata", {}))
-            if isinstance(payload.get("metadata"), dict)
-            else {},
+            ]
+            if isinstance(actions, list)
+            else [],
+            metadata=dict(metadata) if isinstance(metadata, dict) else {},
         )
 
 
@@ -175,6 +177,7 @@ class ApprovalRequest:
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> ApprovalRequest:
         action = payload.get("action", {})
+        metadata = payload.get("metadata")
         return cls(
             request_id=str(payload.get("request_id", "")),
             session_id=str(payload.get("session_id", "")),
@@ -186,9 +189,7 @@ class ApprovalRequest:
             action=PostSubmitAction.from_dict(action)
             if isinstance(action, dict)
             else PostSubmitAction(action_type=""),
-            metadata=dict(payload.get("metadata", {}))
-            if isinstance(payload.get("metadata"), dict)
-            else {},
+            metadata=dict(metadata) if isinstance(metadata, dict) else {},
         )
 
 

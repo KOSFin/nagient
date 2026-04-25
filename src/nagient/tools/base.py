@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from nagient.app.settings import Settings
+from nagient.backups.manager import BackupManager
 from nagient.domain.entities.agent_runtime import AssistantResponse
 from nagient.domain.entities.security import ApprovalRequest, InteractionRequest
 from nagient.domain.entities.system_state import CheckIssue
@@ -36,7 +37,7 @@ class ToolExecutionContext:
     plugin_id: str
     config: dict[str, object]
     secret_broker: SecretBroker
-    backup_manager: object
+    backup_manager: BackupManager
     request_interaction: Callable[[InteractionRequest], InteractionRequest]
     request_approval: Callable[[ApprovalRequest], ApprovalRequest]
     invoke_reconcile: Callable[[], dict[str, object]]

@@ -41,6 +41,7 @@ class JobRecord:
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> JobRecord:
         interval_seconds = payload.get("interval_seconds")
+        job_payload = payload.get("payload")
         return cls(
             job_id=str(payload.get("job_id", "")),
             name=str(payload.get("name", "")),
@@ -52,9 +53,7 @@ class JobRecord:
                 int(interval_seconds) if isinstance(interval_seconds, int) else None
             ),
             event_name=str(payload["event_name"]) if "event_name" in payload else None,
-            payload=dict(payload.get("payload", {}))
-            if isinstance(payload.get("payload"), dict)
-            else {},
+            payload=dict(job_payload) if isinstance(job_payload, dict) else {},
             last_run_at=(
                 str(payload["last_run_at"]) if "last_run_at" in payload else None
             ),

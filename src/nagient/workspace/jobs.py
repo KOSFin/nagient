@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -37,7 +38,7 @@ class JobStore:
                 jobs.append(JobRecord.from_dict(payload))
         return jobs
 
-    def due(self, now: datetime | None = None) -> list[JobRecord]:
+    def due(self, now: datetime | None = None) -> builtins.list[JobRecord]:
         current = now or datetime.now(tz=UTC)
         due_jobs: list[JobRecord] = []
         for job in self.list():

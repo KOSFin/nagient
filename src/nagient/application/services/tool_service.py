@@ -23,7 +23,7 @@ from nagient.tools.base import (
 )
 from nagient.tools.manager import ToolManager
 from nagient.tools.registry import ToolPluginRegistry
-from nagient.workspace.manager import WorkspaceManager
+from nagient.workspace.manager import WorkspaceLayout, WorkspaceManager
 
 
 @dataclass
@@ -313,7 +313,7 @@ class ToolService:
     def _build_context(
         self,
         *,
-        layout,
+        layout: WorkspaceLayout,
         tool_config: ToolInstanceConfig,
         plugin_id: str,
         request: ToolExecutionRequest,

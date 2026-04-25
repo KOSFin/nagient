@@ -284,12 +284,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "transport" and args.transport_command == "scaffold":
         output_dir = Path(args.output) if args.output else None
-        result = container.configuration_service.scaffold_transport(
+        transport_result = container.configuration_service.scaffold_transport(
             plugin_id=args.plugin_id,
             output_dir=output_dir,
             force=args.force,
         )
-        return _emit(result.to_dict(), args.format)
+        return _emit(transport_result.to_dict(), args.format)
 
     if args.command == "provider" and args.provider_command == "list":
         provider_discovery = container.provider_registry.discover(
@@ -334,12 +334,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "tool" and args.tool_command == "scaffold":
         output_dir = Path(args.output) if args.output else None
-        result = container.configuration_service.scaffold_tool(
+        tool_scaffold_result = container.configuration_service.scaffold_tool(
             plugin_id=args.plugin_id,
             output_dir=output_dir,
             force=args.force,
         )
-        return _emit(result.to_dict(), args.format)
+        return _emit(tool_scaffold_result.to_dict(), args.format)
 
     if args.command == "tool" and args.tool_command == "invoke":
         tool_request = ToolExecutionRequest(
@@ -484,10 +484,10 @@ def main(argv: list[str] | None = None) -> int:
         request_payload = json.loads(Path(args.request_file).read_text(encoding="utf-8"))
         if not isinstance(request_payload, dict):
             raise ValueError("Agent request payload must be a JSON object.")
-        result = container.agent_turn_service.run_turn(
+        agent_turn_result = container.agent_turn_service.run_turn(
             AgentTurnRequest.from_dict(request_payload)
         )
-        return _emit(result.to_dict(), args.format)
+        return _emit(agent_turn_result.to_dict(), args.format)
 
     parser.error("Unsupported command.")
     return 2
