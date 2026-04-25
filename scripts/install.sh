@@ -104,6 +104,123 @@ download_artifact() {
   chmod +x "$target" || true
 }
 
+write_nagientctl() {
+  cat >"${NAGIENT_BIN_DIR}/nagientctl" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+NAGIENT_HOME="${NAGIENT_HOME:-$HOME/.nagient}"
+NAGIENT_COMPOSE_FILE="${NAGIENT_HOME}/docker-compose.yml"
+NAGIENT_ENV_FILE="${NAGIENT_HOME}/.env"
+NAGIENT_SERVICE="${NAGIENT_SERVICE:-nagient}"
+
+usage() {
+  cat <<'USAGE'
+Usage: nagientctl <command>
+
+Commands:
+  up|start           Start runtime container
+  down|stop          Stop runtime container
+  restart            Restart runtime container
+  status             Show container state and nagient status
+  doctor             Show effective settings
+  preflight          Run config validation
+  reconcile          Run activation cycle
+  logs [service]     Stream logs (default: nagient)
+  shell              Open shell in runtime container
+  exec <cmd...>      Execute command in runtime container
+  update             Run installed updater
+  remove|uninstall   Run installed uninstaller
+  help               Show this help
+USAGE
+}
+
+require_compose_files() {
+  if [ ! -f "$NAGIENT_COMPOSE_FILE" ] || [ ! -f "$NAGIENT_ENV_FILE" ]; then
+    echo "Nagient runtime is not initialized in $NAGIENT_HOME." >&2
+    echo "Run install first: curl -fsSL https://ngnt-in.ruka.me/install.sh | bash" >&2
+    exit 1
+  fi
+}
+
+compose() {
+  docker compose -f "$NAGIENT_COMPOSE_FILE" --env-file "$NAGIENT_ENV_FILE" "$@"
+}
+
+command_name="${1:-help}"
+if [ "$#" -gt 0 ]; then
+  shift
+fi
+
+case "$command_name" in
+  up|start)
+    require_compose_files
+    compose up -d
+    ;;
+  down|stop)
+    require_compose_files
+    compose down --remove-orphans
+    ;;
+  restart)
+    require_compose_files
+    compose down --remove-orphans
+    compose up -d
+    ;;
+  status)
+    require_compose_files
+    compose ps
+    compose exec "$NAGIENT_SERVICE" nagient status --format text
+    ;;
+  doctor)
+    require_compose_files
+    compose exec "$NAGIENT_SERVICE" nagient doctor --format text
+    ;;
+  preflight)
+    require_compose_files
+    compose exec "$NAGIENT_SERVICE" nagient preflight --format text
+    ;;
+  reconcile)
+    require_compose_files
+    compose exec "$NAGIENT_SERVICE" nagient reconcile --format text
+    ;;
+  logs)
+    require_compose_files
+    if [ "$#" -eq 0 ]; then
+      set -- "$NAGIENT_SERVICE"
+    fi
+    compose logs -f "$@"
+    ;;
+  shell)
+    require_compose_files
+    compose exec "$NAGIENT_SERVICE" sh
+    ;;
+  exec)
+    require_compose_files
+    if [ "$#" -eq 0 ]; then
+      echo "Usage: nagientctl exec <cmd...>" >&2
+      exit 1
+    fi
+    compose exec "$NAGIENT_SERVICE" "$@"
+    ;;
+  update)
+    exec "${NAGIENT_HOME}/bin/nagient-update"
+    ;;
+  remove|uninstall)
+    exec "${NAGIENT_HOME}/bin/nagient-uninstall"
+    ;;
+  help|-h|--help)
+    usage
+    ;;
+  *)
+    echo "Unknown command: $command_name" >&2
+    usage
+    exit 1
+    ;;
+esac
+EOF
+  chmod +x "${NAGIENT_BIN_DIR}/nagientctl"
+}
+
 require_cmd docker
 ensure_release_defaults
 mkdir -p "$NAGIENT_HOME" "$NAGIENT_RELEASES_DIR" "$NAGIENT_BIN_DIR" "$NAGIENT_HOME/runtime" "$NAGIENT_PLUGINS_DIR" "$NAGIENT_PROVIDERS_DIR" "$NAGIENT_CREDENTIALS_DIR"
@@ -125,6 +242,7 @@ uninstall_url="$(artifact_url uninstall.sh "$manifest_payload")"
 download_artifact "$compose_url" "$NAGIENT_COMPOSE_FILE"
 download_artifact "$update_url" "${NAGIENT_BIN_DIR}/nagient-update"
 download_artifact "$uninstall_url" "${NAGIENT_BIN_DIR}/nagient-uninstall"
+write_nagientctl
 cp "$manifest_payload" "${NAGIENT_RELEASES_DIR}/current.json"
 cp "$manifest_payload" "${NAGIENT_RELEASES_DIR}/${version}.json"
 
@@ -232,3 +350,4 @@ docker compose -f "$NAGIENT_COMPOSE_FILE" --env-file "$NAGIENT_ENV_FILE" up -d
 
 echo "Nagient ${version} installed into ${NAGIENT_HOME}"
 echo "Use ${NAGIENT_BIN_DIR}/nagient-update for future upgrades."
+echo "Shortcut control: ${NAGIENT_BIN_DIR}/nagientctl help"

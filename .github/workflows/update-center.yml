@@ -64,6 +64,9 @@ jobs:
             --default-channel "${{ steps.meta.outputs.default_channel }}" \
             --docker-project-name "${{ steps.meta.outputs.docker_project_name }}" \
             --container-name "${{ steps.meta.outputs.container_name }}"
+          python scripts/release/render_bootstrap_assets.py \
+            --output-dir "${SITE_PATH}" \
+            --update-base-url "${BASE_URL}"
           if [[ -n "${CUSTOM_DOMAIN}" ]]; then
             printf '%s\n' "${CUSTOM_DOMAIN}" > "${SITE_PATH}/CNAME"
           fi

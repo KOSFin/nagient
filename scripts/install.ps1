@@ -53,6 +53,130 @@ function Get-ArtifactUrl {
   return $artifact.url
 }
 
+function Write-NagientCtl {
+  $target = Join-Path $BinDir "nagientctl.ps1"
+  @'
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+$NagientHome = if ($env:NAGIENT_HOME) { $env:NAGIENT_HOME } else { Join-Path $HOME ".nagient" }
+$ComposeFile = Join-Path $NagientHome "docker-compose.yml"
+$EnvFile = Join-Path $NagientHome ".env"
+$Service = if ($env:NAGIENT_SERVICE) { $env:NAGIENT_SERVICE } else { "nagient" }
+
+function Show-Usage {
+  @"
+Usage: nagientctl <command>
+
+Commands:
+  up|start           Start runtime container
+  down|stop          Stop runtime container
+  restart            Restart runtime container
+  status             Show container state and nagient status
+  doctor             Show effective settings
+  preflight          Run config validation
+  reconcile          Run activation cycle
+  logs [service]     Stream logs (default: nagient)
+  shell              Open shell in runtime container
+  exec <cmd...>      Execute command in runtime container
+  update             Run installed updater
+  remove|uninstall   Run installed uninstaller
+  help               Show this help
+"@ | Write-Host
+}
+
+function Assert-ComposeFiles {
+  if (-not (Test-Path $ComposeFile) -or -not (Test-Path $EnvFile)) {
+    throw "Nagient runtime is not initialized in $NagientHome. Run install first: irm https://ngnt-in.ruka.me/install.ps1 | iex"
+  }
+}
+
+function Compose {
+  param([Parameter(ValueFromRemainingArguments = $true)][string[]]$ComposeArgs)
+  docker compose -f $ComposeFile --env-file $EnvFile @ComposeArgs
+}
+
+$Command = if ($args.Count -gt 0) { $args[0].ToLowerInvariant() } else { "help" }
+$Rest = if ($args.Count -gt 1) { $args[1..($args.Count - 1)] } else { @() }
+
+switch ($Command) {
+  { $_ -in @("up", "start") } {
+    Assert-ComposeFiles
+    Compose up -d
+    break
+  }
+  { $_ -in @("down", "stop") } {
+    Assert-ComposeFiles
+    Compose down --remove-orphans
+    break
+  }
+  "restart" {
+    Assert-ComposeFiles
+    Compose down --remove-orphans
+    Compose up -d
+    break
+  }
+  "status" {
+    Assert-ComposeFiles
+    Compose ps
+    Compose exec $Service nagient status --format text
+    break
+  }
+  "doctor" {
+    Assert-ComposeFiles
+    Compose exec $Service nagient doctor --format text
+    break
+  }
+  "preflight" {
+    Assert-ComposeFiles
+    Compose exec $Service nagient preflight --format text
+    break
+  }
+  "reconcile" {
+    Assert-ComposeFiles
+    Compose exec $Service nagient reconcile --format text
+    break
+  }
+  "logs" {
+    Assert-ComposeFiles
+    if ($Rest.Count -eq 0) {
+      $Rest = @($Service)
+    }
+    Compose logs -f @Rest
+    break
+  }
+  "shell" {
+    Assert-ComposeFiles
+    Compose exec $Service sh
+    break
+  }
+  "exec" {
+    Assert-ComposeFiles
+    if ($Rest.Count -eq 0) {
+      throw "Usage: nagientctl exec <cmd...>"
+    }
+    Compose exec $Service @Rest
+    break
+  }
+  "update" {
+    & (Join-Path $NagientHome "bin/nagient-update.ps1")
+    break
+  }
+  { $_ -in @("remove", "uninstall") } {
+    & (Join-Path $NagientHome "bin/nagient-uninstall.ps1")
+    break
+  }
+  { $_ -in @("help", "-h", "--help") } {
+    Show-Usage
+    break
+  }
+  default {
+    throw "Unknown command: $Command"
+  }
+}
+'@ | Set-Content -Path $target -Encoding utf8
+}
+
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
   throw "Docker is required."
 }
@@ -75,6 +199,7 @@ $uninstallUrl = Get-ArtifactUrl -Path $manifestPayload -Name "uninstall.ps1"
 Invoke-WebRequest -UseBasicParsing -Uri $composeUrl -OutFile $ComposeFile
 Invoke-WebRequest -UseBasicParsing -Uri $updateUrl -OutFile (Join-Path $BinDir "nagient-update.ps1")
 Invoke-WebRequest -UseBasicParsing -Uri $uninstallUrl -OutFile (Join-Path $BinDir "nagient-uninstall.ps1")
+Write-NagientCtl
 Copy-Item -Force -Path $manifestPayload -Destination (Join-Path $ReleasesDir "current.json")
 Copy-Item -Force -Path $manifestPayload -Destination (Join-Path $ReleasesDir "$version.json")
 
@@ -181,3 +306,4 @@ docker compose -f $ComposeFile --env-file $EnvFile pull
 docker compose -f $ComposeFile --env-file $EnvFile up -d
 
 Write-Host "Nagient $version installed into $NagientHome"
+Write-Host "Shortcut control: $(Join-Path $BinDir 'nagientctl.ps1') help"
