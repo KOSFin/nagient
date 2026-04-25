@@ -6,6 +6,7 @@ import subprocess
 import sys
 import unittest
 
+from nagient.version import __version__
 from tests.bootstrap import PROJECT_ROOT, SRC_ROOT
 
 
@@ -52,8 +53,9 @@ class ReleaseEnvResolverTests(unittest.TestCase):
         self.assertEqual(payload["project_slug"], "nagient")
         self.assertEqual(payload["default_channel"], "stable")
         self.assertEqual(payload["update_base_url"], "https://acme.github.io/nagient")
-        self.assertEqual(payload["docker_image"], "docker.io/acme/nagient:0.1.0")
-        self.assertEqual(payload["git_tag"], "v0.1.0")
+        self.assertEqual(payload["version"], __version__)
+        self.assertEqual(payload["docker_image"], f"docker.io/acme/nagient:{__version__}")
+        self.assertEqual(payload["git_tag"], f"v{__version__}")
 
     def test_resolver_uses_explicit_domain_and_registry_values(self) -> None:
         process = subprocess.run(

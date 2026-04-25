@@ -62,6 +62,17 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertIn("workflow_id: 'release.yml'", auto_tag_workflow)
         self.assertIn("workflow_dispatch:", release_workflow)
 
+    def test_release_workflow_uses_dispatch_safe_docker_publish_gate(self) -> None:
+        release_workflow = (PROJECT_ROOT / ".github/workflows/release.yml").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("id: docker_publish", release_workflow)
+        self.assertIn("push_enabled=true", release_workflow)
+        self.assertIn("steps.docker_publish.outputs.push_enabled", release_workflow)
+        self.assertNotIn("if: ${{ secrets.DOCKERHUB_USERNAME", release_workflow)
+        self.assertNotIn("push: ${{ secrets.DOCKERHUB_USERNAME", release_workflow)
+
 
 if __name__ == "__main__":
     unittest.main()
