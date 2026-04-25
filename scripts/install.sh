@@ -10,6 +10,8 @@ NAGIENT_UPDATE_BASE_URL="${NAGIENT_UPDATE_BASE_URL:-$DEFAULT_UPDATE_BASE_URL}"
 NAGIENT_COMPOSE_FILE="${NAGIENT_HOME}/docker-compose.yml"
 NAGIENT_ENV_FILE="${NAGIENT_HOME}/.env"
 NAGIENT_CONFIG_FILE="${NAGIENT_HOME}/config.toml"
+NAGIENT_SECRETS_FILE="${NAGIENT_HOME}/secrets.env"
+NAGIENT_PLUGINS_DIR="${NAGIENT_HOME}/plugins"
 NAGIENT_RELEASES_DIR="${NAGIENT_HOME}/releases"
 NAGIENT_BIN_DIR="${NAGIENT_HOME}/bin"
 
@@ -102,7 +104,7 @@ download_artifact() {
 
 require_cmd docker
 ensure_release_defaults
-mkdir -p "$NAGIENT_HOME" "$NAGIENT_RELEASES_DIR" "$NAGIENT_BIN_DIR" "$NAGIENT_HOME/runtime"
+mkdir -p "$NAGIENT_HOME" "$NAGIENT_RELEASES_DIR" "$NAGIENT_BIN_DIR" "$NAGIENT_HOME/runtime" "$NAGIENT_PLUGINS_DIR"
 
 channel_payload="$(mktemp)"
 manifest_payload="$(mktemp)"
@@ -132,9 +134,40 @@ base_url = "${NAGIENT_UPDATE_BASE_URL}"
 
 [runtime]
 heartbeat_interval_seconds = 30
+safe_mode = true
 
 [docker]
 project_name = "nagient"
+
+[paths]
+secrets_file = "${NAGIENT_SECRETS_FILE}"
+plugins_dir = "${NAGIENT_PLUGINS_DIR}"
+
+[transports.console]
+plugin = "builtin.console"
+enabled = true
+
+[transports.webhook]
+plugin = "builtin.webhook"
+enabled = false
+listen_host = "0.0.0.0"
+listen_port = 8080
+path = "/events"
+shared_secret_name = "NAGIENT_WEBHOOK_SHARED_SECRET"
+
+[transports.telegram]
+plugin = "builtin.telegram"
+enabled = false
+bot_token_secret = "TELEGRAM_BOT_TOKEN"
+default_chat_id = ""
+EOF
+fi
+
+if [ ! -f "$NAGIENT_SECRETS_FILE" ]; then
+  cat >"$NAGIENT_SECRETS_FILE" <<EOF
+# Fill only the secrets you actually use.
+# TELEGRAM_BOT_TOKEN=
+# NAGIENT_WEBHOOK_SHARED_SECRET=
 EOF
 fi
 
@@ -144,6 +177,7 @@ NAGIENT_CHANNEL=${NAGIENT_CHANNEL}
 NAGIENT_UPDATE_BASE_URL=${NAGIENT_UPDATE_BASE_URL}
 NAGIENT_CONTAINER_NAME=nagient
 NAGIENT_DOCKER_PROJECT_NAME=nagient
+NAGIENT_SAFE_MODE=true
 EOF
 
 docker compose -f "$NAGIENT_COMPOSE_FILE" --env-file "$NAGIENT_ENV_FILE" pull

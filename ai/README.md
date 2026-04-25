@@ -24,7 +24,10 @@ Nagient задуман как легковесный агент по типу Op
 
 - пакет `nagient` с CLI
 - settings/container/application/domain split
-- простая runtime-заглушка с heartbeat
+- bootstrap/reconcile cycle для runtime config
+- transport plugin registry с built-in console/webhook/telegram
+- transport scaffold generator для пользовательских Python plugins
+- runtime-заглушка с heartbeat и activation report
 - semver parser и comparer
 - release/channel manifest entities
 - parser и registry для manifests
@@ -153,13 +156,52 @@ Nagient задуман как легковесный агент по типу Op
 
 Не уводить проект в сторону “у каждого инсталлятора своя логика версий”.
 
+### 4.4 Bootstrap and reconcile contract
+
+Теперь у проекта есть ещё один важный контракт:
+
+- `config.toml` хранит обычную runtime-конфигурацию
+- `secrets.env` хранит transport/provider secrets
+- `plugins/` хранит пользовательские Python transport plugins
+- `nagient preflight` не пишет last-known-good, а только проверяет
+- `nagient reconcile` пишет activation report и effective config
+- `nagient serve` перед стартом обязан проходить через reconcile-cycle
+
+Если AI-агент меняет bootstrap contract, он обязан одновременно обновить:
+
+- `src/nagient/app/settings.py`
+- `src/nagient/app/configuration.py`
+- `src/nagient/application/services/preflight_service.py`
+- `src/nagient/application/services/reconcile_service.py`
+- Docker entrypoint
+- install scripts
+- tests
+
+### 4.5 Transport plugin contract
+
+Transport plugin больше не должен быть “просто произвольным модулем”.
+Теперь контракт такой:
+
+- plugin имеет manifest `plugin.toml`
+- plugin имеет Python entrypoint
+- plugin декларирует обязательные slot bindings
+- plugin может иметь custom namespaced functions
+- plugin должен проходить registry validation и self-tests
+- ошибка transport plugin не должна падать в непойманный crash core-системы
+
 ## 5. Текущее CLI API
 
 На сейчас доступны команды:
 
 - `nagient version`
+- `nagient init`
+- `nagient status`
 - `nagient doctor`
+- `nagient preflight`
+- `nagient reconcile`
 - `nagient serve --once`
+- `nagient transport list`
+- `nagient transport scaffold`
 - `nagient update check`
 - `nagient manifest render`
 - `nagient migrations plan`
@@ -173,10 +215,14 @@ Nagient задуман как легковесный агент по типу Op
 - semver comparison
 - manifest parsing/serialization
 - settings loading
+- config builder and secrets loading
+- preflight/reconcile safe-mode behavior
+- transport plugin registry and scaffold generation
 - migration planning
 - update service logic
 - CLI update check
 - CLI manifest render
+- CLI init/preflight/reconcile/runtime flows
 - наличие ключевых файлов репозитория
 - bash syntax для shell scripts
 
@@ -208,10 +254,10 @@ Nagient задуман как легковесный агент по типу Op
 Пока нет:
 
 - HTTP API
-- Telegram bot
 - web dashboard
 - TUI / richer terminal UX
-- webhook/event bus
+- полноценный webhook/event bus
+- полноценный Telegram bot runtime
 
 ### 7.3 Real migrations
 

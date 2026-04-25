@@ -7,6 +7,29 @@ base_url = ""
 
 [runtime]
 heartbeat_interval_seconds = 30
+safe_mode = true
 
 [docker]
 project_name = "nagient"
+
+[paths]
+secrets_file = "/var/lib/nagient/secrets.env"
+plugins_dir = "/var/lib/nagient/plugins"
+
+[transports.console]
+plugin = "builtin.console"
+enabled = true
+
+[transports.webhook]
+plugin = "builtin.webhook"
+enabled = false
+listen_host = "0.0.0.0"
+listen_port = 8080
+path = "/events"
+shared_secret_name = "NAGIENT_WEBHOOK_SHARED_SECRET"
+
+[transports.telegram]
+plugin = "builtin.telegram"
+enabled = false
+bot_token_secret = "TELEGRAM_BOT_TOKEN"
+default_chat_id = ""

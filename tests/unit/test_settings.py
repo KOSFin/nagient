@@ -21,9 +21,14 @@ class SettingsTests(unittest.TestCase):
                         "",
                         "[runtime]",
                         "heartbeat_interval_seconds = 12",
+                        "safe_mode = false",
                         "",
                         "[docker]",
                         'project_name = "nagient-dev"',
+                        "",
+                        "[paths]",
+                        'secrets_file = "./custom-secrets.env"',
+                        'plugins_dir = "./custom-plugins"',
                         "",
                     ]
                 ),
@@ -41,6 +46,9 @@ class SettingsTests(unittest.TestCase):
             self.assertEqual(settings.update_base_url, "https://updates.test/nagient")
             self.assertEqual(settings.heartbeat_interval_seconds, 12)
             self.assertEqual(settings.docker_project_name, "nagient-dev")
+            self.assertFalse(settings.safe_mode)
+            self.assertEqual(settings.secrets_file, (home_dir / "custom-secrets.env").resolve())
+            self.assertEqual(settings.plugins_dir, (home_dir / "custom-plugins").resolve())
 
     def test_environment_overrides_file_values(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -53,10 +61,12 @@ class SettingsTests(unittest.TestCase):
                     "NAGIENT_HOME": str(home_dir),
                     "NAGIENT_CONFIG": str(config_file),
                     "NAGIENT_CHANNEL": "edge",
+                    "NAGIENT_SAFE_MODE": "false",
                 }
             )
 
             self.assertEqual(settings.channel, "edge")
+            self.assertFalse(settings.safe_mode)
 
 
 if __name__ == "__main__":

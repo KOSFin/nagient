@@ -15,11 +15,40 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("version", help="Print the current version")
 
+    init_parser = subparsers.add_parser("init", help="Write default runtime config files")
+    init_parser.add_argument("--force", action="store_true")
+    init_parser.add_argument("--format", choices=("text", "json"), default="text")
+
+    status_parser = subparsers.add_parser("status", help="Show runtime and activation status")
+    status_parser.add_argument("--format", choices=("text", "json"), default="text")
+
     doctor_parser = subparsers.add_parser("doctor", help="Show effective runtime settings")
     doctor_parser.add_argument("--format", choices=("text", "json"), default="text")
 
+    preflight_parser = subparsers.add_parser("preflight", help="Validate config and transport plugins")
+    preflight_parser.add_argument("--format", choices=("text", "json"), default="text")
+
+    reconcile_parser = subparsers.add_parser("reconcile", help="Validate and activate runtime config")
+    reconcile_parser.add_argument("--format", choices=("text", "json"), default="text")
+
     serve_parser = subparsers.add_parser("serve", help="Run the placeholder agent loop")
     serve_parser.add_argument("--once", action="store_true", help="Write one heartbeat and exit")
+
+    transport_parser = subparsers.add_parser("transport", help="Manage transport plugins")
+    transport_subparsers = transport_parser.add_subparsers(
+        dest="transport_command",
+        required=True,
+    )
+    transport_list_parser = transport_subparsers.add_parser("list", help="List discovered transport plugins")
+    transport_list_parser.add_argument("--format", choices=("text", "json"), default="text")
+    transport_scaffold_parser = transport_subparsers.add_parser(
+        "scaffold",
+        help="Generate a custom transport plugin template",
+    )
+    transport_scaffold_parser.add_argument("--plugin-id", required=True)
+    transport_scaffold_parser.add_argument("--output")
+    transport_scaffold_parser.add_argument("--force", action="store_true")
+    transport_scaffold_parser.add_argument("--format", choices=("text", "json"), default="text")
 
     update_parser = subparsers.add_parser("update", help="Inspect available updates")
     update_subparsers = update_parser.add_subparsers(dest="update_command", required=True)
@@ -62,12 +91,55 @@ def main(argv: list[str] | None = None) -> int:
         print(__version__)
         return 0
 
-    if args.command == "doctor":
-        payload = container.health_service.collect()
+    if args.command == "init":
+        payload = container.configuration_service.initialize(force=args.force)
         return _emit(payload, args.format)
+
+    if args.command in {"doctor", "status"}:
+        payload = container.status_service.collect()
+        return _emit(payload, args.format)
+
+    if args.command == "preflight":
+        payload = container.preflight_service.inspect().to_dict()
+        return _emit(payload, args.format)
+
+    if args.command == "reconcile":
+        report = container.reconcile_service.reconcile()
+        exit_code = 0 if report.can_activate else 1
+        _emit(report.to_dict(), args.format)
+        return exit_code
 
     if args.command == "serve":
         return container.runtime_agent.serve(once=args.once)
+
+    if args.command == "transport" and args.transport_command == "list":
+        discovery = container.plugin_registry.discover(container.settings.plugins_dir)
+        payload = {
+            "plugins": [
+                {
+                    "plugin_id": plugin.manifest.plugin_id,
+                    "display_name": plugin.manifest.display_name,
+                    "namespace": plugin.manifest.namespace,
+                    "source": plugin.source,
+                    "required_config": plugin.manifest.required_config,
+                    "optional_config": plugin.manifest.optional_config,
+                    "custom_functions": plugin.manifest.custom_functions,
+                    "exposed_functions": plugin.manifest.exposed_functions,
+                }
+                for plugin in discovery.plugins.values()
+            ],
+            "issues": [issue.to_dict() for issue in discovery.issues],
+        }
+        return _emit(payload, args.format)
+
+    if args.command == "transport" and args.transport_command == "scaffold":
+        output_dir = Path(args.output) if args.output else None
+        result = container.configuration_service.scaffold_transport(
+            plugin_id=args.plugin_id,
+            output_dir=output_dir,
+            force=args.force,
+        )
+        return _emit(result.to_dict(), args.format)
 
     if args.command == "update" and args.update_command == "check":
         notice = container.update_service.check(
@@ -225,11 +297,23 @@ def _emit(payload: dict[str, object], output_format: str) -> int:
 
 def _render_text(payload: dict[str, object]) -> str:
     lines: list[str] = []
-    for key, value in payload.items():
-        if isinstance(value, dict):
-            lines.append(f"{key}:")
-            for nested_key, nested_value in value.items():
-                lines.append(f"  {nested_key}: {nested_value}")
-        else:
-            lines.append(f"{key}: {value}")
+    _append_lines(lines, payload)
     return "\n".join(lines)
+
+
+def _append_lines(lines: list[str], payload: dict[str, object], prefix: str = "") -> None:
+    for key, value in payload.items():
+        label = f"{prefix}{key}"
+        if isinstance(value, dict):
+            lines.append(f"{label}:")
+            _append_lines(lines, value, prefix=f"{label}.")
+        elif isinstance(value, list):
+            lines.append(f"{label}:")
+            for index, item in enumerate(value):
+                if isinstance(item, dict):
+                    lines.append(f"  [{index}]")
+                    _append_lines(lines, item, prefix="    ")
+                else:
+                    lines.append(f"  - {item}")
+        else:
+            lines.append(f"{label}: {value}")

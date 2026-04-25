@@ -17,7 +17,7 @@
 
 Nagient is building a lightweight agent runtime with a distribution model ready from the start: Docker image delivery, `sh` and `ps1` installers, centralized update manifests, and CI/CD around tagged releases.
 
-The core agent assembly is still in progress. What already exists here is the platform layer around it: release automation, update center, installation scripts, Docker runtime scaffold, test lanes, and repository structure for future agent development.
+The core agent assembly is still in progress. What already exists here is the platform layer around it: release automation, update center, installation scripts, Docker runtime scaffold, config bootstrap and reconcile commands, transport plugin scaffolds, test lanes, and repository structure for future agent development.
 
 ## Quick Links
 
@@ -34,3 +34,21 @@ pwsh -Command "iwr <update-base-url>/<tag>/install.ps1 -UseBasicParsing | iex"
 ```
 
 Detailed setup, variables, release flow, and domain configuration live in [developer/README.md](developer/README.md).
+
+## Runtime Bootstrap
+
+Nagient now uses a unified bootstrap flow across local CLI and Docker:
+
+```bash
+nagient init
+nagient preflight --format json
+nagient reconcile --format json
+```
+
+The same runtime layout is used everywhere:
+
+- `config.toml` for non-secret runtime configuration
+- `secrets.env` for transport/provider secrets
+- `plugins/` for custom Python transport plugins
+
+See [developer/README.md](developer/README.md) for the full command reference and Docker/Compose layout.

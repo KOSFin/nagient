@@ -15,9 +15,9 @@
 
 > Легковесная Docker-native агентная платформа с централизованными обновлениями, скриптовой установкой и релизами по тегам.
 
-Nagient строится как лёгкий агент с нормальной системой доставки с первого дня: Docker image, установщики `sh` и `ps1`, централизованный update center и CI/CD вокруг tag-based релизов.
+Nagient строится как лёгкий агент с нормальной системой доставки с первого дня: Docker image, установщики `sh` и `ps1`, централизованный update center, единый bootstrap/reconcile слой конфигурации и CI/CD вокруг tag-based релизов.
 
-Основная агентная сборка ещё в процессе. Зато платформа вокруг неё уже поднята: release automation, update center, install/update-скрипты, Docker runtime scaffold, тестовые контуры и структура репозитория для дальнейшей разработки.
+Основная агентная сборка ещё в процессе. Зато платформа вокруг неё уже поднята: release automation, update center, install/update-скрипты, Docker runtime scaffold, команды инициализации и проверки конфига, шаблоны транспортных плагинов, тестовые контуры и структура репозитория для дальнейшей разработки.
 
 ## Быстрые ссылки
 
@@ -34,3 +34,19 @@ pwsh -Command "iwr <update-base-url>/<tag>/install.ps1 -UseBasicParsing | iex"
 ```
 
 Вся эксплуатационная документация, переменные, release flow и настройка домена вынесены в [developer/README.md](developer/README.md).
+
+## Bootstrap и запуск
+
+Теперь Nagient использует единый цикл первичной настройки для CLI и Docker:
+
+```bash
+nagient init
+nagient preflight --format json
+nagient reconcile --format json
+```
+
+Базовая layout-модель везде одна и та же:
+
+- `config.toml` для обычного runtime-конфига
+- `secrets.env` для секретов транспортов и провайдеров
+- `plugins/` для пользовательских Python transport plugins

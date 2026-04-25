@@ -10,6 +10,8 @@ $UpdateBaseUrl = if ($env:NAGIENT_UPDATE_BASE_URL) { $env:NAGIENT_UPDATE_BASE_UR
 $ComposeFile = Join-Path $NagientHome "docker-compose.yml"
 $EnvFile = Join-Path $NagientHome ".env"
 $ConfigFile = Join-Path $NagientHome "config.toml"
+$SecretsFile = Join-Path $NagientHome "secrets.env"
+$PluginsDir = Join-Path $NagientHome "plugins"
 $ReleasesDir = Join-Path $NagientHome "releases"
 $BinDir = Join-Path $NagientHome "bin"
 
@@ -53,7 +55,7 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
   throw "Docker is required."
 }
 
-New-Item -ItemType Directory -Force -Path $NagientHome, $ReleasesDir, $BinDir, (Join-Path $NagientHome "runtime") | Out-Null
+New-Item -ItemType Directory -Force -Path $NagientHome, $ReleasesDir, $BinDir, $PluginsDir, (Join-Path $NagientHome "runtime") | Out-Null
 
 $channelPayload = Join-Path ([System.IO.Path]::GetTempPath()) "nagient-channel.json"
 $manifestPayload = Join-Path ([System.IO.Path]::GetTempPath()) "nagient-manifest.json"
@@ -82,10 +84,41 @@ base_url = "$UpdateBaseUrl"
 
 [runtime]
 heartbeat_interval_seconds = 30
+safe_mode = true
 
 [docker]
 project_name = "nagient"
+
+[paths]
+secrets_file = "$SecretsFile"
+plugins_dir = "$PluginsDir"
+
+[transports.console]
+plugin = "builtin.console"
+enabled = true
+
+[transports.webhook]
+plugin = "builtin.webhook"
+enabled = false
+listen_host = "0.0.0.0"
+listen_port = 8080
+path = "/events"
+shared_secret_name = "NAGIENT_WEBHOOK_SHARED_SECRET"
+
+[transports.telegram]
+plugin = "builtin.telegram"
+enabled = false
+bot_token_secret = "TELEGRAM_BOT_TOKEN"
+default_chat_id = ""
 "@ | Set-Content -Path $ConfigFile -Encoding utf8
+}
+
+if (-not (Test-Path $SecretsFile)) {
+  @"
+# Fill only the secrets you actually use.
+# TELEGRAM_BOT_TOKEN=
+# NAGIENT_WEBHOOK_SHARED_SECRET=
+"@ | Set-Content -Path $SecretsFile -Encoding utf8
 }
 
 @"
@@ -94,6 +127,7 @@ NAGIENT_CHANNEL=$Channel
 NAGIENT_UPDATE_BASE_URL=$UpdateBaseUrl
 NAGIENT_CONTAINER_NAME=nagient
 NAGIENT_DOCKER_PROJECT_NAME=nagient
+NAGIENT_SAFE_MODE=true
 "@ | Set-Content -Path $EnvFile -Encoding utf8
 
 docker compose -f $ComposeFile --env-file $EnvFile pull
