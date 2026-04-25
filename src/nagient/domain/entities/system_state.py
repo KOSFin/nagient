@@ -227,8 +227,8 @@ class ActivationReport:
     can_activate: bool
     transports: list[TransportState] = field(default_factory=list)
     providers: list[ProviderState] = field(default_factory=list)
-    tools: list["ToolState"] = field(default_factory=list)
-    workspace: "WorkspaceState | None" = None
+    tools: list[ToolState] = field(default_factory=list)
+    workspace: WorkspaceState | None = None
     issues: list[CheckIssue] = field(default_factory=list)
     notices: list[str] = field(default_factory=list)
     effective_config: dict[str, object] = field(default_factory=dict)

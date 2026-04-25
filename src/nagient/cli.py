@@ -466,7 +466,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "approval" and args.approval_command == "list":
         payload = {
-            "approvals": [request.to_dict() for request in container.workflow_service.list_approvals()]
+            "approvals": [
+                request.to_dict()
+                for request in container.workflow_service.list_approvals()
+            ]
         }
         return _emit(payload, args.format)
 

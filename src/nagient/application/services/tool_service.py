@@ -12,12 +12,15 @@ from nagient.app.configuration import (
 from nagient.app.settings import Settings
 from nagient.backups.manager import BackupManager
 from nagient.domain.entities.agent_runtime import AssistantResponse
-from nagient.domain.entities.security import ApprovalRequest, InteractionRequest, PostSubmitAction
+from nagient.domain.entities.security import ApprovalRequest, PostSubmitAction
 from nagient.domain.entities.system_state import CheckIssue
 from nagient.domain.entities.tooling import ToolExecutionRequest, ToolExecutionResult, ToolState
 from nagient.security.broker import SecretBroker
-from nagient.tools.base import LoadedToolPlugin
-from nagient.tools.base import ToolExecutionContext, ToolRiskDecision
+from nagient.tools.base import (
+    LoadedToolPlugin,
+    ToolExecutionContext,
+    ToolRiskDecision,
+)
 from nagient.tools.manager import ToolManager
 from nagient.tools.registry import ToolPluginRegistry
 from nagient.workspace.manager import WorkspaceManager
@@ -164,7 +167,14 @@ class ToolService:
                                 )
                             ],
                         )
-                        for request, tool_config, _plugin, _risk, _needs_checkpoint, _policy in prepared
+                        for (
+                            request,
+                            tool_config,
+                            _plugin,
+                            _risk,
+                            _needs_checkpoint,
+                            _policy,
+                        ) in prepared
                     ],
                     None,
                 )
@@ -197,7 +207,7 @@ class ToolService:
                     )
                 )
                 results.append(
-                ToolExecutionResult(
+                    ToolExecutionResult(
                         tool_id=tool_config.tool_id,
                         function_name=request.function_name,
                         status="approval_required",

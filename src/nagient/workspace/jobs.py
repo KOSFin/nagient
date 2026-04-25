@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from nagient.domain.entities.jobs import JobRecord
@@ -38,7 +38,7 @@ class JobStore:
         return jobs
 
     def due(self, now: datetime | None = None) -> list[JobRecord]:
-        current = now or datetime.now(tz=timezone.utc)
+        current = now or datetime.now(tz=UTC)
         due_jobs: list[JobRecord] = []
         for job in self.list():
             if job.status not in {"pending", "scheduled"}:
@@ -57,9 +57,9 @@ class JobStore:
 
 def _parse_time(value: str | None) -> datetime:
     if value is None:
-        return datetime.fromtimestamp(0, tz=timezone.utc)
+        return datetime.fromtimestamp(0, tz=UTC)
     normalized = value.replace("Z", "+00:00")
     parsed = datetime.fromisoformat(normalized)
     if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)

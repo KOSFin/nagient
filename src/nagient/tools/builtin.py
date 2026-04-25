@@ -11,8 +11,8 @@ from typing import Protocol, cast
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from nagient.domain.entities.system_state import CheckIssue
 from nagient.domain.entities.security import InteractionRequest, PostSubmitAction
+from nagient.domain.entities.system_state import CheckIssue
 from nagient.domain.entities.tooling import ToolFunctionManifest, ToolPluginManifest
 from nagient.tools.base import (
     BaseToolPlugin,

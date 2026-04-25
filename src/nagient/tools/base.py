@@ -16,7 +16,7 @@ from nagient.workspace.manager import WorkspaceLayout, WorkspaceManager
 @dataclass(frozen=True)
 class LoadedToolPlugin:
     manifest: ToolPluginManifest
-    implementation: "BaseToolPlugin"
+    implementation: BaseToolPlugin
     source: str
 
 

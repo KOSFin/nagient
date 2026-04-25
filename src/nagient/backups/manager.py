@@ -112,7 +112,10 @@ class BackupManager:
             archive_path = Path(temp_dir) / "snapshot.tar"
             export_dir = Path(temp_dir) / "export"
             export_dir.mkdir(parents=True, exist_ok=True)
-            self._git(["archive", "--format=tar", snapshot_id, "-o", str(archive_path)], cwd=repo_dir)
+            self._git(
+                ["archive", "--format=tar", snapshot_id, "-o", str(archive_path)],
+                cwd=repo_dir,
+            )
             with tarfile.open(archive_path) as archive:
                 archive.extractall(export_dir)
             self._sync_tree(export_dir, layout.root, preserve={".git"})
@@ -154,7 +157,10 @@ class BackupManager:
         output_path.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory() as temp_dir:
             archive_path = Path(temp_dir) / "snapshot.tar"
-            self._git(["archive", "--format=tar", snapshot_id, "-o", str(archive_path)], cwd=repo_dir)
+            self._git(
+                ["archive", "--format=tar", snapshot_id, "-o", str(archive_path)],
+                cwd=repo_dir,
+            )
             with tarfile.open(archive_path) as archive:
                 archive.extractall(output_path)
         return output_path
