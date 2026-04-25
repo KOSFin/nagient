@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 import json
 import signal
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
