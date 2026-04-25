@@ -5,7 +5,11 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from nagient.app.configuration import ProviderInstanceConfig, RuntimeConfiguration, load_runtime_configuration
+from nagient.app.configuration import (
+    ProviderInstanceConfig,
+    RuntimeConfiguration,
+    load_runtime_configuration,
+)
 from nagient.app.settings import Settings
 from nagient.domain.entities.system_state import CredentialRecord, ProviderState
 from nagient.providers.base import LoadedProviderPlugin
