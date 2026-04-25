@@ -37,9 +37,13 @@ class UrlopenLike(Protocol):
     ) -> ResponseContextManager: ...
 
 
+def _default_urlopen(request: Request, timeout: float = 15.0) -> ResponseContextManager:
+    return urlopen(request, timeout=timeout)
+
+
 @dataclass(frozen=True)
 class JsonHttpClient:
-    opener: UrlopenLike = urlopen
+    opener: UrlopenLike = _default_urlopen
     default_timeout: float = 15.0
 
     def get_json(

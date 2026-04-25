@@ -8,6 +8,7 @@ from pathlib import Path
 
 from nagient.domain.entities.system_state import CheckIssue
 from nagient.providers.base import (
+    BaseProviderPlugin,
     REQUIRED_PROVIDER_METHODS,
     LoadedProviderPlugin,
     ProviderPluginManifest,
@@ -95,6 +96,10 @@ class ProviderPluginRegistry:
             raise ValueError("Provider entrypoint must export callable build_plugin().")
 
         implementation = factory()
+        if not isinstance(implementation, BaseProviderPlugin):
+            raise ValueError(
+                "Provider entrypoint build_plugin() must return BaseProviderPlugin."
+            )
         return LoadedProviderPlugin(
             manifest=manifest,
             implementation=implementation,
@@ -186,4 +191,3 @@ def _require_string_list(value: object) -> list[str]:
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
         raise ValueError("Provider plugin lists must contain only strings.")
     return list(value)
-

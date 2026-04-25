@@ -235,12 +235,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "provider" and args.provider_command == "scaffold":
         output_dir = Path(args.output) if args.output else None
-        result = container.configuration_service.scaffold_provider(
+        provider_result = container.configuration_service.scaffold_provider(
             plugin_id=args.plugin_id,
             output_dir=output_dir,
             force=args.force,
         )
-        return _emit(result.to_dict(), args.format)
+        return _emit(provider_result.to_dict(), args.format)
 
     if args.command == "provider" and args.provider_command == "models":
         payload = container.provider_service.list_models(args.provider_id)

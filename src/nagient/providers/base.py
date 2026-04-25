@@ -47,7 +47,7 @@ class ProviderPluginManifest:
 @dataclass(frozen=True)
 class LoadedProviderPlugin:
     manifest: ProviderPluginManifest
-    implementation: object
+    implementation: BaseProviderPlugin
     source: str
 
 
@@ -140,4 +140,3 @@ class BaseProviderPlugin:
     ) -> list[ProviderModel]:
         del provider_id, config, secrets, credential
         return []
-
