@@ -223,7 +223,10 @@ class PreflightService:
                     code="runtime.no_ready_providers",
                     message="No enabled providers are authenticated and ready.",
                     source="runtime",
-                    hint="Run nagient auth status and nagient auth login after fixing provider config.",
+                    hint=(
+                        "Run nagient auth status and nagient auth login after fixing "
+                        "provider config."
+                    ),
                 )
             )
 

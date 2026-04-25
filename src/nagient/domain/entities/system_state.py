@@ -98,7 +98,7 @@ class CredentialRecord:
         return payload
 
     @classmethod
-    def from_dict(cls, payload: dict[str, object]) -> "CredentialRecord":
+    def from_dict(cls, payload: dict[str, object]) -> CredentialRecord:
         data = payload.get("data", {})
         return cls(
             provider_id=str(payload.get("provider_id", "")),
@@ -150,7 +150,7 @@ class AuthSessionState:
         return payload
 
     @classmethod
-    def from_dict(cls, payload: dict[str, object]) -> "AuthSessionState":
+    def from_dict(cls, payload: dict[str, object]) -> AuthSessionState:
         metadata = payload.get("metadata", {})
         instructions = payload.get("instructions", [])
         poll_interval_seconds = payload.get("poll_interval_seconds")
@@ -161,7 +161,11 @@ class AuthSessionState:
             auth_mode=str(payload.get("auth_mode", "")),
             status=str(payload.get("status", "")),
             submission_mode=str(payload.get("submission_mode", "")),
-            instructions=[str(item) for item in instructions] if isinstance(instructions, list) else [],
+            instructions=(
+                [str(item) for item in instructions]
+                if isinstance(instructions, list)
+                else []
+            ),
             authorization_url=(
                 str(payload["authorization_url"])
                 if "authorization_url" in payload

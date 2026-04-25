@@ -45,7 +45,11 @@ class ProviderService:
                 "issues": [issue.to_dict() for issue in discovery.issues],
             }
 
-        provider_config, plugin = self._resolve_provider(runtime_config, discovery.plugins, provider_id)
+        provider_config, plugin = self._resolve_provider(
+            runtime_config,
+            discovery.plugins,
+            provider_id,
+        )
         state = self._inspect_provider(
             runtime_config,
             plugin,
@@ -60,10 +64,15 @@ class ProviderService:
     def list_models(self, provider_id: str) -> dict[str, object]:
         runtime_config = load_runtime_configuration(self.settings)
         discovery = self.provider_registry.discover(self.settings.providers_dir)
-        provider_config, plugin = self._resolve_provider(runtime_config, discovery.plugins, provider_id)
+        provider_config, plugin = self._resolve_provider(
+            runtime_config,
+            discovery.plugins,
+            provider_id,
+        )
         if "list_models" not in plugin.manifest.capabilities:
             raise ValueError(
-                f"Provider plugin {plugin.manifest.plugin_id!r} does not support model discovery."
+                f"Provider plugin {plugin.manifest.plugin_id!r} does not support "
+                "model discovery."
             )
         credential = self.credential_store.load(provider_config.provider_id)
         models = plugin.implementation.list_models(
@@ -88,7 +97,11 @@ class ProviderService:
     ) -> dict[str, object]:
         runtime_config = load_runtime_configuration(self.settings)
         discovery = self.provider_registry.discover(self.settings.providers_dir)
-        provider_config, plugin = self._resolve_provider(runtime_config, discovery.plugins, provider_id)
+        provider_config, plugin = self._resolve_provider(
+            runtime_config,
+            discovery.plugins,
+            provider_id,
+        )
         auth_mode = _auth_mode(provider_config.config, plugin.manifest.default_auth_mode)
 
         if auth_mode == "none":
@@ -105,7 +118,11 @@ class ProviderService:
                     prompt=f"Enter API key for provider {provider_id}: "
                 ).strip()
             if not resolved_api_key:
-                resolved_secret_name = self._secret_name(provider_config.config, plugin, secret_name)
+                resolved_secret_name = self._secret_name(
+                    provider_config.config,
+                    plugin,
+                    secret_name,
+                )
                 return {
                     "provider_id": provider_id,
                     "auth_mode": auth_mode,
@@ -116,7 +133,11 @@ class ProviderService:
                         "or add the key to secrets.env manually."
                     ),
                 }
-            resolved_secret_name = self._secret_name(provider_config.config, plugin, secret_name)
+            resolved_secret_name = self._secret_name(
+                provider_config.config,
+                plugin,
+                secret_name,
+            )
             if resolved_secret_name is None:
                 raise ValueError(
                     f"Provider {provider_id!r} does not define api_key_secret and has no "
@@ -188,7 +209,11 @@ class ProviderService:
     ) -> dict[str, object]:
         runtime_config = load_runtime_configuration(self.settings)
         discovery = self.provider_registry.discover(self.settings.providers_dir)
-        provider_config, plugin = self._resolve_provider(runtime_config, discovery.plugins, provider_id)
+        provider_config, plugin = self._resolve_provider(
+            runtime_config,
+            discovery.plugins,
+            provider_id,
+        )
         session = self.auth_session_store.load(session_id)
         if session is None:
             raise ValueError(f"Auth session {session_id!r} was not found.")
@@ -218,7 +243,11 @@ class ProviderService:
     def logout(self, provider_id: str) -> dict[str, object]:
         runtime_config = load_runtime_configuration(self.settings)
         discovery = self.provider_registry.discover(self.settings.providers_dir)
-        provider_config, plugin = self._resolve_provider(runtime_config, discovery.plugins, provider_id)
+        provider_config, plugin = self._resolve_provider(
+            runtime_config,
+            discovery.plugins,
+            provider_id,
+        )
         auth_mode = _auth_mode(provider_config.config, plugin.manifest.default_auth_mode)
         credential = self.credential_store.load(provider_id)
         plugin.implementation.logout(provider_id, provider_config.config, credential)
@@ -266,7 +295,11 @@ class ProviderService:
         provider_id: str,
     ):
         provider_config = next(
-            (provider for provider in runtime_config.providers if provider.provider_id == provider_id),
+            (
+                provider
+                for provider in runtime_config.providers
+                if provider.provider_id == provider_id
+            ),
             None,
         )
         if provider_config is None:

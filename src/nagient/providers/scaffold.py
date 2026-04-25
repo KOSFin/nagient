@@ -66,7 +66,10 @@ def _render_manifest(plugin_id: str) -> str:
             'capabilities = ["list_models", "api_key_auth"]',
             "",
             'required_config = ["base_url"]',
-            'optional_config = ["auth", "api_key_secret", "model", "models_path", "timeout_seconds"]',
+            (
+                'optional_config = ["auth", "api_key_secret", "model", '
+                '"models_path", "timeout_seconds"]'
+            ),
             'secret_config = ["api_key_secret"]',
             'credential_fields = ["access_token", "refresh_token", "expires_at"]',
             "",
@@ -229,7 +232,10 @@ def _render_provider_python(plugin_id: str) -> str:
             '            submission_mode="callback_url",',
             "            instructions=[",
             '                "Open the authorization URL in a browser.",',
-            '                "After signing in, paste the callback URL into `nagient auth complete`.",',
+            (
+                '                "After signing in, paste the callback URL into '
+                '`nagient auth complete`.",'
+            ),
             "            ],",
             '            authorization_url="https://example.invalid/oauth/start",',
             '            callback_url="https://example.invalid/oauth/callback",',
@@ -322,7 +328,10 @@ def _render_test_file() -> str:
             "class ProviderContractTests(unittest.TestCase):",
             "    def test_build_plugin_returns_object_with_required_methods(self) -> None:",
             "        provider_path = Path(__file__).resolve().parents[1] / 'provider.py'",
-            "        spec = importlib.util.spec_from_file_location('scaffold_provider', provider_path)",
+            (
+                "        spec = importlib.util.spec_from_file_location("
+                "'scaffold_provider', provider_path)"
+            ),
             "        self.assertIsNotNone(spec)",
             "        self.assertIsNotNone(spec.loader)",
             "        module = importlib.util.module_from_spec(spec)",
