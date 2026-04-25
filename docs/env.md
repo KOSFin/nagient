@@ -1,29 +1,31 @@
 # Environment Variables
 
+Language: English | [Русский](env.ru.md)
+
 ## 1. Installer variables
 
-| Переменная | Назначение | Значение по умолчанию |
+| Variable | Purpose | Default |
 | --- | --- | --- |
-| `NAGIENT_HOME` | Корень runtime | `~/.nagient` |
-| `NAGIENT_CHANNEL` | Канал обновлений | `stable` |
-| `NAGIENT_UPDATE_BASE_URL` | URL update center | встроен в release installer |
+| `NAGIENT_HOME` | Runtime root | `~/.nagient` |
+| `NAGIENT_CHANNEL` | Update channel | `stable` |
+| `NAGIENT_UPDATE_BASE_URL` | Update center URL | Embedded in release installer |
 
-## 2. Compose .env variables
+## 2. Docker Compose `.env` variables
 
-Файл: `~/.nagient/.env`
+File: `~/.nagient/.env`
 
-| Переменная | Назначение | Пример |
+| Variable | Purpose | Example |
 | --- | --- | --- |
-| `NAGIENT_IMAGE` | Тег контейнера | `docker.io/parampo/nagient:0.1.0` |
-| `NAGIENT_CHANNEL` | Канал обновлений | `stable` |
-| `NAGIENT_UPDATE_BASE_URL` | Базовый URL update center | `https://ngnt-in.ruka.me` |
-| `NAGIENT_CONTAINER_NAME` | Имя контейнера | `nagient` |
-| `NAGIENT_DOCKER_PROJECT_NAME` | Имя compose проекта | `nagient` |
+| `NAGIENT_IMAGE` | Container image tag | `docker.io/parampo/nagient:0.1.0` |
+| `NAGIENT_CHANNEL` | Update channel | `stable` |
+| `NAGIENT_UPDATE_BASE_URL` | Base update center URL | `https://ngnt-in.ruka.me` |
+| `NAGIENT_CONTAINER_NAME` | Container name | `nagient` |
+| `NAGIENT_DOCKER_PROJECT_NAME` | Compose project name | `nagient` |
 | `NAGIENT_SAFE_MODE` | Safe mode | `true` |
-| `NAGIENT_WORKSPACE_ROOT` | Рабочая директория | `/workspace` |
-| `NAGIENT_HEARTBEAT_INTERVAL` | Heartbeat в секундах | `30` |
+| `NAGIENT_WORKSPACE_ROOT` | Workspace root | `/workspace` |
+| `NAGIENT_HEARTBEAT_INTERVAL` | Heartbeat interval (seconds) | `30` |
 
-## 3. Runtime variables (читаются приложением)
+## 3. Runtime variables (used by the app)
 
 ### 3.1 Paths
 
@@ -39,7 +41,7 @@
 - `NAGIENT_LOG_DIR`
 - `NAGIENT_RELEASES_DIR`
 
-### 3.2 Поведение runtime
+### 3.2 Runtime behavior
 
 - `NAGIENT_CHANNEL`
 - `NAGIENT_UPDATE_BASE_URL`
@@ -47,10 +49,10 @@
 - `NAGIENT_DOCKER_PROJECT_NAME`
 - `NAGIENT_SAFE_MODE`
 
-### 3.3 Workspace и агент
+### 3.3 Workspace and agent
 
 - `NAGIENT_WORKSPACE_ROOT`
-- `NAGIENT_WORKSPACE_MODE` (`bounded` или `unsafe`)
+- `NAGIENT_WORKSPACE_MODE` (`bounded` or `unsafe`)
 - `NAGIENT_AGENT_DEFAULT_PROVIDER`
 - `NAGIENT_AGENT_REQUIRE_PROVIDER`
 

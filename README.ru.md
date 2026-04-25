@@ -11,9 +11,9 @@
 
 🇷🇺 Русский | 🇺🇸 [English](README.md)
 
-Легковесная Docker-native агентная платформа с централизованными обновлениями, скриптовой установкой и релизами по тегам.
+Docker-native агентная платформа с централизованными обновлениями, скриптовой установкой и релизами по тегам.
 
-Nagient рассчитан на быстрый запуск и предсказуемые обновления на Linux, macOS и Windows.
+Nagient рассчитан на предсказуемый запуск и обновления на Linux, macOS и Windows.
 
 ## Установка последней стабильной версии
 
@@ -43,9 +43,10 @@ docker pull docker.io/parampo/nagient:latest
 ~/.nagient/bin/nagientctl help
 ```
 
-Подробная документация по установке, CLI и конфигурации:
+Подробная документация:
 
-- [docs/README.md](docs/README.md)
+- Индекс на английском: [docs/README.md](docs/README.md)
+- Индекс на русском: [docs/README.ru.md](docs/README.ru.md)
 
 ## Обновление и удаление
 
@@ -118,8 +119,6 @@ flowchart LR
 
 ## Дополнительно
 
-- Архитектура: [docs/architecture.ru.md](docs/architecture.ru.md)
-- English architecture notes: [docs/architecture.md](docs/architecture.md)
+- Архитектура (RU): [docs/architecture.ru.md](docs/architecture.ru.md)
+- Архитектура (EN): [docs/architecture.md](docs/architecture.md)
 - Лицензия: [LICENSE](LICENSE)
-
-Сделано с любовью и уважением к времени пользователя.

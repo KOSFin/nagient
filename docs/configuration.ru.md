@@ -1,12 +1,12 @@
-# Configuration
+# Конфигурация
 
-Language: English | [Русский](configuration.ru.md)
+Язык: [English](configuration.md) | Русский
 
-## 1. Runtime location
+## 1. Расположение runtime
 
-Base path: `~/.nagient`
+Базовый путь: `~/.nagient`
 
-Layout:
+Структура:
 
 ```text
 ~/.nagient/
@@ -24,13 +24,13 @@ Layout:
   releases/
 ```
 
-## 2. Minimal working flow
+## 2. Минимальный рабочий сценарий
 
-1. Install Nagient.
-2. Open `~/.nagient/config.toml`.
-3. Enable required provider.
-4. Add provider secret to `~/.nagient/secrets.env`.
-5. Run:
+1. Установить Nagient.
+2. Открыть `~/.nagient/config.toml`.
+3. Включить нужного provider.
+4. Добавить секрет в `~/.nagient/secrets.env`.
+5. Выполнить:
 
 ```bash
 ~/.nagient/bin/nagientctl preflight
@@ -38,7 +38,7 @@ Layout:
 ~/.nagient/bin/nagientctl status
 ```
 
-## 3. Example `config.toml`
+## 3. Пример `config.toml`
 
 ```toml
 [updates]
@@ -80,7 +80,7 @@ plugin = "workspace.git"
 enabled = true
 ```
 
-## 4. Secrets
+## 4. Секреты
 
 `secrets.env`:
 
@@ -99,9 +99,9 @@ NAGIENT_WEBHOOK_SHARED_SECRET=
 GITHUB_TOKEN=
 ```
 
-## 5. First checks
+## 5. Что проверить в первую очередь
 
-- `safe_mode = true` in `runtime`
-- `updates.base_url` points to your update center
-- required provider is enabled via `providers.<id>.enabled = true`
-- matching API key exists in `secrets.env`
+- `safe_mode = true` в секции `runtime`
+- корректный `updates.base_url`
+- нужный provider включен через `providers.<id>.enabled = true`
+- соответствующий ключ есть в `secrets.env`

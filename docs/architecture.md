@@ -1,5 +1,7 @@
 # Architecture Notes
 
+Language: English | [Русский](architecture.ru.md)
+
 Nagient is split into a narrow control surface and a centralized release/update model.
 
 ## Layers
@@ -60,7 +62,7 @@ Nagient now has a structured turn contract instead of only a heartbeat placehold
 - `ApprovalRequest`
 - `AgentTurnResult`
 
-This layer is intentionally narrow: it separates the user-facing assistant message from tool calls, approvals, secure interactions, and config mutation intents.
+This layer is intentionally narrow: it separates the user-facing assistant message from tool calls, approvals, secure interactions, and configuration mutation intents.
 
 ## Workspace And Security
 

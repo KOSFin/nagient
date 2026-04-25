@@ -1,5 +1,7 @@
 # Архитектурные заметки
 
+Язык: [English](architecture.md) | Русский
+
 Nagient разделён на узкую control-surface часть и централизованную release/update модель.
 
 ## Слои

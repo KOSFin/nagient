@@ -1,8 +1,8 @@
-# Nagient Docs
+# Nagient Documentation
 
-Коротко: теперь для установки и управления есть короткие команды без длинных compose-строк.
+Language: English | [Русский](README.ru.md)
 
-## Быстрый старт
+## Quick Start
 
 Linux/macOS:
 
@@ -20,19 +20,11 @@ powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagientctl.ps1" up
 powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagientctl.ps1" status
 ```
 
-## Навигация
+## Navigation
 
-- Установка и обновления: [install.md](install.md)
-- Короткие и полные команды: [commands.md](commands.md)
-- Настройка config и secrets: [configuration.md](configuration.md)
-- Справочник переменных окружения: [env.md](env.md)
-- Частые проблемы и решения: [troubleshooting.md](troubleshooting.md)
-- Архитектура: [architecture.ru.md](architecture.ru.md)
-
-## Что изменилось
-
-- Добавлен bootstrap installer в корень update center: `install.sh` и `install.ps1`.
-- Добавлен `nagientctl` (bash) и `nagientctl.ps1` (PowerShell) для короткого управления.
-- Документация разделена на тематические страницы.
-
-Сделано с любовью и уважением к времени пользователя.
+- Installation and updates: [install.md](install.md)
+- Runtime and CLI commands: [commands.md](commands.md)
+- Configuration and secrets: [configuration.md](configuration.md)
+- Environment variables: [env.md](env.md)
+- Troubleshooting: [troubleshooting.md](troubleshooting.md)
+- Architecture: [architecture.md](architecture.md)

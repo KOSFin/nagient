@@ -1,11 +1,11 @@
-# Install
+# Установка
 
-Language: English | [Русский](install.ru.md)
+Язык: [English](install.md) | Русский
 
-Update center URL: `https://ngnt-in.ruka.me`
+URL update center: `https://ngnt-in.ruka.me`
 Docker image: `docker.io/parampo/nagient`
 
-## 1. Install latest
+## 1. Установка latest
 
 Linux/macOS:
 
@@ -19,15 +19,15 @@ Windows PowerShell:
 irm https://ngnt-in.ruka.me/install.ps1 | iex
 ```
 
-What the installer does:
+Что делает установщик:
 
-1. Reads `channels/stable.json`.
-2. Resolves the latest version.
-3. Downloads versioned `install.sh` or `install.ps1`.
-4. Creates runtime in `~/.nagient`.
-5. Starts the container via Docker Compose.
+1. Читает `channels/stable.json`.
+2. Определяет актуальную версию.
+3. Скачивает версионные `install.sh` или `install.ps1`.
+4. Создаёт runtime в `~/.nagient`.
+5. Поднимает контейнер через Docker Compose.
 
-## 2. Install a specific version
+## 2. Установка конкретной версии
 
 Linux/macOS:
 
@@ -41,7 +41,7 @@ Windows:
 Invoke-Expression ((Invoke-WebRequest -UseBasicParsing -Uri "https://ngnt-in.ruka.me/0.1.0/install.ps1").Content)
 ```
 
-## 3. Update
+## 3. Обновление
 
 Linux/macOS:
 
@@ -55,7 +55,7 @@ Windows:
 powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagientctl.ps1" update
 ```
 
-## 4. Remove
+## 4. Удаление
 
 Linux/macOS:
 
@@ -69,7 +69,7 @@ Windows:
 powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagientctl.ps1" remove
 ```
 
-Full data cleanup:
+Полная очистка данных:
 
 Linux/macOS:
 
@@ -84,7 +84,7 @@ $env:NAGIENT_PURGE = "true"
 powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagientctl.ps1" remove
 ```
 
-## 5. Requirements
+## 5. Требования
 
 - Docker Engine 24+
 - Docker Compose v2

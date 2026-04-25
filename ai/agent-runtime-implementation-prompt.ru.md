@@ -1,5 +1,7 @@
 # Implementation Prompt For Next AI Agent
 
+Язык: [English](agent-runtime-implementation-prompt.md) | Русский
+
 Ниже находится рабочий промпт для AI-агента, который будет продолжать разработку Nagient. Этот промпт нужно воспринимать как прямое техническое ТЗ. Он написан так, чтобы новый агент мог начать работу, имея доступ только к текущему репозиторию и его файлам.
 
 ---
@@ -14,7 +16,7 @@
 
 Перед любыми изменениями обязательно прочитай и пойми:
 
-- [ai/README.md](./README.md)
+- [ai/README.ru.md](./README.ru.md)
 - [docs/architecture.ru.md](../docs/architecture.ru.md)
 - [docs/architecture.md](../docs/architecture.md)
 - [README.ru.md](../README.ru.md)
@@ -620,7 +622,7 @@ Approval flow должен уметь жить поверх текущего tra
 
 Минимально проверь и при необходимости обнови:
 
-- [ai/README.md](./README.md)
+- [ai/README.ru.md](./README.ru.md)
 - [docs/architecture.ru.md](../docs/architecture.ru.md)
 - [docs/architecture.md](../docs/architecture.md)
 - [README.ru.md](../README.ru.md)

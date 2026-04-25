@@ -1,374 +1,116 @@
 # AI Project Context
 
-Этот файл предназначен не для конечного пользователя и не для маркетингового README. Он нужен другим AI-агентам и автоматизированным разработчикам, которые будут продолжать работу над проектом.
+Language: English | [Русский](README.ru.md)
 
-## 1. Намерение проекта
+This document is for AI agents and automation workflows that continue development of Nagient.
 
-Nagient задуман как легковесный агент по типу OpenClaw-подхода, но без типичной ошибки “сначала соберём мозг, а потом как-нибудь задеплоим”. Здесь сначала поднимается delivery/control-plane слой, чтобы позже можно было спокойно собирать runtime, память, инструменты и пользовательские каналы без переделки системы доставки.
+## 1. Project Intent
 
-Пользовательский замысел проекта:
+Nagient is designed as an agent platform with delivery and update contracts first, and runtime intelligence layered on top.
 
-- агент должен устанавливаться через Docker image
-- агент должен устанавливаться через shell-скрипт
-- агент должен устанавливаться через PowerShell-скрипт
-- релизы должны публиковаться автоматически
-- обновления должны управляться централизованно
-- миграции состояния должны быть встроены в модель обновлений
-- в будущем уведомления об обновлениях должны приходить не только в CLI, но и через другие каналы, например Telegram, сайт, терминал и так далее
+Platform goals:
 
-Иными словами: проект это не просто Python service, а будущая агентная платформа с унифицированной схемой распространения и обновления.
+- install through Docker image
+- install through shell script
+- install through PowerShell script
+- publish releases automatically
+- manage updates centrally
+- keep migrations in the release model
+- support future update notifications beyond CLI
 
-## 2. Что уже реализовано
+## 2. Current Scope
 
-На текущем этапе реализован infrastructure scaffold:
+Implemented foundation:
 
-- пакет `nagient` с CLI
-- settings/container/application/domain split
-- bootstrap/reconcile cycle для runtime config
-- transport plugin registry с built-in console/webhook/telegram
-- transport scaffold generator для пользовательских Python plugins
-- tool plugin framework с built-in workspace/shell/git/backup/reconcile/interaction/GitHub tools
-- workspace manager с `.nagient/` layout, bounded/unsafe mode и path guards
-- local backup/checkpoint manager для write-capable tool batches
-- secret broker с отдельным `tool-secrets.env` и metadata/binding model
-- secure interaction и approval workflow stores
-- structured agent turn contract и initial turn executor
-- runtime loop с heartbeat, activation report и workspace/tool metadata
-- semver parser и comparer
-- release/channel manifest entities
-- parser и registry для manifests
-- planner миграций
-- shell и PowerShell install/update/uninstall scripts
-- Dockerfile и docker-compose scaffold
-- release manifest generator
-- GitHub Actions для CI, release и Pages
-- test suite для ключевых инфраструктурных контрактов
+- Python package with CLI entrypoints
+- split between app/application/domain/infrastructure
+- bootstrap and reconcile cycle for runtime activation
+- transport plugin framework and registry
+- provider plugin framework and auth workflows
+- tool plugin framework and built-in workspace tools
+- workspace layout manager and path guards
+- backup and checkpoint management
+- secret broker with redaction boundaries
+- secure interaction and approval workflow stores
+- structured agent turn contract and executor
+- release metadata generation and update center flow
+- CI, release automation, and smoke/integration/unit tests
 
-Это важно: кодовая база пока не реализует полноценного “умного” агента. Она реализует платформенный скелет, на который агент будет навешиваться дальше.
+Important: the repository is still a platform scaffold, not a fully autonomous agent runtime.
 
-## 3. Структура репозитория
+## 3. Repository Map
 
-### Корневые файлы
+Core references:
 
-- [pyproject.toml](../pyproject.toml): packaging, build backend, dev dependencies, tooling config
-- [Makefile](../Makefile): developer entrypoints
-- [Dockerfile](../Dockerfile): container runtime image
-- [README.md](../README.md): краткая публичная шапка
-- [README.ru.md](../README.ru.md): русская краткая шапка
-
-### Код приложения
-
-- [src/nagient/app/settings.py](../src/nagient/app/settings.py)
-  runtime settings, env parsing, config TOML parsing, directory bootstrap
-- [src/nagient/app/container.py](../src/nagient/app/container.py)
-  dependency wiring
-- [src/nagient/application/services/update_service.py](../src/nagient/application/services/update_service.py)
-  update check orchestration
-- [src/nagient/application/services/health_service.py](../src/nagient/application/services/health_service.py)
-  diagnostics payload
-- [src/nagient/infrastructure/registry.py](../src/nagient/infrastructure/registry.py)
-  loading of channel/release manifests from filesystem or URL
-- [src/nagient/infrastructure/manifests.py](../src/nagient/infrastructure/manifests.py)
-  parsing and serialization of manifests
-- [src/nagient/infrastructure/runtime.py](../src/nagient/infrastructure/runtime.py)
-  current placeholder runtime loop
-- [src/nagient/migrations/planner.py](../src/nagient/migrations/planner.py)
-  linear migration planning based on version chain
-- [src/nagient/cli.py](../src/nagient/cli.py)
-  current command surface
-
-### Delivery layer
-
-- [scripts/install.sh](../scripts/install.sh)
-- [scripts/update.sh](../scripts/update.sh)
-- [scripts/uninstall.sh](../scripts/uninstall.sh)
-- [scripts/install.ps1](../scripts/install.ps1)
-- [scripts/update.ps1](../scripts/update.ps1)
-- [scripts/uninstall.ps1](../scripts/uninstall.ps1)
-- [scripts/release/build_release_manifest.py](../scripts/release/build_release_manifest.py)
-
-### Release metadata
-
-- [metadata/update-center/channels/stable.json](../metadata/update-center/channels/stable.json)
-- [metadata/update-center/manifests/0.1.0.json](../metadata/update-center/manifests/0.1.0.json)
-- [metadata/update-center/schema](../metadata/update-center/schema)
-
-### Automation
-
-- [.github/workflows/ci.yml](../.github/workflows/ci.yml)
-- [.github/workflows/release.yml](../.github/workflows/release.yml)
-- [.github/workflows/update-center.yml](../.github/workflows/update-center.yml)
-
-### Tests
-
-- [tests/unit](../tests/unit)
-- [tests/integration](../tests/integration)
-- [tests/smoke](../tests/smoke)
-- [tests/fixtures/update_center](../tests/fixtures/update_center)
-
-## 4. Инварианты, которые нельзя ломать без причины
-
-Есть несколько контрактов, которые для проекта критичнее, чем любая частная реализация.
-
-### 4.1 Update center contract
-
-Установщики и CLI завязаны на две сущности:
-
-1. `channels/<channel>.json`
-2. `manifests/<version>.json`
-
-`channels/<channel>.json` должен указывать на актуальный release manifest канала.
-
-`manifests/<version>.json` должен содержать:
-
-- версию
-- канал
-- дату публикации
-- summary
-- docker image
-- список artifacts
-- список migrations
-- notices
-
-Если AI-агент меняет schema или поля этих документов, он обязан одновременно:
-
-- обновить parser в `src/nagient/infrastructure/manifests.py`
-- обновить генерацию manifest в `src/nagient/cli.py` и/или `scripts/release/build_release_manifest.py`
-- обновить shell и PowerShell installers
-- обновить tests
-
-### 4.2 Tag-driven delivery
-
-Модель доставки основана на теге `vX.Y.Z`. Это не декоративное соглашение, а ядро release flow.
-
-Тег должен соответствовать:
-
-- Python package version
-- Docker tag
-- release manifest version
-- published install assets
-- stable channel pointer при очередном stable release
-
-Если AI-агент меняет release flow, он не должен разрушать эту связность.
-
-### 4.3 Centralized update logic
-
-Обновление не должно определяться локальной магией инсталлятора. Источник правды должен оставаться централизованным. Это значит:
-
-- install scripts читают channel manifest
-- затем читают release manifest
-- затем скачивают compose/install/update assets
-- затем локально сохраняют metadata о текущем релизе
-
-Не уводить проект в сторону “у каждого инсталлятора своя логика версий”.
-
-### 4.4 Bootstrap and reconcile contract
-
-Теперь у проекта есть ещё один важный контракт:
-
-- `config.toml` хранит обычную runtime-конфигурацию
-- `secrets.env` хранит transport/provider secrets
-- `tool-secrets.env` хранит tool/connector secrets
-- `plugins/` хранит пользовательские Python transport plugins
-- `tools/` хранит пользовательские Python tool plugins
-- активный workspace materialize-ит видимую `.nagient/` папку
-- `nagient preflight` не пишет last-known-good, а только проверяет
-- `nagient reconcile` пишет activation report и effective config
-- `nagient serve` перед стартом обязан проходить через reconcile-cycle
-
-Если AI-агент меняет bootstrap contract, он обязан одновременно обновить:
-
+- `src/nagient/cli.py`
 - `src/nagient/app/settings.py`
 - `src/nagient/app/configuration.py`
-- `src/nagient/application/services/preflight_service.py`
-- `src/nagient/application/services/reconcile_service.py`
-- Docker entrypoint
-- install scripts
-- tests
+- `src/nagient/app/container.py`
+- `src/nagient/application/services/`
+- `src/nagient/infrastructure/`
+- `src/nagient/plugins/`
+- `src/nagient/providers/`
+- `src/nagient/tools/`
+- `src/nagient/workspace/`
+- `src/nagient/security/`
+- `src/nagient/migrations/`
 
-### 4.5 Transport plugin contract
+Delivery references:
 
-Transport plugin больше не должен быть “просто произвольным модулем”.
-Теперь контракт такой:
+- `scripts/install.sh`, `scripts/install.ps1`
+- `scripts/update.sh`, `scripts/update.ps1`
+- `scripts/uninstall.sh`, `scripts/uninstall.ps1`
+- `scripts/release/`
+- `metadata/update-center/`
+- `.github/workflows/`
 
-- plugin имеет manifest `plugin.toml`
-- plugin имеет Python entrypoint
-- plugin декларирует обязательные slot bindings
-- plugin может иметь custom namespaced functions
-- plugin должен проходить registry validation и self-tests
-- ошибка transport plugin не должна падать в непойманный crash core-системы
+## 4. Contracts That Must Stay Stable
 
-### 4.6 Tool / workspace / security contract
+- update center contract: `channels/<channel>.json` and `manifests/<version>.json`
+- tag-driven release flow: `vX.Y.Z`
+- centralized update resolution by manifests, not installer-local version logic
+- bootstrap/reconcile flow and safe-mode semantics
+- transport/provider/tool/workspace/security boundaries
 
-Теперь у проекта есть ещё несколько рабочих контрактов:
+If one contract changes, update code, scripts, and tests together.
 
-- `.nagient/` предназначена для заметок, памяти, планов, jobs и scripts, но не для raw секретов
-- sensitive runtime state остаётся вне workspace
-- tool plugins имеют отдельный registry/manager/scaffold слой и не смешиваются с transport/provider plugins
-- destructive tool operations и restore flows идут через approval requests
-- secure interaction response не попадает в transcript агента; агент получает только sanitized result
-- secret broker резолвит raw значения только на уровне исполнения и делает redaction в output/log layers
+## 5. CLI Surface (Current)
 
-## 5. Текущее CLI API
-
-На сейчас доступны команды:
-
-- `nagient version`
-- `nagient init`
-- `nagient status`
-- `nagient doctor`
-- `nagient preflight`
-- `nagient reconcile`
-- `nagient serve --once`
-- `nagient transport list`
-- `nagient transport scaffold`
-- `nagient tool list`
-- `nagient tool scaffold`
-- `nagient tool invoke`
-- `nagient interaction list`
-- `nagient interaction submit`
-- `nagient approval list`
-- `nagient approval respond`
-- `nagient agent turn --request-file`
+- `nagient init|status|doctor|preflight|reconcile|serve`
+- `nagient transport list|scaffold`
+- `nagient provider list|scaffold|models`
+- `nagient auth status|login|complete|logout`
+- `nagient tool list|scaffold|invoke`
+- `nagient interaction list|submit`
+- `nagient approval list|respond`
 - `nagient update check`
 - `nagient manifest render`
 - `nagient migrations plan`
+- `nagient agent turn --request-file ...`
 
-Это не финальный UX. Это служебная поверхность для scaffolding, тестирования delivery-слоя и дальнейшего роста.
+## 6. Testing Focus
 
-## 6. Что сейчас тестируется
+Regression coverage should always include:
 
-Набор тестов страхует именно инфраструктуру:
+- update metadata parsing and serialization
+- settings/config loading and path handling
+- preflight/reconcile behavior in safe mode
+- plugin registries and scaffold generators
+- secret broker redaction guarantees
+- workspace safety checks
+- release script contracts and smoke checks
 
-- semver comparison
-- manifest parsing/serialization
-- settings loading
-- config builder and secrets loading
-- preflight/reconcile safe-mode behavior
-- transport plugin registry and scaffold generation
-- tool plugin registry and scaffold generation
-- workspace manager path-guard behavior
-- secret broker storage/redaction behavior
-- backup snapshot create/diff/restore/prune flow
-- secure interaction and approval workflow execution
-- structured agent turn execution
-- migration planning
-- update service logic
-- CLI update check
-- CLI manifest render
-- CLI init/preflight/reconcile/runtime flows
-- наличие ключевых файлов репозитория
-- bash syntax для shell scripts
+## 7. Recommended Next Steps
 
-Это означает, что при добавлении новых систем нужно продолжать мыслить контрактами. Если добавляется:
+1. Implement persistent runtime state model.
+2. Add provider abstraction for model execution.
+3. Build task loop and scheduling semantics.
+4. Expand secure tool runtime and approval gates.
+5. Add external surfaces (API, webhooks, richer UX).
 
-- runtime feature, нужен unit/integration test
-- новый installer behavior, нужен smoke/integration test
-- новая release metadata логика, нужен fixture-based test
+## 8. Working Prompt
 
-## 7. Что ещё не реализовано
+Main implementation prompt files:
 
-Ниже список крупных отсутствующих подсистем. Это реальный backlog, а не “может быть когда-нибудь”.
-
-### 7.1 Agent core
-
-Пока нет:
-
-- scheduler / task loop
-- prompt orchestration
-- model provider abstraction
-- session lifecycle
-- structured task graph
-- action planning and retries
-
-Что уже есть как база:
-
-- structured turn contract
-- initial tool execution runtime
-- workspace/memory/jobs layout
-- secure interaction and approval workflow plumbing
-
-### 7.2 External surfaces
-
-Пока нет:
-
-- HTTP API
-- web dashboard
-- TUI / richer terminal UX
-- полноценный webhook/event bus
-- полноценный Telegram bot runtime
-
-### 7.3 Real migrations
-
-Сейчас planner миграций существует, но реальные миграции состояния почти не реализованы. Пока это скорее proof of contract.
-
-### 7.4 Real update notifications
-
-Сейчас update center уже есть, но каналы доставки уведомлений пользователю ещё не построены.
-
-## 8. Предпочтительный порядок дальнейшей разработки
-
-Если AI-агенту нужно самостоятельно выбирать следующий полезный шаг, приоритет должен быть таким:
-
-1. ввести runtime state model
-2. ввести реальные persistent stores
-3. добавить provider abstraction
-4. реализовать task loop и agent execution cycle
-5. расширять tool runtime, scheduler и sandbox/approval policies
-6. затем уже внешние каналы и UI
-
-Почему именно так: delivery infrastructure уже существует, а основной риск сейчас не в сборке, а в отсутствии реального агентного цикла.
-
-## 9. Как безопасно вносить изменения
-
-Другому AI-агенту лучше придерживаться таких правил:
-
-- сначала читать существующие tests и workflow, потом менять код
-- не удалять installer/update pipeline без явной необходимости
-- не ломать `metadata/update-center` ради локального удобства
-- не вводить тяжёлые зависимости без реальной пользы
-- по возможности держать core на stdlib + минимальные runtime deps
-- не размывать границы между application/domain/infrastructure без причины
-
-Если меняется один из этих узлов, нужно проверить весь соседний контур:
-
-- CLI
-- scripts
-- manifests
-- tests
-- release workflow
-
-## 10. Что важно помнить про домен и Pages
-
-Update center должен в будущем быть доступен по стабильному публичному URL. Идеальная схема:
-
-- отдельный поддомен, например `updates.your-domain.tld`
-- GitHub Pages как хостинг статических assets/manifests
-- Docker Hub как контейнерный registry
-- GitHub Releases как дополнительный канал артефактов
-
-AI-агент не должен строить архитектуру так, будто обновления живут только внутри GitHub Releases. Releases полезны, но central update URL важнее.
-
-## 11. Контекст по качеству и верификации
-
-На момент подготовки scaffold локально были успешно пройдены:
-
-- `unittest`
-- smoke tests
-- `ruff`
-- `mypy`
-- `python -m build --no-isolation`
-
-Локально не были доступны `docker` и `pwsh`, поэтому соответствующие проверки в реальной среде ожидаются от CI.
-
-## 12. Самый важный смысл проекта
-
-Nagient не должен превратиться в “ещё один Python-скрипт с чат-командами”. Его сильная сторона должна быть в том, что:
-
-- он легко ставится
-- он централизованно обновляется
-- его релизы воспроизводимы
-- он может развиваться как платформа
-- любые будущие каналы используют одну и ту же release/update модель
-
-Если AI-агент сомневается между “быстро зашить фичу локально” и “сохранить централизованный контракт доставки”, приоритет почти всегда за вторым вариантом.
+- Russian: [agent-runtime-implementation-prompt.ru.md](agent-runtime-implementation-prompt.ru.md)
+- English: [agent-runtime-implementation-prompt.md](agent-runtime-implementation-prompt.md)

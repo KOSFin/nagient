@@ -1,28 +1,30 @@
 # Troubleshooting
 
+Language: English | [Русский](troubleshooting.ru.md)
+
 ## Docker is required
 
-Симптом: installer падает с ошибкой про Docker.
+Symptom: installer fails with a Docker-related error.
 
-Проверьте:
+Check:
 
-1. Docker установлен.
-2. Docker daemon запущен.
-3. `docker` доступен в PATH.
+1. Docker is installed.
+2. Docker daemon is running.
+3. `docker` is available in `PATH`.
 
 ## NAGIENT_UPDATE_BASE_URL is not configured
 
-Симптом: ошибка в install/update script.
+Symptom: install/update script fails.
 
-Причина: запуск шаблонного скрипта из репозитория вместо release-asset.
+Cause: running template script from repository checkout instead of published release asset.
 
-Используйте:
+Use:
 
 ```bash
 curl -fsSL https://ngnt-in.ruka.me/install.sh | bash
 ```
 
-или
+or
 
 ```powershell
 irm https://ngnt-in.ruka.me/install.ps1 | iex
@@ -30,13 +32,13 @@ irm https://ngnt-in.ruka.me/install.ps1 | iex
 
 ## preflight/reconcile error
 
-Проверьте:
+Check:
 
-1. Включен ли provider в `config.toml`.
-2. Есть ли секреты в `secrets.env`.
-3. Доступны ли пользовательские plugins.
+1. Provider is enabled in `config.toml`.
+2. Required secrets exist in `secrets.env`.
+3. Custom plugins are available.
 
-Команды:
+Commands:
 
 ```bash
 ~/.nagient/bin/nagientctl preflight
@@ -44,9 +46,9 @@ irm https://ngnt-in.ruka.me/install.ps1 | iex
 ~/.nagient/bin/nagientctl status
 ```
 
-## Не нравится длинный путь к nagientctl
+## Shortcut for long `nagientctl` path
 
-Сделайте alias.
+Define an alias.
 
 Linux/macOS:
 

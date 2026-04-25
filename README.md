@@ -11,9 +11,9 @@
 
 🇺🇸 English | 🇷🇺 [Русский](README.ru.md)
 
-Lightweight Docker-native agent platform with centralized updates, scripted installs, and tag-driven releases.
+Docker-native agent platform with centralized updates, scripted installation, and tag-driven releases.
 
-Nagient is built to be easy to install and keep updated on Linux, macOS, and Windows.
+Nagient is designed for predictable installation and updates on Linux, macOS, and Windows.
 
 ## Install Latest Stable
 
@@ -37,15 +37,16 @@ docker pull docker.io/parampo/nagient:latest
 
 The installer creates a local runtime in `~/.nagient` and starts Nagient via Docker Compose.
 
-After install, use one short control command instead of long compose lines:
+After installation, use one short control command instead of long Docker Compose commands:
 
 ```bash
 ~/.nagient/bin/nagientctl help
 ```
 
-Detailed installation and operations documentation:
+Detailed documentation:
 
-- [docs/README.md](docs/README.md)
+- English index: [docs/README.md](docs/README.md)
+- Russian index: [docs/README.ru.md](docs/README.ru.md)
 
 ## Upgrade and Remove
 
@@ -118,8 +119,6 @@ flowchart LR
 
 ## Notes
 
-- Architecture details: [docs/architecture.md](docs/architecture.md)
-- Russian architecture notes: [docs/architecture.ru.md](docs/architecture.ru.md)
+- Architecture (EN): [docs/architecture.md](docs/architecture.md)
+- Architecture (RU): [docs/architecture.ru.md](docs/architecture.ru.md)
 - License: [LICENSE](LICENSE)
-
-Built with care for practical day-to-day operations.
