@@ -8,8 +8,8 @@ from pathlib import Path
 
 from nagient.domain.entities.system_state import CheckIssue
 from nagient.providers.base import (
-    BaseProviderPlugin,
     REQUIRED_PROVIDER_METHODS,
+    BaseProviderPlugin,
     LoadedProviderPlugin,
     ProviderPluginManifest,
 )
