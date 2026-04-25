@@ -18,7 +18,11 @@ class ScaffoldResult:
         }
 
 
-def scaffold_transport_plugin(plugin_id: str, output_dir: Path, force: bool = False) -> ScaffoldResult:
+def scaffold_transport_plugin(
+    plugin_id: str,
+    output_dir: Path,
+    force: bool = False,
+) -> ScaffoldResult:
     namespace = plugin_id.split(".")[-1].replace("-", "_")
     exposed_prefix = namespace
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -42,7 +46,11 @@ def scaffold_transport_plugin(plugin_id: str, output_dir: Path, force: bool = Fa
         file_path.write_text(content, encoding="utf-8")
         written_files.append(relative_path)
 
-    return ScaffoldResult(plugin_id=plugin_id, output_dir=output_dir, files=written_files)
+    return ScaffoldResult(
+        plugin_id=plugin_id,
+        output_dir=output_dir,
+        files=written_files,
+    )
 
 
 def _render_plugin_manifest(plugin_id: str, namespace: str) -> str:
@@ -92,7 +100,10 @@ def _render_instructions(plugin_id: str, namespace: str) -> str:
             "",
             f"Use `{namespace}.sendMessage` for normal replies.",
             f"Use `{namespace}.sendNotification` for notices and system events.",
-            f"Use `{namespace}.showPopup` for short contextual confirmations when the transport supports it.",
+            (
+                f"Use `{namespace}.showPopup` for short contextual confirmations when "
+                "the transport supports it."
+            ),
             "",
             "Always normalize inbound payloads before passing them to the core agent runtime.",
             "",
@@ -150,7 +161,8 @@ def _render_transport_python(plugin_id: str) -> str:
             '                    severity="error",',
             '                    code="transport.invalid_endpoint",',
             "                    message=(",
-            '                        f\"Transport {transport_id!r} must define an endpoint starting \"',
+            '                        f\"Transport {transport_id!r} must define an endpoint \"',
+            '                        \"starting \"',
             '                        \"with http:// or https://.\"',
             "                    ),",
             "                    source=transport_id,",
@@ -163,7 +175,10 @@ def _render_transport_python(plugin_id: str) -> str:
             "                    CheckIssue(",
             '                        severity="error",',
             '                        code="transport.invalid_secret_ref",',
-            '                        message=f"Transport {transport_id!r} must use a string api_key_secret.",',
+            "                        message=(",
+            '                            f"Transport {transport_id!r} must use a string "',
+            '                            "api_key_secret."',
+            "                        ),",
             "                        source=transport_id,",
             "                    )",
             "                )",
@@ -172,7 +187,10 @@ def _render_transport_python(plugin_id: str) -> str:
             "                    CheckIssue(",
             '                        severity="error",',
             '                        code="transport.secret_not_found",',
-            '                        message=f"Transport {transport_id!r} cannot find secret {secret_name!r}.",',
+            "                        message=(",
+            '                            f"Transport {transport_id!r} cannot find secret "',
+            '                            f"{secret_name!r}."',
+            "                        ),",
             "                        source=transport_id,",
             "                    )",
             "                )",
@@ -214,8 +232,14 @@ def _render_readme(plugin_id: str) -> str:
             "",
             "This directory contains a custom Nagient transport plugin scaffold.",
             "",
-            "Edit `plugin.toml` to describe the transport contract and `transport.py` to implement it.",
-            "Then configure the plugin in `config.toml` and run `nagient preflight` or `nagient reconcile`.",
+            (
+                "Edit `plugin.toml` to describe the transport contract and "
+                "`transport.py` to implement it."
+            ),
+            (
+                "Then configure the plugin in `config.toml` and run "
+                "`nagient preflight` or `nagient reconcile`."
+            ),
             "",
         ]
     )
@@ -255,7 +279,10 @@ def _render_test_file(plugin_id: str) -> str:
             "            'normalize_inbound_event',",
             "            'show_popup',",
             "        ]:",
-            "            self.assertTrue(callable(getattr(plugin, attribute_name, None)), msg=attribute_name)",
+            "            self.assertTrue(",
+            "                callable(getattr(plugin, attribute_name, None)),",
+            "                msg=attribute_name,",
+            "            )",
             "",
             "",
             "if __name__ == '__main__':",

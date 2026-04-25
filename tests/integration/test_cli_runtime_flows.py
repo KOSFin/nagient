@@ -120,7 +120,9 @@ class CliRuntimeFlowsTests(unittest.TestCase):
                 check=True,
             )
 
-            heartbeat = json.loads((home_dir / "state" / "heartbeat.json").read_text(encoding="utf-8"))
+            heartbeat = json.loads(
+                (home_dir / "state" / "heartbeat.json").read_text(encoding="utf-8")
+            )
             self.assertEqual(heartbeat["runtime_status"], "ready")
             self.assertEqual(heartbeat["transports"][0]["plugin_id"], "builtin.console")
 

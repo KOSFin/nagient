@@ -78,7 +78,9 @@ class TransportManager:
         manifest: LoadedTransportPlugin | object,
         config: dict[str, object],
     ) -> list[CheckIssue]:
-        actual_manifest = manifest.manifest if isinstance(manifest, LoadedTransportPlugin) else manifest
+        actual_manifest = (
+            manifest.manifest if isinstance(manifest, LoadedTransportPlugin) else manifest
+        )
         issues: list[CheckIssue] = []
         for field_name in actual_manifest.required_config:
             if field_name not in config:

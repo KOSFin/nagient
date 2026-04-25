@@ -63,7 +63,10 @@ class TransportPluginRegistry:
                     CheckIssue(
                         severity="warning",
                         code="plugin.duplicate_id",
-                        message=f"Plugin id {plugin_id!r} shadows an existing plugin and was skipped.",
+                        message=(
+                            f"Plugin id {plugin_id!r} shadows an existing plugin and "
+                            "was skipped."
+                        ),
                         source=entry.name,
                     )
                 )
@@ -117,7 +120,10 @@ class TransportPluginRegistry:
 
         config_schema_file: str | None = None
         if "config_schema_file" in payload:
-            config_schema_path = manifest_path.parent / _require_string(payload, "config_schema_file")
+            config_schema_path = manifest_path.parent / _require_string(
+                payload,
+                "config_schema_file",
+            )
             if not config_schema_path.exists():
                 msg = f"Config schema file {config_schema_path.name!r} does not exist."
                 raise ValueError(msg)

@@ -9,8 +9,8 @@ from nagient.app.configuration import (
     last_known_good_path,
 )
 from nagient.app.settings import Settings
-from nagient.domain.entities.system_state import ActivationReport
 from nagient.application.services.preflight_service import PreflightService
+from nagient.domain.entities.system_state import ActivationReport
 
 
 @dataclass(frozen=True)
@@ -27,7 +27,10 @@ class ReconcileService:
 
         if report.can_activate:
             effective_payload = json.dumps(report.effective_config, indent=2) + "\n"
-            effective_config_path(self.settings).write_text(effective_payload, encoding="utf-8")
+            effective_config_path(self.settings).write_text(
+                effective_payload,
+                encoding="utf-8",
+            )
             last_known_good_path(self.settings).write_text(effective_payload, encoding="utf-8")
 
         return report

@@ -58,7 +58,10 @@ class ConfigurationTests(unittest.TestCase):
             runtime_config = load_runtime_configuration(settings)
 
             self.assertFalse(runtime_config.safe_mode)
-            self.assertEqual(runtime_config.secrets, {"NAGIENT_WEBHOOK_SHARED_SECRET": "super-secret"})
+            self.assertEqual(
+                runtime_config.secrets,
+                {"NAGIENT_WEBHOOK_SHARED_SECRET": "super-secret"},
+            )
             self.assertEqual(len(runtime_config.transports), 1)
             self.assertEqual(runtime_config.transports[0].transport_id, "webhook_main")
             self.assertEqual(runtime_config.transports[0].plugin_id, "builtin.webhook")

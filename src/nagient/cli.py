@@ -25,10 +25,16 @@ def build_parser() -> argparse.ArgumentParser:
     doctor_parser = subparsers.add_parser("doctor", help="Show effective runtime settings")
     doctor_parser.add_argument("--format", choices=("text", "json"), default="text")
 
-    preflight_parser = subparsers.add_parser("preflight", help="Validate config and transport plugins")
+    preflight_parser = subparsers.add_parser(
+        "preflight",
+        help="Validate config and transport plugins",
+    )
     preflight_parser.add_argument("--format", choices=("text", "json"), default="text")
 
-    reconcile_parser = subparsers.add_parser("reconcile", help="Validate and activate runtime config")
+    reconcile_parser = subparsers.add_parser(
+        "reconcile",
+        help="Validate and activate runtime config",
+    )
     reconcile_parser.add_argument("--format", choices=("text", "json"), default="text")
 
     serve_parser = subparsers.add_parser("serve", help="Run the placeholder agent loop")
@@ -39,7 +45,10 @@ def build_parser() -> argparse.ArgumentParser:
         dest="transport_command",
         required=True,
     )
-    transport_list_parser = transport_subparsers.add_parser("list", help="List discovered transport plugins")
+    transport_list_parser = transport_subparsers.add_parser(
+        "list",
+        help="List discovered transport plugins",
+    )
     transport_list_parser.add_argument("--format", choices=("text", "json"), default="text")
     transport_scaffold_parser = transport_subparsers.add_parser(
         "scaffold",

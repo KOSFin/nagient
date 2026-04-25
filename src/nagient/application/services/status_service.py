@@ -37,7 +37,9 @@ class StatusService:
 
         runtime_config_path = effective_config_path(self.settings)
         if runtime_config_path.exists():
-            payload["effective_config"] = json.loads(runtime_config_path.read_text(encoding="utf-8"))
+            payload["effective_config"] = json.loads(
+                runtime_config_path.read_text(encoding="utf-8")
+            )
 
         payload["update"] = self._collect_update_status()
         return payload
