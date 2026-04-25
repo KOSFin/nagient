@@ -8,6 +8,9 @@ Nagient is split into a narrow control surface and a centralized release/update 
 - `nagient.application.services` contains use-cases such as health checks and update discovery.
 - `nagient.domain` owns release entities and semantic version comparison.
 - `nagient.infrastructure` handles manifests, registry loading, runtime heartbeat writing, and file transport.
+- `nagient.tools` provides the tool plugin framework plus built-in workspace, backup, interaction, reconcile, and GitHub tools.
+- `nagient.workspace` owns bounded/unsafe workspace policy, `.nagient/` layout, and job persistence.
+- `nagient.security` owns the secret broker plus file-backed interaction and approval workflows.
 - `nagient.migrations` plans ordered upgrade steps from release metadata.
 
 ## Bootstrap And Activation
@@ -17,7 +20,7 @@ Runtime activation now follows a single pipeline regardless of whether the user 
 1. Assemble config from `config.toml`, environment defaults, and `secrets.env`.
 2. Discover built-in and custom Python transport plugins from `plugins/`.
 3. Run `preflight` checks: config lint, secret reference validation, plugin self-tests, transport health checks.
-4. Run `reconcile` to persist `activation-report.json`, `effective-config.json`, and `last-known-good.json`.
+4. Run `reconcile` to persist `activation-report.json`, `effective-config.json`, and `last-known-good.json`, and to materialize the visible `.nagient/` workspace layout.
 5. Start the runtime loop only when the activation report is allowed by safe mode.
 
 Safe mode is enabled by default. When it is disabled, the runtime may still start in a degraded state.
@@ -42,6 +45,31 @@ Every transport plugin must declare slot bindings for:
 - `stop`
 
 Plugins may also declare custom namespaced functions such as `telegram.showPopup` or `webhook.replyJson`.
+
+## Agent Runtime Core
+
+Nagient now has a structured turn contract instead of only a heartbeat placeholder:
+
+- `AgentTurnRequest`
+- `AgentTurnContext`
+- `AssistantResponse`
+- `NormalizedToolCall`
+- `ToolExecutionRequest`
+- `ToolExecutionResult`
+- `InteractionRequest`
+- `ApprovalRequest`
+- `AgentTurnResult`
+
+This layer is intentionally narrow: it separates the user-facing assistant message from tool calls, approvals, secure interactions, and config mutation intents.
+
+## Workspace And Security
+
+- The active workspace gets a visible `.nagient/` directory with `memory/`, `notes/`, `plans/`, `jobs/`, and `scripts/`.
+- Sensitive state stays outside the workspace under the Nagient home/state directories.
+- `secrets.env` remains the core transport/provider secret store.
+- `tool-secrets.env` is the dedicated tool/connector secret store.
+- The secret broker only exposes metadata to the agent-facing layer; raw secret values are resolved at execution time and redacted from outputs.
+- High-risk actions such as restore flows and destructive tool operations are routed through approval requests instead of direct execution.
 
 ## Update Center Contract
 

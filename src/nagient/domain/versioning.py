@@ -62,7 +62,7 @@ class Version:
         if not right:
             return -1
 
-        for left_part, right_part in zip(left, right, strict=False):
+        for left_part, right_part in zip(left, right):
             if left_part == right_part:
                 continue
             left_numeric = left_part.isdigit()

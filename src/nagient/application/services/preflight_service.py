@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from nagient.app.configuration import load_runtime_configuration
 from nagient.app.settings import Settings
@@ -10,11 +10,16 @@ from nagient.domain.entities.system_state import (
     ProviderState,
     TransportState,
 )
+from nagient.domain.entities.tooling import ToolState
 from nagient.plugins.manager import TransportManager
 from nagient.plugins.registry import TransportPluginRegistry
 from nagient.providers.manager import ProviderManager
 from nagient.providers.registry import ProviderPluginRegistry
 from nagient.providers.storage import FileCredentialStore
+from nagient.security.broker import SecretBroker
+from nagient.tools.manager import ToolManager
+from nagient.tools.registry import ToolPluginRegistry
+from nagient.workspace.manager import WorkspaceManager
 
 
 @dataclass(frozen=True)
@@ -25,19 +30,32 @@ class PreflightService:
     provider_registry: ProviderPluginRegistry
     provider_manager: ProviderManager
     credential_store: FileCredentialStore
+    tool_registry: ToolPluginRegistry = field(default_factory=ToolPluginRegistry)
+    tool_manager: ToolManager = field(default_factory=ToolManager)
+    secret_broker: SecretBroker | None = None
+    workspace_manager: WorkspaceManager | None = None
 
     def inspect(self) -> ActivationReport:
         runtime_config = load_runtime_configuration(self.settings)
+        secret_broker = self.secret_broker or SecretBroker(self.settings)
+        workspace_manager = self.workspace_manager or WorkspaceManager(self.settings)
         discovery = self.plugin_registry.discover(self.settings.plugins_dir)
         provider_discovery = self.provider_registry.discover(self.settings.providers_dir)
+        tool_discovery = self.tool_registry.discover(self.settings.tools_dir)
         issues = list(discovery.issues)
         issues.extend(provider_discovery.issues)
+        issues.extend(tool_discovery.issues)
+        issues.extend(secret_broker.self_check())
         transports: list[TransportState] = []
         providers: list[ProviderState] = []
+        tools: list[ToolState] = []
+        workspace = workspace_manager.inspect(runtime_config.workspace)
+        issues.extend(workspace.issues)
         healthy_transports = 0
         enabled_transports = 0
         ready_providers = 0
         enabled_providers = 0
+        enabled_tools = 0
 
         for transport in runtime_config.transports:
             transport_plugin = discovery.plugins.get(transport.plugin_id)
@@ -134,6 +152,51 @@ class PreflightService:
                 ):
                     ready_providers += 1
 
+        for tool in runtime_config.tools:
+            tool_plugin = tool_discovery.plugins.get(tool.plugin_id)
+            if tool_plugin is None:
+                severity = "error" if tool.enabled else "warning"
+                issue = CheckIssue(
+                    severity=severity,
+                    code="tool.plugin_not_found",
+                    message=(
+                        f"Tool {tool.tool_id!r} references unknown plugin "
+                        f"{tool.plugin_id!r}."
+                    ),
+                    source=tool.tool_id,
+                )
+                issues.append(issue)
+                tools.append(
+                    ToolState(
+                        tool_id=tool.tool_id,
+                        plugin_id=tool.plugin_id,
+                        enabled=tool.enabled,
+                        status="failed" if tool.enabled else "disabled",
+                        exposed_functions=[],
+                        issues=[issue],
+                    )
+                )
+                if tool.enabled:
+                    enabled_tools += 1
+                continue
+
+            tool_state = self.tool_manager.inspect_tool(tool, tool_plugin, secret_broker)
+            tools.append(tool_state)
+            issues.extend(tool_state.issues)
+            if tool.enabled:
+                enabled_tools += 1
+
+        if enabled_tools == 0:
+            issues.append(
+                CheckIssue(
+                    severity="warning",
+                    code="runtime.no_enabled_tools",
+                    message="No tool profiles are enabled.",
+                    source="runtime",
+                    hint="Enable at least the built-in workspace and system tool profiles.",
+                )
+            )
+
         if enabled_transports == 0:
             issues.append(
                 CheckIssue(
@@ -182,6 +245,8 @@ class PreflightService:
             can_activate=can_activate,
             transports=transports,
             providers=providers,
+            tools=tools,
+            workspace=workspace,
             issues=issues,
             notices=self._build_notices(status, issues),
             effective_config=runtime_config.to_dict(),

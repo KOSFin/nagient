@@ -17,7 +17,7 @@
 
 Nagient is building a lightweight agent runtime with a distribution model ready from the start: Docker image delivery, `sh` and `ps1` installers, centralized update manifests, and CI/CD around tagged releases.
 
-The core agent assembly is still in progress. What already exists here is the platform layer around it: release automation, update center, installation scripts, Docker runtime scaffold, config bootstrap and reconcile commands, transport plugin scaffolds, test lanes, and repository structure for future agent development.
+The core agent assembly is still in progress. What already exists here is the platform layer around it: release automation, update center, installation scripts, Docker runtime scaffold, config bootstrap and reconcile commands, transport/provider/tool plugin scaffolds, a structured turn contract, workspace management, local backups, a secret broker, and approval/secure-interaction primitives for future agent development.
 
 ## Quick Links
 
@@ -49,6 +49,9 @@ The same runtime layout is used everywhere:
 
 - `config.toml` for non-secret runtime configuration
 - `secrets.env` for transport/provider secrets
+- `tool-secrets.env` for tool and connector secrets
 - `plugins/` for custom Python transport plugins
+- `tools/` for custom Python tool plugins
+- `.nagient/` inside the active workspace for visible notes, memory, plans, jobs, and scripts
 
 See [developer/README.md](developer/README.md) for the full command reference and Docker/Compose layout.

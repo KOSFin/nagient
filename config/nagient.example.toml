@@ -14,9 +14,15 @@ project_name = "nagient"
 
 [paths]
 secrets_file = "/var/lib/nagient/secrets.env"
+tool_secrets_file = "/var/lib/nagient/tool-secrets.env"
 plugins_dir = "/var/lib/nagient/plugins"
+tools_dir = "/var/lib/nagient/tools"
 providers_dir = "/var/lib/nagient/providers"
 credentials_dir = "/var/lib/nagient/credentials"
+
+[workspace]
+root = ""
+mode = "bounded"
 
 [agent]
 default_provider = ""
@@ -74,3 +80,32 @@ enabled = false
 auth = "none"
 base_url = "http://127.0.0.1:11434"
 model = "llama3.1:8b"
+
+[tools.workspace_fs]
+plugin = "workspace.fs"
+enabled = true
+
+[tools.workspace_shell]
+plugin = "workspace.shell"
+enabled = true
+
+[tools.workspace_git]
+plugin = "workspace.git"
+enabled = true
+
+[tools.transport_interaction]
+plugin = "transport.interaction"
+enabled = true
+
+[tools.system_backup]
+plugin = "system.backup"
+enabled = true
+
+[tools.system_reconcile]
+plugin = "system.reconcile"
+enabled = true
+
+[tools.github_api]
+plugin = "github.api"
+enabled = false
+token_secret = "GITHUB_TOKEN"

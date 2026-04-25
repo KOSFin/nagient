@@ -3,7 +3,6 @@ from __future__ import annotations
 import getpass
 import time
 from dataclasses import dataclass
-from pathlib import Path
 
 from nagient.app.configuration import (
     ProviderInstanceConfig,
@@ -16,6 +15,7 @@ from nagient.providers.base import LoadedProviderPlugin
 from nagient.providers.manager import ProviderManager
 from nagient.providers.registry import ProviderPluginRegistry
 from nagient.providers.storage import AuthSessionStore, FileCredentialStore
+from nagient.security.broker import SecretBroker
 
 
 @dataclass(frozen=True)
@@ -25,6 +25,7 @@ class ProviderService:
     provider_manager: ProviderManager
     credential_store: FileCredentialStore
     auth_session_store: AuthSessionStore
+    secret_broker: SecretBroker | None = None
 
     def auth_status(
         self,
@@ -148,7 +149,18 @@ class ProviderService:
                     f"Provider {provider_id!r} does not define api_key_secret and has no "
                     "built-in default secret name."
                 )
-            _upsert_secret_value(self.settings.secrets_file, resolved_secret_name, resolved_api_key)
+            secret_broker = self._secret_broker()
+            secret_broker.store_secret(
+                resolved_secret_name,
+                resolved_api_key,
+                scope="core",
+            )
+            secret_broker.bind_secret(
+                resolved_secret_name,
+                target_kind="provider",
+                target_id=provider_id,
+                scope_hint="core",
+            )
             reloaded_runtime_config = load_runtime_configuration(self.settings)
             state = self._inspect_provider(reloaded_runtime_config, plugin, provider_id)
             return {
@@ -261,7 +273,10 @@ class ProviderService:
         if auth_mode == "api_key":
             secret_name = self._secret_name(provider_config.config, plugin, None)
             if secret_name is not None:
-                deleted_secret = _remove_secret_value(self.settings.secrets_file, secret_name)
+                deleted_secret = self._secret_broker().remove_secret(
+                    secret_name,
+                    scope_hint="core",
+                )
         reloaded_runtime_config = load_runtime_configuration(self.settings)
         state = self._inspect_provider(reloaded_runtime_config, plugin, provider_id)
         return {
@@ -333,6 +348,9 @@ class ProviderService:
             return default_secret_name.strip()
         return None
 
+    def _secret_broker(self) -> SecretBroker:
+        return self.secret_broker or SecretBroker(self.settings)
+
 
 def _auth_mode(config: dict[str, object], default_auth_mode: str) -> str:
     value = config.get("auth")
@@ -348,54 +366,3 @@ def _stdin_is_tty() -> bool:
         return sys.stdin.isatty()
     except Exception:
         return False
-
-
-def _upsert_secret_value(secrets_file: Path, key: str, value: str) -> None:
-    secrets_file.parent.mkdir(parents=True, exist_ok=True)
-    lines: list[str] = []
-    if secrets_file.exists():
-        lines = secrets_file.read_text(encoding="utf-8").splitlines()
-
-    serialized = f"{key}={_serialize_env_value(value)}"
-    updated = False
-    for index, line in enumerate(lines):
-        stripped = line.strip()
-        if stripped.startswith("export "):
-            stripped = stripped[7:].strip()
-        if not stripped or "=" not in stripped:
-            continue
-        candidate_key = stripped.split("=", 1)[0].strip()
-        if candidate_key == key:
-            lines[index] = serialized
-            updated = True
-            break
-
-    if not updated:
-        lines.append(serialized)
-
-    secrets_file.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
-
-
-def _remove_secret_value(secrets_file: Path, key: str) -> bool:
-    if not secrets_file.exists():
-        return False
-    lines = secrets_file.read_text(encoding="utf-8").splitlines()
-    kept_lines: list[str] = []
-    removed = False
-    for line in lines:
-        stripped = line.strip()
-        normalized = stripped[7:].strip() if stripped.startswith("export ") else stripped
-        if normalized and "=" in normalized and normalized.split("=", 1)[0].strip() == key:
-            removed = True
-            continue
-        kept_lines.append(line)
-    if removed:
-        secrets_file.write_text("\n".join(kept_lines).rstrip() + "\n", encoding="utf-8")
-    return removed
-
-
-def _serialize_env_value(value: str) -> str:
-    if not value or any(char.isspace() for char in value) or "#" in value:
-        escaped = value.replace("\\", "\\\\").replace('"', '\\"')
-        return f'"{escaped}"'
-    return value

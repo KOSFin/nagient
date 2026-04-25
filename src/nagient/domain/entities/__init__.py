@@ -1,2 +1,1 @@
-"""Entity definitions for releases, channels, and update notices."""
-
+"""Entity definitions for releases, runtime state, and agent workflow contracts."""

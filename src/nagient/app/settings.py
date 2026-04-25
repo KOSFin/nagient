@@ -35,8 +35,10 @@ class Settings:
     home_dir: Path
     config_file: Path
     secrets_file: Path
+    tool_secrets_file: Path
     plugins_dir: Path
     providers_dir: Path
+    tools_dir: Path
     credentials_dir: Path
     state_dir: Path
     log_dir: Path
@@ -72,6 +74,15 @@ class Settings:
             )
         else:
             plugins_dir = _expand_path(str(home_dir / "plugins"))
+        if "NAGIENT_TOOLS_DIR" in env:
+            tools_dir = _expand_path(env["NAGIENT_TOOLS_DIR"])
+        elif "tools_dir" in file_values:
+            tools_dir = _expand_config_relative_path(
+                file_values["tools_dir"],
+                config_file.parent,
+            )
+        else:
+            tools_dir = _expand_path(str(home_dir / "tools"))
         if "NAGIENT_PROVIDERS_DIR" in env:
             providers_dir = _expand_path(env["NAGIENT_PROVIDERS_DIR"])
         elif "providers_dir" in file_values:
@@ -90,6 +101,15 @@ class Settings:
             )
         else:
             credentials_dir = _expand_path(str(home_dir / "credentials"))
+        if "NAGIENT_TOOL_SECRETS_FILE" in env:
+            tool_secrets_file = _expand_path(env["NAGIENT_TOOL_SECRETS_FILE"])
+        elif "tool_secrets_file" in file_values:
+            tool_secrets_file = _expand_config_relative_path(
+                file_values["tool_secrets_file"],
+                config_file.parent,
+            )
+        else:
+            tool_secrets_file = _expand_path(str(home_dir / "tool-secrets.env"))
         state_dir = _expand_path(env.get("NAGIENT_STATE_DIR", str(home_dir / "state")))
         log_dir = _expand_path(env.get("NAGIENT_LOG_DIR", str(home_dir / "logs")))
         releases_dir = _expand_path(env.get("NAGIENT_RELEASES_DIR", str(home_dir / "releases")))
@@ -99,8 +119,10 @@ class Settings:
             home_dir=home_dir,
             config_file=config_file,
             secrets_file=secrets_file,
+            tool_secrets_file=tool_secrets_file,
             plugins_dir=plugins_dir,
             providers_dir=providers_dir,
+            tools_dir=tools_dir,
             credentials_dir=credentials_dir,
             state_dir=state_dir,
             log_dir=log_dir,
@@ -133,8 +155,10 @@ class Settings:
             self.home_dir,
             self.config_file.parent,
             self.secrets_file.parent,
+            self.tool_secrets_file.parent,
             self.plugins_dir,
             self.providers_dir,
+            self.tools_dir,
             self.credentials_dir,
             self.state_dir,
             self.log_dir,
@@ -148,8 +172,10 @@ class Settings:
             "home_dir": str(self.home_dir),
             "config_file": str(self.config_file),
             "secrets_file": str(self.secrets_file),
+            "tool_secrets_file": str(self.tool_secrets_file),
             "plugins_dir": str(self.plugins_dir),
             "providers_dir": str(self.providers_dir),
+            "tools_dir": str(self.tools_dir),
             "credentials_dir": str(self.credentials_dir),
             "state_dir": str(self.state_dir),
             "log_dir": str(self.log_dir),
@@ -191,8 +217,12 @@ def _read_config(config_file: Path) -> dict[str, str]:
     if isinstance(paths, dict):
         if isinstance(paths.get("secrets_file"), str):
             values["secrets_file"] = str(paths["secrets_file"])
+        if isinstance(paths.get("tool_secrets_file"), str):
+            values["tool_secrets_file"] = str(paths["tool_secrets_file"])
         if isinstance(paths.get("plugins_dir"), str):
             values["plugins_dir"] = str(paths["plugins_dir"])
+        if isinstance(paths.get("tools_dir"), str):
+            values["tools_dir"] = str(paths["tools_dir"])
         if isinstance(paths.get("providers_dir"), str):
             values["providers_dir"] = str(paths["providers_dir"])
         if isinstance(paths.get("credentials_dir"), str):

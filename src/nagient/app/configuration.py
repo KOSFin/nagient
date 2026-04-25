@@ -42,14 +42,45 @@ class ProviderInstanceConfig:
 
 
 @dataclass(frozen=True)
+class ToolInstanceConfig:
+    tool_id: str
+    plugin_id: str
+    enabled: bool
+    config: dict[str, object] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "tool_id": self.tool_id,
+            "plugin_id": self.plugin_id,
+            "enabled": self.enabled,
+            "config": dict(self.config),
+        }
+
+
+@dataclass(frozen=True)
+class WorkspaceConfig:
+    root: Path
+    mode: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "root": str(self.root),
+            "mode": self.mode,
+        }
+
+
+@dataclass(frozen=True)
 class RuntimeConfiguration:
     settings: Settings
     safe_mode: bool
     default_provider: str | None
     require_provider: bool
+    workspace: WorkspaceConfig
     transports: list[TransportInstanceConfig]
     providers: list[ProviderInstanceConfig]
+    tools: list[ToolInstanceConfig]
     secrets: dict[str, str] = field(default_factory=dict)
+    tool_secrets: dict[str, str] = field(default_factory=dict)
     raw_config: dict[str, object] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, object]:
@@ -58,9 +89,12 @@ class RuntimeConfiguration:
             "safe_mode": self.safe_mode,
             "default_provider": self.default_provider,
             "require_provider": self.require_provider,
+            "workspace": self.workspace.to_dict(),
             "secret_keys": sorted(self.secrets),
+            "tool_secret_keys": sorted(self.tool_secrets),
             "transports": [transport.to_dict() for transport in self.transports],
             "providers": [provider.to_dict() for provider in self.providers],
+            "tools": [tool.to_dict() for tool in self.tools],
         }
 
 
@@ -81,15 +115,20 @@ def load_runtime_configuration(
             )
         ]
     providers = _parse_providers(raw_config)
+    tools = _parse_tools(raw_config)
+    workspace = _parse_workspace(raw_config, env)
 
     return RuntimeConfiguration(
         settings=settings,
         safe_mode=settings.safe_mode,
         default_provider=_parse_default_provider(raw_config),
         require_provider=_parse_require_provider(raw_config),
+        workspace=workspace,
         transports=transports,
         providers=providers,
+        tools=tools,
         secrets=load_secrets(settings.secrets_file),
+        tool_secrets=load_secrets(settings.tool_secrets_file),
         raw_config=raw_config,
     )
 
@@ -145,9 +184,15 @@ def render_default_config(settings: Settings) -> str:
             "",
             "[paths]",
             f'secrets_file = "{settings.secrets_file}"',
+            f'tool_secrets_file = "{settings.tool_secrets_file}"',
             f'plugins_dir = "{settings.plugins_dir}"',
+            f'tools_dir = "{settings.tools_dir}"',
             f'providers_dir = "{settings.providers_dir}"',
             f'credentials_dir = "{settings.credentials_dir}"',
+            "",
+            "[workspace]",
+            'root = ""',
+            'mode = "bounded"',
             "",
             "[agent]",
             'default_provider = ""',
@@ -206,6 +251,35 @@ def render_default_config(settings: Settings) -> str:
             'base_url = "http://127.0.0.1:11434"',
             'model = "llama3.1:8b"',
             "",
+            "[tools.workspace_fs]",
+            'plugin = "workspace.fs"',
+            "enabled = true",
+            "",
+            "[tools.workspace_shell]",
+            'plugin = "workspace.shell"',
+            "enabled = true",
+            "",
+            "[tools.workspace_git]",
+            'plugin = "workspace.git"',
+            "enabled = true",
+            "",
+            "[tools.transport_interaction]",
+            'plugin = "transport.interaction"',
+            "enabled = true",
+            "",
+            "[tools.system_backup]",
+            'plugin = "system.backup"',
+            "enabled = true",
+            "",
+            "[tools.system_reconcile]",
+            'plugin = "system.reconcile"',
+            "enabled = true",
+            "",
+            "[tools.github_api]",
+            'plugin = "github.api"',
+            "enabled = false",
+            'token_secret = "GITHUB_TOKEN"',
+            "",
         ]
     ) + "\n"
 
@@ -220,6 +294,16 @@ def render_default_secrets() -> str:
             "# DEEPSEEK_API_KEY=",
             "# TELEGRAM_BOT_TOKEN=",
             "# NAGIENT_WEBHOOK_SHARED_SECRET=",
+            "",
+        ]
+    )
+
+
+def render_default_tool_secrets() -> str:
+    return "\n".join(
+        [
+            "# Secrets for tool and connector integrations.",
+            "# GITHUB_TOKEN=",
             "",
         ]
     )
@@ -266,6 +350,26 @@ def render_providers_readme() -> str:
     )
 
 
+def render_tools_readme() -> str:
+    return "\n".join(
+        [
+            "# Nagient custom tool plugins",
+            "",
+            "Each tool plugin lives in its own directory and must contain at least:",
+            "- `tool.toml`",
+            "- `tool.py`",
+            "- `schema.json`",
+            "",
+            "Generate a new template with:",
+            "",
+            "```bash",
+            "nagient tool scaffold --plugin-id your.tool.id",
+            "```",
+            "",
+        ]
+    )
+
+
 def render_credentials_readme() -> str:
     return "\n".join(
         [
@@ -292,6 +396,14 @@ def last_known_good_path(settings: Settings) -> Path:
 
 def auth_sessions_dir(settings: Settings) -> Path:
     return settings.state_dir / "auth-sessions"
+
+
+def secret_metadata_path(settings: Settings) -> Path:
+    return settings.state_dir / "secrets" / "metadata.json"
+
+
+def workflow_state_dir(settings: Settings) -> Path:
+    return settings.state_dir / "workflows"
 
 
 def _parse_transports(payload: dict[str, object]) -> list[TransportInstanceConfig]:
@@ -352,6 +464,57 @@ def _parse_providers(payload: dict[str, object]) -> list[ProviderInstanceConfig]
     return providers
 
 
+def _parse_tools(payload: dict[str, object]) -> list[ToolInstanceConfig]:
+    raw_tools = payload.get("tools")
+    if not isinstance(raw_tools, dict):
+        return _default_tools()
+
+    tools: list[ToolInstanceConfig] = []
+    for tool_id, values in raw_tools.items():
+        if not isinstance(tool_id, str) or not isinstance(values, dict):
+            continue
+        plugin_id = values.get("plugin", tool_id.replace("_", "."))
+        if not isinstance(plugin_id, str):
+            plugin_id = str(plugin_id)
+        enabled = _coerce_bool(values.get("enabled", True))
+        tool_config = {
+            str(key): value
+            for key, value in values.items()
+            if key not in {"plugin", "enabled"}
+        }
+        tools.append(
+            ToolInstanceConfig(
+                tool_id=tool_id,
+                plugin_id=plugin_id,
+                enabled=enabled,
+                config=tool_config,
+            )
+        )
+    return tools or _default_tools()
+
+
+def _parse_workspace(
+    payload: dict[str, object],
+    environ: dict[str, str],
+) -> WorkspaceConfig:
+    raw_workspace = payload.get("workspace")
+    root_value = environ.get("NAGIENT_WORKSPACE_ROOT", "")
+    mode_value = environ.get("NAGIENT_WORKSPACE_MODE", "")
+    if isinstance(raw_workspace, dict):
+        if not root_value and isinstance(raw_workspace.get("root"), str):
+            root_value = str(raw_workspace["root"])
+        if not mode_value and isinstance(raw_workspace.get("mode"), str):
+            mode_value = str(raw_workspace["mode"])
+
+    resolved_root = Path(root_value).expanduser() if root_value.strip() else Path.cwd()
+    if not resolved_root.is_absolute():
+        resolved_root = (Path.cwd() / resolved_root).resolve()
+    mode = mode_value.strip().lower() or "bounded"
+    if mode not in {"bounded", "unsafe"}:
+        mode = "bounded"
+    return WorkspaceConfig(root=resolved_root.resolve(), mode=mode)
+
+
 def _parse_default_provider(payload: dict[str, object]) -> str | None:
     agent = payload.get("agent")
     if not isinstance(agent, dict):
@@ -369,6 +532,17 @@ def _parse_require_provider(payload: dict[str, object]) -> bool:
     return _coerce_bool(agent.get("require_provider", False))
 
 
+def _default_tools() -> list[ToolInstanceConfig]:
+    return [
+        ToolInstanceConfig("workspace_fs", "workspace.fs", True, {}),
+        ToolInstanceConfig("workspace_shell", "workspace.shell", True, {}),
+        ToolInstanceConfig("workspace_git", "workspace.git", True, {}),
+        ToolInstanceConfig("transport_interaction", "transport.interaction", True, {}),
+        ToolInstanceConfig("system_backup", "system.backup", True, {}),
+        ToolInstanceConfig("system_reconcile", "system.reconcile", True, {}),
+    ]
+
+
 def merge_runtime_config(
     payload: dict[str, object],
     environ: dict[str, str],
@@ -381,6 +555,13 @@ def merge_runtime_config(
         str(provider_id): dict(values) if isinstance(values, dict) else {}
         for provider_id, values in providers.items()
     }
+    tools = merged.get("tools")
+    if not isinstance(tools, dict):
+        tools = {}
+    tools = {
+        str(tool_id): dict(values) if isinstance(values, dict) else {}
+        for tool_id, values in tools.items()
+    }
 
     for key, value in environ.items():
         if key == "NAGIENT_AGENT_DEFAULT_PROVIDER":
@@ -392,6 +573,17 @@ def merge_runtime_config(
             agent["require_provider"] = _coerce_env_value(value)
             continue
         if not key.startswith("NAGIENT_PROVIDER__"):
+            if key.startswith("NAGIENT_TOOL__"):
+                parts = key.split("__")
+                if len(parts) < 3:
+                    continue
+                tool_id = parts[1].strip().lower()
+                field_name = "__".join(parts[2:]).strip().lower()
+                if not tool_id or not field_name:
+                    continue
+                tool_values = tools.get(tool_id, {})
+                tool_values[field_name] = _coerce_env_value(value)
+                tools[tool_id] = tool_values
             continue
         parts = key.split("__")
         if len(parts) < 3:
@@ -406,6 +598,8 @@ def merge_runtime_config(
 
     if providers:
         merged["providers"] = providers
+    if tools:
+        merged["tools"] = tools
     return merged
 
 

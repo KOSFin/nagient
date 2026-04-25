@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from nagient.domain.entities.tooling import ToolState
+    from nagient.domain.entities.workspace import WorkspaceState
 
 
 @dataclass(frozen=True)
@@ -222,6 +227,8 @@ class ActivationReport:
     can_activate: bool
     transports: list[TransportState] = field(default_factory=list)
     providers: list[ProviderState] = field(default_factory=list)
+    tools: list["ToolState"] = field(default_factory=list)
+    workspace: "WorkspaceState | None" = None
     issues: list[CheckIssue] = field(default_factory=list)
     notices: list[str] = field(default_factory=list)
     effective_config: dict[str, object] = field(default_factory=dict)
@@ -233,6 +240,8 @@ class ActivationReport:
             "can_activate": self.can_activate,
             "transports": [transport.to_dict() for transport in self.transports],
             "providers": [provider.to_dict() for provider in self.providers],
+            "tools": [tool.to_dict() for tool in self.tools],
+            "workspace": self.workspace.to_dict() if self.workspace is not None else None,
             "issues": [issue.to_dict() for issue in self.issues],
             "notices": list(self.notices),
             "effective_config": dict(self.effective_config),

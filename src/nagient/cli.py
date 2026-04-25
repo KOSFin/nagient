@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 from pathlib import Path
 
 from nagient.app.container import build_container
+from nagient.domain.entities.agent_runtime import AgentTurnRequest
+from nagient.domain.entities.tooling import ToolExecutionRequest
 from nagient.infrastructure.manifests import release_to_dict
 from nagient.version import __version__
 
@@ -84,6 +87,29 @@ def build_parser() -> argparse.ArgumentParser:
     provider_models_parser.add_argument("provider_id")
     provider_models_parser.add_argument("--format", choices=("text", "json"), default="text")
 
+    tool_parser = subparsers.add_parser("tool", help="Manage and invoke tool plugins")
+    tool_subparsers = tool_parser.add_subparsers(dest="tool_command", required=True)
+    tool_list_parser = tool_subparsers.add_parser("list", help="List discovered tool plugins")
+    tool_list_parser.add_argument("--format", choices=("text", "json"), default="text")
+    tool_scaffold_parser = tool_subparsers.add_parser(
+        "scaffold",
+        help="Generate a custom tool plugin template",
+    )
+    tool_scaffold_parser.add_argument("--plugin-id", required=True)
+    tool_scaffold_parser.add_argument("--output")
+    tool_scaffold_parser.add_argument("--force", action="store_true")
+    tool_scaffold_parser.add_argument("--format", choices=("text", "json"), default="text")
+    tool_invoke_parser = tool_subparsers.add_parser(
+        "invoke",
+        help="Invoke a configured tool function",
+    )
+    tool_invoke_parser.add_argument("function_name")
+    tool_invoke_parser.add_argument("--tool-id")
+    tool_invoke_parser.add_argument("--args-json", default="{}")
+    tool_invoke_parser.add_argument("--dry-run", action="store_true")
+    tool_invoke_parser.add_argument("--auto-approve", action="store_true")
+    tool_invoke_parser.add_argument("--format", choices=("text", "json"), default="text")
+
     auth_parser = subparsers.add_parser("auth", help="Manage provider authentication")
     auth_subparsers = auth_parser.add_subparsers(dest="auth_command", required=True)
     auth_status_parser = auth_subparsers.add_parser(
@@ -146,6 +172,62 @@ def build_parser() -> argparse.ArgumentParser:
     plan_parser.add_argument("--manifest-ref", required=True)
     plan_parser.add_argument("--current-version", required=True)
     plan_parser.add_argument("--format", choices=("text", "json"), default="text")
+
+    interaction_parser = subparsers.add_parser(
+        "interaction",
+        help="Inspect and submit secure interaction requests",
+    )
+    interaction_subparsers = interaction_parser.add_subparsers(
+        dest="interaction_command",
+        required=True,
+    )
+    interaction_list_parser = interaction_subparsers.add_parser(
+        "list",
+        help="List secure interaction requests",
+    )
+    interaction_list_parser.add_argument("--format", choices=("text", "json"), default="text")
+    interaction_submit_parser = interaction_subparsers.add_parser(
+        "submit",
+        help="Submit a response to a secure interaction request",
+    )
+    interaction_submit_parser.add_argument("request_id")
+    interaction_submit_parser.add_argument("--response")
+    interaction_submit_parser.add_argument("--cancel", action="store_true")
+    interaction_submit_parser.add_argument("--format", choices=("text", "json"), default="text")
+
+    approval_parser = subparsers.add_parser(
+        "approval",
+        help="Inspect and resolve approval requests",
+    )
+    approval_subparsers = approval_parser.add_subparsers(
+        dest="approval_command",
+        required=True,
+    )
+    approval_list_parser = approval_subparsers.add_parser(
+        "list",
+        help="List approval requests",
+    )
+    approval_list_parser.add_argument("--format", choices=("text", "json"), default="text")
+    approval_respond_parser = approval_subparsers.add_parser(
+        "respond",
+        help="Resolve an approval request",
+    )
+    approval_respond_parser.add_argument("request_id")
+    approval_respond_parser.add_argument(
+        "--decision",
+        required=True,
+        choices=("approve", "reject", "cancel"),
+    )
+    approval_respond_parser.add_argument("--format", choices=("text", "json"), default="text")
+
+    agent_parser = subparsers.add_parser("agent", help="Run structured agent-turn workflows")
+    agent_subparsers = agent_parser.add_subparsers(dest="agent_command", required=True)
+    agent_turn_parser = agent_subparsers.add_parser(
+        "turn",
+        help="Execute a structured agent turn payload",
+    )
+    agent_turn_parser.add_argument("--request-file", required=True)
+    agent_turn_parser.add_argument("--format", choices=("text", "json"), default="text")
 
     return parser
 
@@ -246,6 +328,30 @@ def main(argv: list[str] | None = None) -> int:
         payload = container.provider_service.list_models(args.provider_id)
         return _emit(payload, args.format)
 
+    if args.command == "tool" and args.tool_command == "list":
+        payload = container.tool_service.list_tools()
+        return _emit(payload, args.format)
+
+    if args.command == "tool" and args.tool_command == "scaffold":
+        output_dir = Path(args.output) if args.output else None
+        result = container.configuration_service.scaffold_tool(
+            plugin_id=args.plugin_id,
+            output_dir=output_dir,
+            force=args.force,
+        )
+        return _emit(result.to_dict(), args.format)
+
+    if args.command == "tool" and args.tool_command == "invoke":
+        tool_request = ToolExecutionRequest(
+            tool_id=args.tool_id or "",
+            function_name=args.function_name,
+            arguments=_load_json_argument(args.args_json),
+            dry_run=args.dry_run,
+            auto_approve=args.auto_approve,
+        )
+        payload = container.tool_service.invoke(tool_request).to_dict()
+        return _emit(payload, args.format)
+
     if args.command == "auth" and args.auth_command == "status":
         payload = container.provider_service.auth_status(
             provider_id=args.provider_id,
@@ -335,6 +441,50 @@ def main(argv: list[str] | None = None) -> int:
             ],
         }
         return _emit(payload, args.format)
+
+    if args.command == "interaction" and args.interaction_command == "list":
+        payload = {
+            "interactions": [
+                request.to_dict()
+                for request in container.workflow_service.list_interactions()
+            ]
+        }
+        return _emit(payload, args.format)
+
+    if args.command == "interaction" and args.interaction_command == "submit":
+        response = args.response
+        if not args.cancel and response is None:
+            response = _read_secret_input(
+                prompt=f"Enter secure response for interaction {args.request_id}: "
+            )
+        payload = container.workflow_service.submit_interaction(
+            args.request_id,
+            response=response,
+            cancel=args.cancel,
+        ).to_dict()
+        return _emit(payload, args.format)
+
+    if args.command == "approval" and args.approval_command == "list":
+        payload = {
+            "approvals": [request.to_dict() for request in container.workflow_service.list_approvals()]
+        }
+        return _emit(payload, args.format)
+
+    if args.command == "approval" and args.approval_command == "respond":
+        payload = container.workflow_service.resolve_approval(
+            args.request_id,
+            args.decision,
+        ).to_dict()
+        return _emit(payload, args.format)
+
+    if args.command == "agent" and args.agent_command == "turn":
+        request_payload = json.loads(Path(args.request_file).read_text(encoding="utf-8"))
+        if not isinstance(request_payload, dict):
+            raise ValueError("Agent request payload must be a JSON object.")
+        result = container.agent_turn_service.run_turn(
+            AgentTurnRequest.from_dict(request_payload)
+        )
+        return _emit(result.to_dict(), args.format)
 
     parser.error("Unsupported command.")
     return 2
@@ -427,6 +577,20 @@ def _emit(payload: dict[str, object], output_format: str) -> int:
 
     print(_render_text(payload))
     return 0
+
+
+def _load_json_argument(raw_value: str) -> dict[str, object]:
+    payload = json.loads(raw_value)
+    if not isinstance(payload, dict):
+        raise ValueError("Tool arguments must decode to a JSON object.")
+    return {str(key): value for key, value in payload.items()}
+
+
+def _read_secret_input(prompt: str) -> str | None:
+    try:
+        return getpass.getpass(prompt=prompt).strip()
+    except (EOFError, KeyboardInterrupt):
+        return None
 
 
 def _render_text(payload: dict[str, object]) -> str:

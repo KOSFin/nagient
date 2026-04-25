@@ -5,28 +5,35 @@ services:
     image: ${NAGIENT_IMAGE:-__NAGIENT_DOCKER_IMAGE__}
     container_name: ${NAGIENT_CONTAINER_NAME:-__NAGIENT_CONTAINER_NAME__}
     restart: unless-stopped
+    working_dir: /workspace
     env_file:
       - .env
     environment:
       NAGIENT_HOME: /var/lib/nagient
       NAGIENT_CONFIG: /var/lib/nagient/config/config.toml
       NAGIENT_SECRETS_FILE: /var/lib/nagient/secrets.env
+      NAGIENT_TOOL_SECRETS_FILE: /var/lib/nagient/tool-secrets.env
       NAGIENT_PLUGINS_DIR: /var/lib/nagient/plugins
+      NAGIENT_TOOLS_DIR: /var/lib/nagient/tools
       NAGIENT_PROVIDERS_DIR: /var/lib/nagient/providers
       NAGIENT_CREDENTIALS_DIR: /var/lib/nagient/credentials
       NAGIENT_STATE_DIR: /var/lib/nagient/state
       NAGIENT_LOG_DIR: /var/lib/nagient/logs
       NAGIENT_RELEASES_DIR: /var/lib/nagient/releases
+      NAGIENT_WORKSPACE_ROOT: ${NAGIENT_WORKSPACE_ROOT:-/workspace}
       NAGIENT_CHANNEL: ${NAGIENT_CHANNEL:-__NAGIENT_DEFAULT_CHANNEL__}
       NAGIENT_UPDATE_BASE_URL: ${NAGIENT_UPDATE_BASE_URL:-__NAGIENT_UPDATE_BASE_URL__}
       NAGIENT_HEARTBEAT_INTERVAL: ${NAGIENT_HEARTBEAT_INTERVAL:-30}
       NAGIENT_DOCKER_PROJECT_NAME: ${NAGIENT_DOCKER_PROJECT_NAME:-__NAGIENT_DOCKER_PROJECT_NAME__}
       NAGIENT_SAFE_MODE: ${NAGIENT_SAFE_MODE:-true}
     volumes:
+      - ./workspace:/workspace
       - ./runtime:/var/lib/nagient
       - ./config.toml:/var/lib/nagient/config/config.toml:ro
       - ./secrets.env:/var/lib/nagient/secrets.env:ro
+      - ./tool-secrets.env:/var/lib/nagient/tool-secrets.env:ro
       - ./plugins:/var/lib/nagient/plugins
+      - ./tools:/var/lib/nagient/tools
       - ./providers:/var/lib/nagient/providers
       - ./credentials:/var/lib/nagient/credentials
     healthcheck:

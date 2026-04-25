@@ -17,7 +17,7 @@
 
 Nagient строится как лёгкий агент с нормальной системой доставки с первого дня: Docker image, установщики `sh` и `ps1`, централизованный update center, единый bootstrap/reconcile слой конфигурации и CI/CD вокруг tag-based релизов.
 
-Основная агентная сборка ещё в процессе. Зато платформа вокруг неё уже поднята: release automation, update center, install/update-скрипты, Docker runtime scaffold, команды инициализации и проверки конфига, шаблоны транспортных плагинов, тестовые контуры и структура репозитория для дальнейшей разработки.
+Основная агентная сборка ещё в процессе. Зато платформа вокруг неё уже поднята: release automation, update center, install/update-скрипты, Docker runtime scaffold, команды инициализации и проверки конфига, шаблоны transport/provider/tool plugins, структурированный turn contract, workspace manager, локальные backups, secret broker и secure approval/interaction primitives для дальнейшей разработки.
 
 ## Быстрые ссылки
 
@@ -49,4 +49,7 @@ nagient reconcile --format json
 
 - `config.toml` для обычного runtime-конфига
 - `secrets.env` для секретов транспортов и провайдеров
+- `tool-secrets.env` для секретов тулов и коннекторов
 - `plugins/` для пользовательских Python transport plugins
+- `tools/` для пользовательских Python tool plugins
+- `.nagient/` внутри активного workspace для заметок, памяти, планов, jobs и scripts

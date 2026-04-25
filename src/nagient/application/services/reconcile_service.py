@@ -7,20 +7,26 @@ from nagient.app.configuration import (
     activation_report_path,
     effective_config_path,
     last_known_good_path,
+    load_runtime_configuration,
 )
 from nagient.app.settings import Settings
 from nagient.application.services.preflight_service import PreflightService
 from nagient.domain.entities.system_state import ActivationReport
+from nagient.workspace.manager import WorkspaceManager
 
 
 @dataclass(frozen=True)
 class ReconcileService:
     settings: Settings
     preflight_service: PreflightService
+    workspace_manager: WorkspaceManager
 
     def reconcile(self) -> ActivationReport:
         self.settings.ensure_directories()
         report = self.preflight_service.inspect()
+        runtime_config = load_runtime_configuration(self.settings)
+        if report.workspace is None or report.workspace.status != "failed":
+            self.workspace_manager.ensure_layout(runtime_config.workspace)
 
         report_path = activation_report_path(self.settings)
         report_path.write_text(json.dumps(report.to_dict(), indent=2) + "\n", encoding="utf-8")

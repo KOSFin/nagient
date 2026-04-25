@@ -74,4 +74,17 @@ class RuntimeAgent:
                 }
                 for provider in activation_report.providers
             ]
+            payload["tools"] = [
+                {
+                    "tool_id": tool.tool_id,
+                    "plugin_id": tool.plugin_id,
+                    "status": tool.status,
+                }
+                for tool in activation_report.tools
+            ]
+            payload["workspace"] = (
+                activation_report.workspace.to_dict()
+                if activation_report.workspace is not None
+                else None
+            )
         heartbeat_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")

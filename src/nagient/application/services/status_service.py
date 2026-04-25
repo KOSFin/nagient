@@ -3,17 +3,28 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from nagient.app.configuration import activation_report_path, effective_config_path
+from nagient.app.configuration import (
+    activation_report_path,
+    effective_config_path,
+    load_runtime_configuration,
+)
 from nagient.app.settings import Settings
 from nagient.application.services.update_service import UpdateService
+from nagient.security.broker import SecretBroker
+from nagient.security.workflows import WorkflowStore
+from nagient.workspace.manager import WorkspaceManager
 
 
 @dataclass(frozen=True)
 class StatusService:
     settings: Settings
     update_service: UpdateService
+    secret_broker: SecretBroker
+    workflow_store: WorkflowStore
+    workspace_manager: WorkspaceManager
 
     def collect(self) -> dict[str, object]:
+        runtime_config = load_runtime_configuration(self.settings)
         payload: dict[str, object] = {
             "service": "nagient",
             "version": self.settings.version,
@@ -24,12 +35,35 @@ class StatusService:
                 "home": str(self.settings.home_dir),
                 "config": str(self.settings.config_file),
                 "secrets": str(self.settings.secrets_file),
+                "tool_secrets": str(self.settings.tool_secrets_file),
                 "plugins": str(self.settings.plugins_dir),
+                "tools": str(self.settings.tools_dir),
                 "providers": str(self.settings.providers_dir),
                 "credentials": str(self.settings.credentials_dir),
                 "state": str(self.settings.state_dir),
                 "logs": str(self.settings.log_dir),
                 "releases": str(self.settings.releases_dir),
+            },
+            "workspace": self.workspace_manager.inspect(runtime_config.workspace).to_dict(),
+            "secrets": {
+                "core_count": len(self.secret_broker.list_metadata("core")),
+                "tool_count": len(self.secret_broker.list_metadata("tool")),
+            },
+            "pending_workflows": {
+                "interactions": len(
+                    [
+                        request
+                        for request in self.workflow_store.list_interactions()
+                        if request.status == "pending"
+                    ]
+                ),
+                "approvals": len(
+                    [
+                        request
+                        for request in self.workflow_store.list_approvals()
+                        if request.status == "pending"
+                    ]
+                ),
             },
         }
 
