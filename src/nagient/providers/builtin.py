@@ -285,7 +285,7 @@ class HttpProviderPlugin(BaseProviderPlugin):
             self._models_url(config),
             headers=headers,
             query=query,
-            timeout=float(config.get("timeout_seconds", 15)),
+            timeout=_timeout_seconds(config),
         )
         return _parse_data_models(payload, provider_id)
 
@@ -347,7 +347,7 @@ class AnthropicProviderPlugin(HttpProviderPlugin):
             self._models_url(config),
             headers=headers,
             query=query,
-            timeout=float(config.get("timeout_seconds", 15)),
+            timeout=_timeout_seconds(config),
         )
         return _parse_data_models(payload, provider_id)
 
@@ -366,7 +366,7 @@ class GeminiProviderPlugin(HttpProviderPlugin):
             self._models_url(config),
             headers=headers,
             query=query,
-            timeout=float(config.get("timeout_seconds", 15)),
+            timeout=_timeout_seconds(config),
         )
         if not isinstance(payload, dict):
             raise ProviderHttpError(
@@ -409,7 +409,7 @@ class OllamaProviderPlugin(HttpProviderPlugin):
             self._models_url(config),
             headers=headers,
             query=query,
-            timeout=float(config.get("timeout_seconds", 15)),
+            timeout=_timeout_seconds(config),
         )
         if not isinstance(payload, dict):
             raise ProviderHttpError(
@@ -910,6 +910,20 @@ def _parse_data_models(payload: object, provider_id: str) -> list[ProviderModel]
             )
         )
     return models
+
+
+def _timeout_seconds(config: Mapping[str, object]) -> float:
+    value = config.get("timeout_seconds", 15)
+    if isinstance(value, bool):
+        return 15.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return 15.0
+    return 15.0
 
 
 def _issue(

@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from types import TracebackType
+from typing import Protocol
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
@@ -12,9 +14,32 @@ class ProviderHttpError(RuntimeError):
     pass
 
 
+class ResponseReader(Protocol):
+    def read(self) -> bytes: ...
+
+
+class ResponseContextManager(Protocol):
+    def __enter__(self) -> ResponseReader: ...
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> object: ...
+
+
+class UrlopenLike(Protocol):
+    def __call__(
+        self,
+        request: Request,
+        timeout: float = ...,
+    ) -> ResponseContextManager: ...
+
+
 @dataclass(frozen=True)
 class JsonHttpClient:
-    opener: Callable[..., object] = urlopen
+    opener: UrlopenLike = urlopen
     default_timeout: float = 15.0
 
     def get_json(
@@ -66,4 +91,3 @@ def _merge_query(url: str, query: Mapping[str, str]) -> str:
             split.fragment,
         )
     )
-

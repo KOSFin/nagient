@@ -40,8 +40,8 @@ class PreflightService:
         enabled_providers = 0
 
         for transport in runtime_config.transports:
-            plugin = discovery.plugins.get(transport.plugin_id)
-            if plugin is None:
+            transport_plugin = discovery.plugins.get(transport.plugin_id)
+            if transport_plugin is None:
                 severity = "error" if transport.enabled else "warning"
                 issue = CheckIssue(
                     severity=severity,
@@ -67,21 +67,21 @@ class PreflightService:
                     enabled_transports += 1
                 continue
 
-            state = self.transport_manager.inspect_transport(
+            transport_state = self.transport_manager.inspect_transport(
                 transport=transport,
-                plugin=plugin,
+                plugin=transport_plugin,
                 secrets=runtime_config.secrets,
             )
-            transports.append(state)
-            issues.extend(state.issues)
+            transports.append(transport_state)
+            issues.extend(transport_state.issues)
             if transport.enabled:
                 enabled_transports += 1
-                if state.status == "ready":
+                if transport_state.status == "ready":
                     healthy_transports += 1
 
         for provider in runtime_config.providers:
-            plugin = provider_discovery.plugins.get(provider.plugin_id)
-            if plugin is None:
+            provider_plugin = provider_discovery.plugins.get(provider.plugin_id)
+            if provider_plugin is None:
                 severity = "error" if provider.enabled else "warning"
                 issue = CheckIssue(
                     severity=severity,
@@ -117,18 +117,21 @@ class PreflightService:
                 continue
 
             credential = self.credential_store.load(provider.provider_id)
-            state = self.provider_manager.inspect_provider(
+            provider_state = self.provider_manager.inspect_provider(
                 provider=provider,
-                plugin=plugin,
+                plugin=provider_plugin,
                 secrets=runtime_config.secrets,
                 credential=credential,
                 is_default=runtime_config.default_provider == provider.provider_id,
             )
-            providers.append(state)
-            issues.extend(state.issues)
+            providers.append(provider_state)
+            issues.extend(provider_state.issues)
             if provider.enabled:
                 enabled_providers += 1
-                if state.status in {"ready", "degraded"} and state.authenticated:
+                if (
+                    provider_state.status in {"ready", "degraded"}
+                    and provider_state.authenticated
+                ):
                     ready_providers += 1
 
         if enabled_transports == 0:

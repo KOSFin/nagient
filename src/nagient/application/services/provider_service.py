@@ -3,10 +3,11 @@ from __future__ import annotations
 import getpass
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
-from nagient.app.configuration import RuntimeConfiguration, load_runtime_configuration
+from nagient.app.configuration import ProviderInstanceConfig, RuntimeConfiguration, load_runtime_configuration
 from nagient.app.settings import Settings
-from nagient.domain.entities.system_state import CredentialRecord
+from nagient.domain.entities.system_state import CredentialRecord, ProviderState
 from nagient.providers.base import LoadedProviderPlugin
 from nagient.providers.manager import ProviderManager
 from nagient.providers.registry import ProviderPluginRegistry
@@ -272,7 +273,7 @@ class ProviderService:
         provider_id: str,
         *,
         verify_remote: bool = False,
-    ):
+    ) -> ProviderState:
         provider_config = next(
             provider
             for provider in runtime_config.providers
@@ -293,7 +294,7 @@ class ProviderService:
         runtime_config: RuntimeConfiguration,
         plugins: dict[str, LoadedProviderPlugin],
         provider_id: str,
-    ):
+    ) -> tuple[ProviderInstanceConfig, LoadedProviderPlugin]:
         provider_config = next(
             (
                 provider
@@ -345,9 +346,9 @@ def _stdin_is_tty() -> bool:
         return False
 
 
-def _upsert_secret_value(secrets_file, key: str, value: str) -> None:
+def _upsert_secret_value(secrets_file: Path, key: str, value: str) -> None:
     secrets_file.parent.mkdir(parents=True, exist_ok=True)
-    lines = []
+    lines: list[str] = []
     if secrets_file.exists():
         lines = secrets_file.read_text(encoding="utf-8").splitlines()
 
@@ -371,7 +372,7 @@ def _upsert_secret_value(secrets_file, key: str, value: str) -> None:
     secrets_file.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
 
 
-def _remove_secret_value(secrets_file, key: str) -> bool:
+def _remove_secret_value(secrets_file: Path, key: str) -> bool:
     if not secrets_file.exists():
         return False
     lines = secrets_file.read_text(encoding="utf-8").splitlines()

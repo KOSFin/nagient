@@ -210,7 +210,9 @@ def main(argv: list[str] | None = None) -> int:
         return _emit(result.to_dict(), args.format)
 
     if args.command == "provider" and args.provider_command == "list":
-        discovery = container.provider_registry.discover(container.settings.providers_dir)
+        provider_discovery = container.provider_registry.discover(
+            container.settings.providers_dir
+        )
         payload = {
             "plugins": [
                 {
@@ -225,9 +227,9 @@ def main(argv: list[str] | None = None) -> int:
                     "optional_config": plugin.manifest.optional_config,
                     "secret_config": plugin.manifest.secret_config,
                 }
-                for plugin in discovery.plugins.values()
+                for plugin in provider_discovery.plugins.values()
             ],
-            "issues": [issue.to_dict() for issue in discovery.issues],
+            "issues": [issue.to_dict() for issue in provider_discovery.issues],
         }
         return _emit(payload, args.format)
 
