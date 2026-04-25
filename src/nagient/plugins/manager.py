@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from nagient.app.configuration import TransportInstanceConfig
 from nagient.domain.entities.system_state import CheckIssue, TransportState
-from nagient.plugins.base import LoadedTransportPlugin
+from nagient.plugins.base import LoadedTransportPlugin, TransportPluginManifest
 
 
 @dataclass(frozen=True)
@@ -75,14 +75,11 @@ class TransportManager:
     def _lint_config(
         self,
         transport_id: str,
-        manifest: LoadedTransportPlugin | object,
+        manifest: TransportPluginManifest,
         config: dict[str, object],
     ) -> list[CheckIssue]:
-        actual_manifest = (
-            manifest.manifest if isinstance(manifest, LoadedTransportPlugin) else manifest
-        )
         issues: list[CheckIssue] = []
-        for field_name in actual_manifest.required_config:
+        for field_name in manifest.required_config:
             if field_name not in config:
                 issues.append(
                     CheckIssue(
@@ -96,7 +93,7 @@ class TransportManager:
                     )
                 )
 
-        unknown_keys = sorted(set(config) - actual_manifest.allowed_config)
+        unknown_keys = sorted(set(config) - manifest.allowed_config)
         for key in unknown_keys:
             issues.append(
                 CheckIssue(
