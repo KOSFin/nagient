@@ -115,7 +115,11 @@ class ProviderBuiltinsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             auth_file = Path(temp_dir) / "auth.json"
             auth_file.write_text(json.dumps({"OPENAI_API_KEY": "sk-codex"}), encoding="utf-8")
-            with patch.dict(os.environ, {"NAGIENT_OPENAI_CODEX_AUTH_FILE": str(auth_file)}, clear=False):
+            with patch.dict(
+                os.environ,
+                {"NAGIENT_OPENAI_CODEX_AUTH_FILE": str(auth_file)},
+                clear=False,
+            ):
                 status = plugin.auth_status(
                     "openai-codex",
                     {"auth": "codex_auth_file"},

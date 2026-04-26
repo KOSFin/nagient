@@ -787,7 +787,11 @@ class OpenAICodexProviderPlugin(BaseProviderPlugin):
                 "device_code_url": self.device_code_url,
                 "auth_file_env": _CODEX_AUTH_FILE_ENV,
                 "access_token_env": _CODEX_ACCESS_TOKEN_ENV,
-                "api_key_env": [_NAGIENT_CODEX_API_KEY_ENV, _CODEX_API_KEY_ENV, _OPENAI_API_KEY_ENV],
+                "api_key_env": [
+                    _NAGIENT_CODEX_API_KEY_ENV,
+                    _CODEX_API_KEY_ENV,
+                    _OPENAI_API_KEY_ENV,
+                ],
             },
         )
 

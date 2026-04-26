@@ -132,7 +132,9 @@ class ConfigurationTests(unittest.TestCase):
             self.assertEqual(runtime_config.providers[0].provider_id, "openai")
             self.assertTrue(runtime_config.providers[0].enabled)
 
-    def test_environment_provider_overrides_accept_underscore_alias_for_hyphenated_ids(self) -> None:
+    def test_environment_provider_overrides_accept_underscore_alias_for_hyphenated_ids(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             home_dir = Path(temp_dir)
             config_file = home_dir / "config.toml"
