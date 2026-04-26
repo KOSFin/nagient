@@ -100,6 +100,18 @@ run_compose_install_step() {
 }
 
 python_cmd() {
+  if command -v python3.13 >/dev/null 2>&1; then
+    echo "python3.13"
+    return 0
+  fi
+  if command -v python3.12 >/dev/null 2>&1; then
+    echo "python3.12"
+    return 0
+  fi
+  if command -v python3.11 >/dev/null 2>&1; then
+    echo "python3.11"
+    return 0
+  fi
   if command -v python3 >/dev/null 2>&1; then
     echo "python3"
     return 0
@@ -258,9 +270,13 @@ print_post_install_summary() {
     style_dim=$'\033[2m'
   fi
 
-  setup_payload="$("$(python_cmd)" - "$NAGIENT_CONFIG_FILE" <<'PY'
+  if ! setup_payload="$("$(python_cmd)" - "$NAGIENT_CONFIG_FILE" <<'PY'
 import sys
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:
+    print("||")
+    raise SystemExit(0)
 from pathlib import Path
 
 config_path = Path(sys.argv[1])
@@ -284,7 +300,9 @@ if config_path.exists():
 
 print(f"{default_provider}|{len(enabled)}|{','.join(enabled)}")
 PY
-)"
+)"; then
+    setup_payload="||"
+  fi
 
   IFS='|' read -r default_provider enabled_count enabled_providers <<EOF
 $setup_payload
@@ -375,6 +393,18 @@ compose() {
 }
 
 python_cmd() {
+  if command -v python3.13 >/dev/null 2>&1; then
+    echo "python3.13"
+    return 0
+  fi
+  if command -v python3.12 >/dev/null 2>&1; then
+    echo "python3.12"
+    return 0
+  fi
+  if command -v python3.11 >/dev/null 2>&1; then
+    echo "python3.11"
+    return 0
+  fi
   if command -v python3 >/dev/null 2>&1; then
     echo "python3"
     return 0

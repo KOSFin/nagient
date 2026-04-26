@@ -46,6 +46,18 @@ if [ ! -f "$CURRENT_MANIFEST" ]; then
 fi
 
 python_cmd() {
+  if command -v python3.13 >/dev/null 2>&1; then
+    echo "python3.13"
+    return 0
+  fi
+  if command -v python3.12 >/dev/null 2>&1; then
+    echo "python3.12"
+    return 0
+  fi
+  if command -v python3.11 >/dev/null 2>&1; then
+    echo "python3.11"
+    return 0
+  fi
   if command -v python3 >/dev/null 2>&1; then
     echo "python3"
     return 0
@@ -215,6 +227,18 @@ compose() {
 }
 
 python_cmd() {
+  if command -v python3.13 >/dev/null 2>&1; then
+    echo "python3.13"
+    return 0
+  fi
+  if command -v python3.12 >/dev/null 2>&1; then
+    echo "python3.12"
+    return 0
+  fi
+  if command -v python3.11 >/dev/null 2>&1; then
+    echo "python3.11"
+    return 0
+  fi
   if command -v python3 >/dev/null 2>&1; then
     echo "python3"
     return 0
