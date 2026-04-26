@@ -47,7 +47,8 @@ def _write_mock_curl(fake_bin: Path) -> None:
         "import sys\n"
         "from pathlib import Path\n"
         "\n"
-        'mapping = json.loads(Path(os.environ["NAGIENT_TEST_URL_MAP"]).read_text(encoding="utf-8"))\n'
+        'mapping_path = Path(os.environ["NAGIENT_TEST_URL_MAP"])\n'
+        'mapping = json.loads(mapping_path.read_text(encoding="utf-8"))\n'
         "url = sys.argv[-1]\n"
         'sys.stdout.write(Path(mapping[url]).read_text(encoding="utf-8"))\n',
         encoding="utf-8",
