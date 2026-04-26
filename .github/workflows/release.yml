@@ -113,7 +113,7 @@ jobs:
           echo "Push enabled:       ${{ steps.docker_publish.outputs.push_enabled }}"
 
       - name: Build and optionally push Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64,linux/arm64
