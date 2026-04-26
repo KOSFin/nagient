@@ -1275,19 +1275,20 @@ class OpenAICodexProviderPlugin(BaseProviderPlugin):
         code_challenge: str,
         scope: str,
     ) -> str:
-        return (
-            f"{self.login_url}?{urlencode({
-                'response_type': 'code',
-                'client_id': self.client_id,
-                'redirect_uri': redirect_uri,
-                'scope': scope,
-                'state': state,
-                'code_challenge': code_challenge,
-                'code_challenge_method': 'S256',
-                'originator': 'nagient',
-                'codex_cli_simplified_flow': 'true',
-            })}"
+        query = urlencode(
+            {
+                "response_type": "code",
+                "client_id": self.client_id,
+                "redirect_uri": redirect_uri,
+                "scope": scope,
+                "state": state,
+                "code_challenge": code_challenge,
+                "code_challenge_method": "S256",
+                "originator": "nagient",
+                "codex_cli_simplified_flow": "true",
+            }
         )
+        return f"{self.login_url}?{query}"
 
     def _redirect_uri(self, config: Mapping[str, object]) -> str:
         redirect_uri = _string_config(config, "redirect_uri")
