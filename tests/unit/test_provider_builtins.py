@@ -28,6 +28,10 @@ class _FakeResponse:
         return None
 
 
+def _response(payload: dict[str, Any]) -> _FakeResponse:
+    return _FakeResponse(payload)
+
+
 class ProviderBuiltinsTests(unittest.TestCase):
     def test_openai_builtin_parses_model_listing(self) -> None:
         plugin = next(
@@ -129,6 +133,64 @@ class ProviderBuiltinsTests(unittest.TestCase):
 
         self.assertTrue(status.authenticated)
         self.assertEqual(status.status, "ready")
+
+    def test_openai_codex_begin_login_returns_oauth_authorization_url(self) -> None:
+        plugin = next(
+            provider.implementation
+            for provider in builtin_providers()
+            if provider.manifest.plugin_id == "builtin.openai_codex"
+        )
+
+        session = plugin.begin_login(
+            "openai-codex",
+            {"auth": "oauth_browser"},
+            {},
+            None,
+        )
+
+        self.assertEqual(session.auth_mode, "oauth_browser")
+        self.assertEqual(session.submission_mode, "callback_url")
+        self.assertIn("auth.openai.com/oauth/authorize", session.authorization_url or "")
+        self.assertEqual(
+            session.callback_url,
+            "http://127.0.0.1:1455/auth/callback",
+        )
+
+    def test_openai_codex_complete_login_exchanges_callback_url_for_tokens(self) -> None:
+        plugin = next(
+            provider.implementation
+            for provider in builtin_providers()
+            if provider.manifest.plugin_id == "builtin.openai_codex"
+        )
+
+        def opener(request, timeout=15):
+            del timeout
+            self.assertEqual(request.method, "POST")
+            self.assertIn("https://auth.openai.com/oauth/token", request.full_url)
+            return _response(
+                {
+                    "access_token": "access-token",
+                    "refresh_token": "refresh-token",
+                    "expires_in": 3600,
+                    "scope": "openid offline_access model.request",
+                }
+            )
+
+        plugin = replace(plugin, http_client=JsonHttpClient(opener=opener))
+        session = plugin.begin_login("openai-codex", {"auth": "oauth_browser"}, {}, None)
+        state = session.metadata["state"]
+
+        record = plugin.complete_login(
+            "openai-codex",
+            {"auth": "oauth_browser"},
+            None,
+            session,
+            callback_url=f"http://127.0.0.1:1455/auth/callback?code=demo-code&state={state}",
+        )
+
+        self.assertEqual(record.auth_mode, "oauth_browser")
+        self.assertEqual(record.data["access_token"], "access-token")
+        self.assertEqual(record.data["refresh_token"], "refresh-token")
 
 
 if __name__ == "__main__":

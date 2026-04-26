@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import base64
+import calendar
+import hashlib
 import json
 import os
+import secrets as secretslib
 import time
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 from nagient.domain.entities.system_state import (
     AuthSessionState,
@@ -24,6 +29,19 @@ _NAGIENT_CODEX_API_KEY_ENV = "NAGIENT_OPENAI_CODEX_API_KEY"
 _CODEX_API_KEY_ENV = "CODEX_API_KEY"
 _OPENAI_API_KEY_ENV = "OPENAI_API_KEY"
 _CODEX_HOME_ENV = "CODEX_HOME"
+_OPENAI_CODEX_OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
+_OPENAI_CODEX_OAUTH_AUTHORIZE_URL = "https://auth.openai.com/oauth/authorize"
+_OPENAI_CODEX_OAUTH_TOKEN_URL = "https://auth.openai.com/oauth/token"
+_OPENAI_CODEX_OAUTH_DEFAULT_REDIRECT_URI = "http://127.0.0.1:1455/auth/callback"
+_OPENAI_CODEX_OAUTH_SCOPES = (
+    "openid",
+    "profile",
+    "email",
+    "offline_access",
+    "model.request",
+    "api.model.read",
+    "api.responses.write",
+)
 
 
 @dataclass(frozen=True)
@@ -634,8 +652,10 @@ class OpenAICodexProviderPlugin(BaseProviderPlugin):
     default_base_url: str
     default_secret_name: str = "CODEX_API_KEY"
     default_auth_file: str = "~/.codex/auth.json"
-    login_url: str = "https://chatgpt.com/codex"
-    device_code_url: str = "https://auth.openai.com/codex/device"
+    login_url: str = _OPENAI_CODEX_OAUTH_AUTHORIZE_URL
+    token_url: str = _OPENAI_CODEX_OAUTH_TOKEN_URL
+    client_id: str = _OPENAI_CODEX_OAUTH_CLIENT_ID
+    default_redirect_uri: str = _OPENAI_CODEX_OAUTH_DEFAULT_REDIRECT_URI
     http_client: JsonHttpClient = field(default_factory=JsonHttpClient)
 
     def validate_config(
@@ -716,6 +736,18 @@ class OpenAICodexProviderPlugin(BaseProviderPlugin):
                     )
                 )
 
+        redirect_uri = self._redirect_uri(config)
+        if auth_mode == "oauth_browser" and redirect_uri is not None:
+            if not redirect_uri.startswith(("http://", "https://")):
+                issues.append(
+                    _issue(
+                        "error",
+                        "provider.invalid_redirect_uri",
+                        provider_id,
+                        f"Provider {provider_id!r} must define a valid redirect_uri.",
+                    )
+                )
+
         return issues
 
     def auth_status(
@@ -728,6 +760,8 @@ class OpenAICodexProviderPlugin(BaseProviderPlugin):
         auth_mode = _auth_mode(config, self.manifest.default_auth_mode)
         if auth_mode == "api_key":
             return self._api_key_auth_status(provider_id, config, secrets, credential)
+        if auth_mode == "oauth_browser":
+            return self._oauth_browser_auth_status(provider_id, credential)
         if auth_mode == "stored_token":
             return self._stored_token_auth_status(provider_id, config, credential)
         if auth_mode == "codex_auth_file":
@@ -758,40 +792,84 @@ class OpenAICodexProviderPlugin(BaseProviderPlugin):
         credential: CredentialRecord | None,
     ) -> AuthSessionState:
         del secrets, credential
-        auth_file = self._auth_file_path(config)
+        auth_mode = _auth_mode(config, self.manifest.default_auth_mode)
+        if auth_mode == "codex_auth_file":
+            auth_file = self._auth_file_path(config)
+            return AuthSessionState(
+                session_id=str(uuid.uuid4()),
+                provider_id=provider_id,
+                plugin_id=self.manifest.plugin_id,
+                auth_mode="codex_auth_file",
+                status="awaiting_user_action",
+                submission_mode="none",
+                authorization_url="https://chatgpt.com/codex",
+                callback_url="https://auth.openai.com/codex/device",
+                instructions=[
+                    "Open the Codex sign-in page and complete ChatGPT login.",
+                    (
+                        "If Codex CLI is available, run `codex login` (or "
+                        "`codex login --device-auth` on headless hosts)."
+                    ),
+                    f"Nagient checks Codex auth cache at {str(auth_file)!r}.",
+                    (
+                        "If CLI login is unavailable, set one of: "
+                        f"{_CODEX_AUTH_FILE_ENV}, {_CODEX_ACCESS_TOKEN_ENV}, "
+                        f"{_CODEX_API_KEY_ENV}, {_OPENAI_API_KEY_ENV}."
+                    ),
+                ],
+                metadata={
+                    "auth_file": str(auth_file),
+                    "login_url": "https://chatgpt.com/codex",
+                    "device_code_url": "https://auth.openai.com/codex/device",
+                    "auth_file_env": _CODEX_AUTH_FILE_ENV,
+                    "access_token_env": _CODEX_ACCESS_TOKEN_ENV,
+                    "api_key_env": [
+                        _NAGIENT_CODEX_API_KEY_ENV,
+                        _CODEX_API_KEY_ENV,
+                        _OPENAI_API_KEY_ENV,
+                    ],
+                },
+            )
+
+        session_id = str(uuid.uuid4())
+        redirect_uri = self._redirect_uri(config)
+        state = secretslib.token_urlsafe(32)
+        verifier = _pkce_verifier()
+        challenge = _pkce_challenge(verifier)
+        scope = " ".join(_OPENAI_CODEX_OAUTH_SCOPES)
+        authorization_url = self._authorization_url(
+            redirect_uri=redirect_uri,
+            state=state,
+            code_challenge=challenge,
+            scope=scope,
+        )
+
         return AuthSessionState(
-            session_id=str(uuid.uuid4()),
+            session_id=session_id,
             provider_id=provider_id,
             plugin_id=self.manifest.plugin_id,
-            auth_mode="codex_auth_file",
+            auth_mode="oauth_browser",
             status="awaiting_user_action",
-            submission_mode="none",
-            authorization_url=self.login_url,
-            callback_url=self.device_code_url,
+            submission_mode="callback_url",
+            authorization_url=authorization_url,
+            callback_url=redirect_uri,
             instructions=[
-                "Open the Codex sign-in page and complete ChatGPT login.",
+                "Open the authorization URL in your browser and sign in with ChatGPT.",
+                "Approve Codex access for Nagient.",
                 (
-                    "If Codex CLI is available, run `codex login` (or "
-                    "`codex login --device-auth` on headless hosts)."
+                    "If the browser redirects to a localhost URL, paste that full redirect "
+                    "URL into `nagient auth complete ... --callback-url`."
                 ),
-                f"Nagient checks Codex auth cache at {str(auth_file)!r}.",
-                (
-                    "If CLI login is unavailable, set one of: "
-                    f"{_CODEX_AUTH_FILE_ENV}, {_CODEX_ACCESS_TOKEN_ENV}, "
-                    f"{_CODEX_API_KEY_ENV}, {_OPENAI_API_KEY_ENV}."
-                ),
+                "If only an authorization code is available, pass it with `--code`.",
             ],
             metadata={
-                "auth_file": str(auth_file),
-                "login_url": self.login_url,
-                "device_code_url": self.device_code_url,
-                "auth_file_env": _CODEX_AUTH_FILE_ENV,
-                "access_token_env": _CODEX_ACCESS_TOKEN_ENV,
-                "api_key_env": [
-                    _NAGIENT_CODEX_API_KEY_ENV,
-                    _CODEX_API_KEY_ENV,
-                    _OPENAI_API_KEY_ENV,
-                ],
+                "oauth_authorize_url": self.login_url,
+                "oauth_token_url": self.token_url,
+                "client_id": self.client_id,
+                "redirect_uri": redirect_uri,
+                "state": state,
+                "code_verifier": verifier,
+                "scope": scope,
             },
         )
 
@@ -805,8 +883,17 @@ class OpenAICodexProviderPlugin(BaseProviderPlugin):
         callback_url: str | None = None,
         code: str | None = None,
     ) -> CredentialRecord:
-        del credential, session
         auth_mode = _auth_mode(config, self.manifest.default_auth_mode)
+        if auth_mode == "oauth_browser":
+            return self._complete_oauth_browser_login(
+                provider_id,
+                credential,
+                session,
+                callback_url=callback_url,
+                code=code,
+            )
+
+        del credential, session
         data: dict[str, object] = {}
 
         manual_token = (code or callback_url or "").strip()
@@ -858,18 +945,62 @@ class OpenAICodexProviderPlugin(BaseProviderPlugin):
         secrets: Mapping[str, str],
         credential: CredentialRecord | None,
     ) -> list[ProviderModel]:
-        api_key = self._resolve_api_key(config, secrets, credential)
-        if not api_key:
+        bearer_token = self._resolve_bearer_token(config, secrets, credential)
+        if not bearer_token:
             raise ValueError(
-                "Model discovery for openai-codex requires an API key. "
-                "Set CODEX_API_KEY or OPENAI_API_KEY, or set auth=api_key for this provider."
+                "Model discovery for openai-codex requires either OAuth credentials or an "
+                "API key. Run `nagient auth login openai-codex` or set CODEX_API_KEY."
             )
         payload = self.http_client.get_json(
             self._models_url(config),
-            headers={"Authorization": f"Bearer {api_key}"},
+            headers={"Authorization": f"Bearer {bearer_token}"},
             timeout=_timeout_seconds(config),
         )
         return _parse_data_models(payload, provider_id)
+
+    def _oauth_browser_auth_status(
+        self,
+        provider_id: str,
+        credential: CredentialRecord | None,
+    ) -> ProviderAuthStatus:
+        access_token = _credential_field(credential, "access_token")
+        refresh_token = _credential_field(credential, "refresh_token")
+        expires_at = _credential_field(credential, "expires_at")
+        if access_token and not _is_expired(expires_at):
+            return ProviderAuthStatus(
+                authenticated=True,
+                auth_mode="oauth_browser",
+                status="ready",
+                message="Browser login is configured and access token is available.",
+            )
+        if refresh_token:
+            return ProviderAuthStatus(
+                authenticated=True,
+                auth_mode="oauth_browser",
+                status="ready",
+                message="Browser login is configured and refresh token is available.",
+            )
+        return ProviderAuthStatus(
+            authenticated=False,
+            auth_mode="oauth_browser",
+            status="missing_credentials",
+            message="No completed browser login session was found for this provider.",
+            issues=[
+                _issue(
+                    "warning",
+                    "provider.oauth_login_required",
+                    provider_id,
+                    (
+                        f"Provider {provider_id!r} expects a browser login session, but no "
+                        "stored OAuth credential was found."
+                    ),
+                    hint=(
+                        f"Run `nagient auth login {provider_id}` and complete the URL-based "
+                        "login flow."
+                    ),
+                )
+            ],
+        )
 
     def _api_key_auth_status(
         self,
@@ -1136,6 +1267,37 @@ class OpenAICodexProviderPlugin(BaseProviderPlugin):
             return secret_name
         return self.default_secret_name
 
+    def _authorization_url(
+        self,
+        *,
+        redirect_uri: str,
+        state: str,
+        code_challenge: str,
+        scope: str,
+    ) -> str:
+        return (
+            f"{self.login_url}?{urlencode({
+                'response_type': 'code',
+                'client_id': self.client_id,
+                'redirect_uri': redirect_uri,
+                'scope': scope,
+                'state': state,
+                'code_challenge': code_challenge,
+                'code_challenge_method': 'S256',
+                'originator': 'nagient',
+                'codex_cli_simplified_flow': 'true',
+            })}"
+        )
+
+    def _redirect_uri(self, config: Mapping[str, object]) -> str:
+        redirect_uri = _string_config(config, "redirect_uri")
+        if redirect_uri:
+            return redirect_uri
+        legacy_redirect_uri = _string_config(config, "auth_file")
+        if legacy_redirect_uri and legacy_redirect_uri.startswith(("http://", "https://")):
+            return legacy_redirect_uri
+        return self.default_redirect_uri
+
     def _models_url(self, config: Mapping[str, object]) -> str:
         base_url = _string_config(config, "base_url") or self.default_base_url
         models_path = _string_config(config, "models_path") or "/models"
@@ -1181,6 +1343,95 @@ class OpenAICodexProviderPlugin(BaseProviderPlugin):
             return cache.api_key
         return ""
 
+    def _resolve_bearer_token(
+        self,
+        config: Mapping[str, object],
+        secrets: Mapping[str, str],
+        credential: CredentialRecord | None,
+    ) -> str:
+        api_key = self._resolve_api_key(config, secrets, credential)
+        if api_key:
+            return api_key
+        access_token = _credential_field(credential, "access_token")
+        if access_token:
+            return access_token
+        return ""
+
+    def _complete_oauth_browser_login(
+        self,
+        provider_id: str,
+        credential: CredentialRecord | None,
+        session: AuthSessionState,
+        *,
+        callback_url: str | None,
+        code: str | None,
+    ) -> CredentialRecord:
+        del credential
+        parsed = _parse_oauth_callback(callback_url or "")
+        authorization_code = (code or parsed.get("code") or "").strip()
+        if not authorization_code:
+            raise ValueError(
+                "No authorization code was provided. Pass --callback-url with the full "
+                "redirect URL or provide --code explicitly."
+            )
+
+        expected_state = str(session.metadata.get("state", "")).strip()
+        received_state = parsed.get("state", "").strip()
+        if expected_state and received_state and expected_state != received_state:
+            raise ValueError("OAuth state mismatch. Start the login flow again.")
+
+        code_verifier = str(session.metadata.get("code_verifier", "")).strip()
+        redirect_uri = (
+            str(session.metadata.get("redirect_uri", "")).strip()
+            or self.default_redirect_uri
+        )
+        token_payload = self.http_client.post_form_json(
+            self.token_url,
+            {
+                "grant_type": "authorization_code",
+                "client_id": self.client_id,
+                "redirect_uri": redirect_uri,
+                "code": authorization_code,
+                "code_verifier": code_verifier,
+            },
+            timeout=30.0,
+        )
+        if not isinstance(token_payload, dict):
+            raise ValueError("OpenAI OAuth token exchange returned an invalid payload.")
+
+        access_token = _as_string(token_payload.get("access_token"))
+        refresh_token = _as_string(token_payload.get("refresh_token"))
+        if not access_token and not refresh_token:
+            raise ValueError("OpenAI OAuth token exchange did not return usable credentials.")
+
+        expires_in = token_payload.get("expires_in")
+        expires_at = _expiry_timestamp(expires_in)
+        data: dict[str, object] = {}
+        if access_token:
+            data["access_token"] = access_token
+        if refresh_token:
+            data["refresh_token"] = refresh_token
+        if expires_at:
+            data["expires_at"] = expires_at
+        scope = _as_string(token_payload.get("scope"))
+        if scope:
+            data["scope"] = scope
+        id_token = _as_string(token_payload.get("id_token"))
+        if id_token:
+            data["id_token"] = id_token
+            subject = _jwt_subject(id_token)
+            if subject:
+                data["subject"] = subject
+
+        return CredentialRecord(
+            provider_id=provider_id,
+            plugin_id=self.manifest.plugin_id,
+            auth_mode="oauth_browser",
+            issued_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            expires_at=expires_at or None,
+            data=data,
+        )
+
 
 def builtin_providers() -> list[LoadedProviderPlugin]:
     providers: list[BaseProviderPlugin] = [
@@ -1217,11 +1468,16 @@ def builtin_providers() -> list[LoadedProviderPlugin]:
                 version="0.1.0",
                 family="openai-codex",
                 entrypoint="<builtin>",
-                supported_auth_modes=["codex_auth_file", "api_key", "stored_token"],
-                default_auth_mode="codex_auth_file",
+                supported_auth_modes=[
+                    "oauth_browser",
+                    "codex_auth_file",
+                    "api_key",
+                    "stored_token",
+                ],
+                default_auth_mode="oauth_browser",
                 capabilities=[
                     "list_models",
-                    "chatgpt_browser_login",
+                    "oauth_pkce_login",
                     "api_key_auth",
                     "stored_token_auth",
                     "codex_auth_file_auth",
@@ -1229,15 +1485,25 @@ def builtin_providers() -> list[LoadedProviderPlugin]:
                 required_config=[],
                 optional_config=[
                     "auth",
-                    "auth_file",
                     "api_key_secret",
                     "base_url",
                     "model",
                     "models_path",
+                    "redirect_uri",
                     "timeout_seconds",
+                    "auth_file",
                 ],
                 secret_config=["api_key_secret"],
-                credential_fields=["api_key", "access_token", "refresh_token", "auth_file"],
+                credential_fields=[
+                    "api_key",
+                    "access_token",
+                    "refresh_token",
+                    "expires_at",
+                    "scope",
+                    "subject",
+                    "id_token",
+                    "auth_file",
+                ],
             ),
             default_base_url="https://api.openai.com/v1",
             default_secret_name="CODEX_API_KEY",
@@ -1535,6 +1801,63 @@ def _load_codex_auth_cache(auth_file: Path) -> _CodexAuthCache:
 def _as_string(value: object) -> str | None:
     if isinstance(value, str) and value.strip():
         return value.strip()
+    return None
+
+
+def _pkce_verifier() -> str:
+    return secretslib.token_urlsafe(64)
+
+
+def _pkce_challenge(verifier: str) -> str:
+    digest = hashlib.sha256(verifier.encode("utf-8")).digest()
+    return base64.urlsafe_b64encode(digest).decode("utf-8").rstrip("=")
+
+
+def _parse_oauth_callback(callback_url: str) -> dict[str, str]:
+    if not callback_url.strip():
+        return {}
+    if "://" not in callback_url:
+        return {"code": callback_url.strip()}
+    query = parse_qs(urlsplit(callback_url).query)
+    return {
+        key: values[0].strip()
+        for key, values in query.items()
+        if values and values[0].strip()
+    }
+
+
+def _expiry_timestamp(expires_in: object) -> str | None:
+    if not isinstance(expires_in, int) or expires_in <= 0:
+        return None
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + expires_in))
+
+
+def _is_expired(expires_at: str) -> bool:
+    if not expires_at:
+        return False
+    try:
+        expires_struct = time.strptime(expires_at, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        return False
+    return time.time() >= calendar.timegm(expires_struct)
+
+
+def _jwt_subject(token: str) -> str | None:
+    parts = token.split(".")
+    if len(parts) < 2:
+        return None
+    payload = parts[1]
+    payload += "=" * (-len(payload) % 4)
+    try:
+        decoded = base64.urlsafe_b64decode(payload.encode("utf-8")).decode("utf-8")
+        payload_json = json.loads(decoded)
+    except (ValueError, OSError):
+        return None
+    if not isinstance(payload_json, dict):
+        return None
+    subject = payload_json.get("sub")
+    if isinstance(subject, str) and subject.strip():
+        return subject.strip()
     return None
 
 

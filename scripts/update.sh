@@ -387,7 +387,7 @@ USAGE
 provider_defaults() {
   case "$1" in
     openai) printf '%s\n' 'builtin.openai|api_key|OPENAI_API_KEY|gpt-4.1-mini||' ;;
-    openai-codex|openai_codex) printf '%s\n' 'builtin.openai_codex|codex_auth_file|CODEX_API_KEY|gpt-5-codex||~/.codex/auth.json' ;;
+    openai-codex|openai_codex) printf '%s\n' 'builtin.openai_codex|oauth_browser|CODEX_API_KEY|gpt-5-codex||http://127.0.0.1:1455/auth/callback' ;;
     anthropic) printf '%s\n' 'builtin.anthropic|api_key|ANTHROPIC_API_KEY|claude-sonnet-4-5||' ;;
     gemini) printf '%s\n' 'builtin.gemini|api_key|GEMINI_API_KEY|gemini-2.5-pro||' ;;
     deepseek) printf '%s\n' 'builtin.deepseek|api_key|DEEPSEEK_API_KEY|deepseek-chat||' ;;
@@ -552,7 +552,10 @@ if secret_name:
 if base_url:
     profile["base_url"] = base_url
 if auth_file:
-    profile["auth_file"] = auth_file
+    if auth_mode == "oauth_browser" and auth_file.startswith(("http://", "https://")):
+        profile["redirect_uri"] = auth_file
+    else:
+        profile["auth_file"] = auth_file
 
 providers[provider_id] = profile
 
@@ -578,6 +581,71 @@ init_runtime() {
 list_providers() {
   require_compose_files
   compose_exec nagient auth status --format text
+}
+
+complete_openai_codex_browser_login() {
+  local provider_id="$1"
+  local login_payload=""
+  local session_id=""
+  local authorization_url=""
+  local callback_input=""
+
+  require_compose_files
+  login_payload="$(compose_exec nagient auth login "$provider_id" --format json)"
+  session_id="$("$(python_cmd)" - <<'PY' "$login_payload"
+import json
+import sys
+payload = json.loads(sys.argv[1])
+print(payload.get("session", {}).get("session_id", ""))
+PY
+)"
+  authorization_url="$("$(python_cmd)" - <<'PY' "$login_payload"
+import json
+import sys
+payload = json.loads(sys.argv[1])
+print(payload.get("session", {}).get("authorization_url", ""))
+PY
+)"
+
+  if [ -z "$session_id" ] || [ -z "$authorization_url" ]; then
+    echo "Could not start OpenAI Codex browser login." >&2
+    echo "$login_payload" >&2
+    return 1
+  fi
+
+  echo "OpenAI Codex login URL:"
+  echo "$authorization_url"
+  if [ -t 0 ]; then
+    printf 'Open browser now? [Y/n]: '
+    read -r callback_input
+    case "${callback_input:-Y}" in
+      n|N|no|NO)
+        ;;
+      *)
+        open_url "$authorization_url" || true
+        ;;
+    esac
+
+    echo "After login, paste the full redirect URL from the browser."
+    echo "If you only have the code, paste just the code."
+    printf 'Callback URL or code: '
+    read -r callback_input
+  fi
+
+  if [ -z "${callback_input:-}" ]; then
+    echo "Login session created. Complete it later with:"
+    echo "  nagient auth complete $provider_id --session-id $session_id --callback-url '<redirect-url>'"
+    return 0
+  fi
+
+  case "$callback_input" in
+    http://*|https://*)
+      compose_exec nagient auth complete "$provider_id" --session-id "$session_id" --callback-url "$callback_input" --format text
+      ;;
+    *)
+      compose_exec nagient auth complete "$provider_id" --session-id "$session_id" --code "$callback_input" --format text
+      ;;
+  esac
 }
 
 provider_enable() {
@@ -707,6 +775,11 @@ EOF
 
   if [ "$no_reconcile" = "true" ]; then
     echo "Run \`${PROGRAM_NAME} reconcile\` when ready."
+    return 0
+  fi
+
+  if [ "$auth_mode" = "oauth_browser" ] && [ -z "$token" ] && [ -z "$api_key" ]; then
+    echo "Run \`${PROGRAM_NAME} auth login ${provider_id}\` to finish browser authentication."
     return 0
   fi
 
@@ -945,6 +1018,12 @@ EOF
   fi
 
   provider_enable "$provider_id" "${provider_args[@]}"
+
+  if [ "$provider_id" = "openai-codex" ] && [ "$auth_mode" = "oauth_browser" ] && [ -z "$api_key" ] && [ -z "$token" ]; then
+    complete_openai_codex_browser_login "$provider_id" || return 1
+    require_compose_files
+    compose_exec nagient reconcile --format text
+  fi
 }
 
 command_name="${1:-help}"

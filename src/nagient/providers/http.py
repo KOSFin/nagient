@@ -58,6 +58,26 @@ class JsonHttpClient:
         request = Request(target_url, headers=dict(headers or {}), method="GET")
         return self._open_json(request, timeout or self.default_timeout)
 
+    def post_form_json(
+        self,
+        url: str,
+        form: Mapping[str, str],
+        *,
+        headers: Mapping[str, str] | None = None,
+        timeout: float | None = None,
+    ) -> object:
+        request_headers = {
+            "Content-Type": "application/x-www-form-urlencoded",
+            **dict(headers or {}),
+        }
+        request = Request(
+            url,
+            data=urlencode(dict(form)).encode("utf-8"),
+            headers=request_headers,
+            method="POST",
+        )
+        return self._open_json(request, timeout or self.default_timeout)
+
     def _open_json(self, request: Request, timeout: float) -> object:
         try:
             with self.opener(request, timeout=timeout) as response:
