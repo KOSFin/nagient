@@ -6,7 +6,13 @@ $DefaultUpdateBaseUrl = "__NAGIENT_UPDATE_BASE_URL__"
 
 $NagientHome = if ($env:NAGIENT_HOME) { $env:NAGIENT_HOME } else { Join-Path $HOME ".nagient" }
 $Channel = if ($env:NAGIENT_CHANNEL) { $env:NAGIENT_CHANNEL } else { $DefaultChannel }
-$UpdateBaseUrl = if ($env:NAGIENT_UPDATE_BASE_URL) { $env:NAGIENT_UPDATE_BASE_URL } else { $DefaultUpdateBaseUrl }
+$UpdateBaseUrl = if ($env:NAGIENT_UPDATE_BASE_URL) {
+  $env:NAGIENT_UPDATE_BASE_URL
+} elseif ($env:UPDATE_BASE_URL) {
+  $env:UPDATE_BASE_URL
+} else {
+  $DefaultUpdateBaseUrl
+}
 $ComposeFile = Join-Path $NagientHome "docker-compose.yml"
 $EnvFile = Join-Path $NagientHome ".env"
 $CurrentManifest = Join-Path $NagientHome "releases/current.json"
@@ -14,7 +20,7 @@ $CurrentManifest = Join-Path $NagientHome "releases/current.json"
 New-Item -ItemType Directory -Force -Path (Join-Path $NagientHome "bin"), (Join-Path $NagientHome "releases") | Out-Null
 
 if ($UpdateBaseUrl -eq "__NAGIENT_UPDATE_BASE_URL__") {
-  throw "NAGIENT_UPDATE_BASE_URL is not configured. Use a released updater asset or set the variable explicitly."
+  throw "NAGIENT_UPDATE_BASE_URL is not configured. Use a rendered updater asset or set NAGIENT_UPDATE_BASE_URL/UPDATE_BASE_URL explicitly."
 }
 
 if ($Channel -eq "__NAGIENT_DEFAULT_CHANNEL__") {

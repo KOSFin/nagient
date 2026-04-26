@@ -55,7 +55,7 @@ jobs:
         run: python -m compileall src
 
       - name: Validate POSIX shell scripts
-        run: bash -n scripts/install.sh scripts/update.sh scripts/uninstall.sh docker/scripts/entrypoint.sh
+        run: bash -n scripts/bootstrap/install.sh scripts/install.sh scripts/update.sh scripts/uninstall.sh docker/scripts/entrypoint.sh
 
       - name: Resolve centralized release settings
         id: meta
@@ -82,6 +82,12 @@ jobs:
             --docker-project-name ${{ steps.meta.outputs.docker_project_name }} \
             --container-name ${{ steps.meta.outputs.container_name }}
 
+      - name: Render bootstrap assets smoke test
+        run: |
+          python scripts/release/render_bootstrap_assets.py \
+            --output-dir /tmp/nagient-bootstrap \
+            --update-base-url ${{ steps.meta.outputs.update_base_url }}
+
   docker-smoke:
     runs-on: ubuntu-latest
     steps:
@@ -100,6 +106,7 @@ jobs:
       - name: Validate PowerShell scripts
         shell: pwsh
         run: |
+          $null = [ScriptBlock]::Create((Get-Content -Raw scripts/bootstrap/install.ps1))
           $null = [ScriptBlock]::Create((Get-Content -Raw scripts/install.ps1))
           $null = [ScriptBlock]::Create((Get-Content -Raw scripts/update.ps1))
           $null = [ScriptBlock]::Create((Get-Content -Raw scripts/uninstall.ps1))

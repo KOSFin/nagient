@@ -10,7 +10,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -67,10 +67,19 @@ jobs:
           python scripts/release/render_bootstrap_assets.py \
             --output-dir "${SITE_PATH}" \
             --update-base-url "${BASE_URL}"
+          touch "${SITE_PATH}/.nojekyll"
           if [[ -n "${CUSTOM_DOMAIN}" ]]; then
             printf '%s\n' "${CUSTOM_DOMAIN}" > "${SITE_PATH}/CNAME"
           fi
           echo "site_path=${SITE_PATH}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish gh-pages branch snapshot
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ${{ steps.site.outputs.site_path }}
+          publish_branch: gh-pages
+          force_orphan: true
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
@@ -83,3 +92,35 @@ jobs:
       - name: Deploy Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Smoke check published bootstrap asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          PAGE_URL="${{ steps.deployment.outputs.page_url }}"
+          INSTALLER_URL="${PAGE_URL%/}/install.sh"
+          CHANNEL_URL="${PAGE_URL%/}/channels/stable.json"
+          INSTALLER_PAYLOAD="$(mktemp)"
+          CHANNEL_PAYLOAD="$(mktemp)"
+          trap 'rm -f "$INSTALLER_PAYLOAD" "$CHANNEL_PAYLOAD"' EXIT
+          curl -fsSL "$INSTALLER_URL" >"$INSTALLER_PAYLOAD"
+          curl -fsSL "$CHANNEL_URL" >"$CHANNEL_PAYLOAD"
+          if grep -q "__NAGIENT_UPDATE_BASE_URL__" "$INSTALLER_PAYLOAD"; then
+            echo "Rendered bootstrap installer still contains unresolved update URL placeholder." >&2
+            exit 1
+          fi
+          python - "${{ steps.meta.outputs.version }}" "$CHANNEL_PAYLOAD" <<'PY'
+          import json
+          import sys
+
+          expected_version = sys.argv[1]
+          payload_path = sys.argv[2]
+          with open(payload_path, "r", encoding="utf-8") as handle:
+              payload = json.load(handle)
+
+          actual_version = payload.get("latest_version")
+          if actual_version != expected_version:
+              raise SystemExit(
+                  f"Expected latest_version={expected_version!r}, got {actual_version!r}."
+              )
+          PY

@@ -14,6 +14,7 @@ class ShellScriptSmokeTests(unittest.TestCase):
             self.skipTest("bash is not available")
 
         script_paths = [
+            "scripts/bootstrap/install.sh",
             "scripts/install.sh",
             "scripts/update.sh",
             "scripts/uninstall.sh",

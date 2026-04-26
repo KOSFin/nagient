@@ -10,6 +10,8 @@ Language: English | [Русский](env.ru.md)
 | `NAGIENT_CHANNEL` | Update channel | `stable` |
 | `NAGIENT_UPDATE_BASE_URL` | Update center URL | Embedded in release installer |
 
+The installer also accepts `UPDATE_BASE_URL` as a compatibility override when you run a rendered script manually.
+
 ## 2. Docker Compose `.env` variables
 
 File: `~/.nagient/.env`

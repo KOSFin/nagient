@@ -10,6 +10,8 @@
 | `NAGIENT_CHANNEL` | Канал обновлений | `stable` |
 | `NAGIENT_UPDATE_BASE_URL` | URL update center | задается release-установщиком |
 
+Установщик также принимает `UPDATE_BASE_URL` как совместимый override, если вы запускаете уже сгенерированный скрипт вручную.
+
 ## 2. Переменные Docker Compose `.env`
 
 Файл: `~/.nagient/.env`

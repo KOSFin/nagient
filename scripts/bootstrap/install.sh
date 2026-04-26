@@ -5,10 +5,12 @@ DEFAULT_CHANNEL="stable"
 DEFAULT_UPDATE_BASE_URL="__NAGIENT_UPDATE_BASE_URL__"
 
 NAGIENT_CHANNEL="${NAGIENT_CHANNEL:-$DEFAULT_CHANNEL}"
-NAGIENT_UPDATE_BASE_URL="${NAGIENT_UPDATE_BASE_URL:-$DEFAULT_UPDATE_BASE_URL}"
+NAGIENT_UPDATE_BASE_URL="${NAGIENT_UPDATE_BASE_URL:-${UPDATE_BASE_URL:-$DEFAULT_UPDATE_BASE_URL}}"
 
 if [ "$NAGIENT_UPDATE_BASE_URL" = "__NAGIENT_UPDATE_BASE_URL__" ] || [ -z "$NAGIENT_UPDATE_BASE_URL" ]; then
   echo "NAGIENT_UPDATE_BASE_URL is not configured." >&2
+  echo "This usually means the update center root is serving an unrendered bootstrap installer." >&2
+  echo "Re-publish the update center or export NAGIENT_UPDATE_BASE_URL/UPDATE_BASE_URL explicitly." >&2
   exit 1
 fi
 

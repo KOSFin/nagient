@@ -25,9 +25,12 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    update_base_url = args.update_base_url.strip().rstrip("/")
+    if not update_base_url:
+        raise SystemExit("--update-base-url must be a non-empty URL.")
 
     replacements = {
-        "__NAGIENT_UPDATE_BASE_URL__": args.update_base_url.rstrip("/"),
+        "__NAGIENT_UPDATE_BASE_URL__": update_base_url,
     }
 
     for source_path, target_name in _TEMPLATES.items():

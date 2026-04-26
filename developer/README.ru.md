@@ -18,7 +18,8 @@
 
 - Release не должен запускаться на каждый пуш в `main`.
 - Release запускается только для новой версии без существующего тега.
-- Публикация Pages принадлежит `update-center.yml` и выполняется из branch-контекста.
+- Публикация Pages принадлежит `update-center.yml` и выполняется из контекста ветки `main`.
+- Корневые установщики update center генерируются CI, а не лежат в корне репозитория.
 
 ## 2. Централизованная конфигурация
 
@@ -69,6 +70,13 @@ Repository Variables (`Settings -> Secrets and variables -> Actions -> Variables
 | `CUSTOM_DOMAIN` | Hostname для `CNAME` | `updates.example.tld` |
 | `DOCKERHUB_NAMESPACE` | Docker Hub namespace | `mydockerhubname` |
 | `DOCKERHUB_IMAGE_NAME` | Имя Docker image | `nagient` |
+
+Операционные примечания:
+
+- `NAGIENT_UPDATE_BASE_URL` не является repository variable. Сгенерированные установщики получают его из `UPDATE_BASE_URL`.
+- После изменения `UPDATE_BASE_URL`, `CUSTOM_DOMAIN` или настроек Pages перезапускайте `Update Center`.
+- В `Settings -> Pages` можно использовать либо `GitHub Actions`, либо ветку `gh-pages`. `update-center.yml` публикует оба варианта.
+- `curl -fsSL https://your-domain/install.sh` должен возвращать уже сгенерированный bootstrap без `__NAGIENT_UPDATE_BASE_URL__`.
 
 Repository Secrets (`Settings -> Secrets and variables -> Actions -> Secrets`):
 

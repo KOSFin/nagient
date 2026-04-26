@@ -16,7 +16,14 @@
 
 Симптом: ошибка в install/update скрипте.
 
-Причина: запуск шаблонного скрипта из репозитория вместо опубликованного release-asset.
+Причина: update center отдает не сгенерированный bootstrap-скрипт, а шаблон или устаревший snapshot ветки.
+
+Проверьте:
+
+1. В `Settings -> Pages` выбран источник `GitHub Actions` или ветка `gh-pages`.
+2. Repository variable `UPDATE_BASE_URL` указывает на публичный URL update center.
+3. После изменения `UPDATE_BASE_URL` или `CUSTOM_DOMAIN` workflow `Update Center` был перезапущен.
+4. В `https://ваш-домен/install.sh` нет строки `__NAGIENT_UPDATE_BASE_URL__`.
 
 Используйте:
 
@@ -29,6 +36,11 @@ curl -fsSL https://ngnt-in.ruka.me/install.sh | bash
 ```powershell
 irm https://ngnt-in.ruka.me/install.ps1 | iex
 ```
+
+Примечания:
+
+- `NAGIENT_UPDATE_BASE_URL` не является GitHub repository variable.
+- Установщик встраивает его автоматически из `UPDATE_BASE_URL`.
 
 ## Ошибка preflight/reconcile
 

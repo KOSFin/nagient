@@ -36,7 +36,7 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertEqual(channel_payload["channel"], "stable")
         self.assertEqual(release_payload["version"], "0.1.0")
 
-    def test_update_center_workflow_defines_github_pages_environment(self) -> None:
+    def test_update_center_workflow_publishes_rendered_site_contract(self) -> None:
         update_center_workflow = (
             PROJECT_ROOT / ".github/workflows/update-center.yml"
         ).read_text(encoding="utf-8")
@@ -46,6 +46,10 @@ class RepositoryContractTests(unittest.TestCase):
 
         self.assertIn("environment:", update_center_workflow)
         self.assertIn("name: github-pages", update_center_workflow)
+        self.assertIn("render_bootstrap_assets.py", update_center_workflow)
+        self.assertIn("peaceiris/actions-gh-pages@v4", update_center_workflow)
+        self.assertIn("publish_branch: gh-pages", update_center_workflow)
+        self.assertIn("Smoke check published bootstrap asset", update_center_workflow)
         self.assertNotIn("name: github-pages", release_workflow)
         self.assertNotIn("actions/deploy-pages", release_workflow)
 

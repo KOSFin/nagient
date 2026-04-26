@@ -5,10 +5,16 @@ $DefaultChannel = "stable"
 $DefaultUpdateBaseUrl = "__NAGIENT_UPDATE_BASE_URL__"
 
 $Channel = if ($env:NAGIENT_CHANNEL) { $env:NAGIENT_CHANNEL } else { $DefaultChannel }
-$UpdateBaseUrl = if ($env:NAGIENT_UPDATE_BASE_URL) { $env:NAGIENT_UPDATE_BASE_URL } else { $DefaultUpdateBaseUrl }
+$UpdateBaseUrl = if ($env:NAGIENT_UPDATE_BASE_URL) {
+  $env:NAGIENT_UPDATE_BASE_URL
+} elseif ($env:UPDATE_BASE_URL) {
+  $env:UPDATE_BASE_URL
+} else {
+  $DefaultUpdateBaseUrl
+}
 
 if ($UpdateBaseUrl -eq "__NAGIENT_UPDATE_BASE_URL__" -or [string]::IsNullOrWhiteSpace($UpdateBaseUrl)) {
-  throw "NAGIENT_UPDATE_BASE_URL is not configured."
+  throw "NAGIENT_UPDATE_BASE_URL is not configured. This usually means the update center root is serving an unrendered bootstrap installer. Re-publish the update center or set NAGIENT_UPDATE_BASE_URL/UPDATE_BASE_URL explicitly."
 }
 
 $channelPayload = Invoke-RestMethod "$($UpdateBaseUrl.TrimEnd('/'))/channels/$Channel.json"
