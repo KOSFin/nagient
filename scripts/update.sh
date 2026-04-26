@@ -96,7 +96,7 @@ PY
 
 write_nagientctl() {
   local target="${NAGIENT_HOME}/bin/nagientctl"
-  cat >"$target" <<'EOF'
+  cat >"$target" <<'NAGIENTCTL'
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -243,7 +243,7 @@ case "$command_name" in
     compose_exec nagient "$command_name" "$@"
     ;;
 esac
-EOF
+NAGIENTCTL
   chmod +x "$target"
   cp "$target" "${NAGIENT_HOME}/bin/nagient"
   chmod +x "${NAGIENT_HOME}/bin/nagient"

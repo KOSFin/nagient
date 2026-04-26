@@ -168,7 +168,7 @@ download_artifact() {
 }
 
 write_nagientctl() {
-  cat >"${NAGIENT_BIN_DIR}/nagientctl" <<'EOF'
+  cat >"${NAGIENT_BIN_DIR}/nagientctl" <<'NAGIENTCTL'
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -315,7 +315,7 @@ case "$command_name" in
     compose_exec nagient "$command_name" "$@"
     ;;
 esac
-EOF
+NAGIENTCTL
   chmod +x "${NAGIENT_BIN_DIR}/nagientctl"
   cp "${NAGIENT_BIN_DIR}/nagientctl" "${NAGIENT_BIN_DIR}/nagient"
   chmod +x "${NAGIENT_BIN_DIR}/nagient"
