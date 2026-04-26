@@ -336,38 +336,6 @@ class HttpProviderPlugin(BaseProviderPlugin):
         message: str,
         system_prompt: str | None = None,
     ) -> str:
-        bearer_token = self._resolve_bearer_token(config, secrets, credential)
-        if not bearer_token:
-            raise ValueError(
-                "Chat for openai-codex requires either OAuth credentials or an API key."
-            )
-        model = _require_model(provider_id, config)
-        messages: list[dict[str, object]] = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": message})
-        payload = self.http_client.post_json(
-            self._chat_url(config),
-            {
-                "model": model,
-                "messages": messages,
-                "stream": False,
-            },
-            headers={"Authorization": f"Bearer {bearer_token}"},
-            timeout=_timeout_seconds(config),
-        )
-        return _parse_openai_chat_message(payload, provider_id)
-
-    def generate_message(
-        self,
-        provider_id: str,
-        config: Mapping[str, object],
-        secrets: Mapping[str, str],
-        credential: CredentialRecord | None,
-        *,
-        message: str,
-        system_prompt: str | None = None,
-    ) -> str:
         model = _require_model(provider_id, config)
         headers, query = self._build_request_auth(config, secrets, credential)
         messages: list[dict[str, object]] = []

@@ -892,7 +892,11 @@ def _run_provider_profile_menu(container: object, provider_id: str) -> None:
                 _emit(payload, "text")
             continue
         if selection == "model":
-            _interactive_select_provider_model(container, provider_id, current_model=config.get("model"))
+            _interactive_select_provider_model(
+                container,
+                provider_id,
+                current_model=config.get("model"),
+            )
             continue
         if selection == "secret":
             secret_name = _prompt_text(
@@ -1060,7 +1064,12 @@ def _run_workspace_setup_menu(container: object) -> None:
                 (
                     "root",
                     "Workspace root"
-                    + _suffix_value(_render_path_value(str(runtime_config.workspace.root), container.settings)),
+                    + _suffix_value(
+                        _render_path_value(
+                            str(runtime_config.workspace.root),
+                            container.settings,
+                        )
+                    ),
                 ),
                 ("mode", "Workspace mode" + _suffix_value(runtime_config.workspace.mode)),
             ],
@@ -2271,7 +2280,6 @@ def _next_steps(payload: dict[str, object]) -> list[str]:
         or _as_text(_as_dict(item).get("auth_mode")) == "none"
     ]
 
-    host_paths = _host_paths()
     config_path = "@config"
     secrets_path = "@secrets"
 
