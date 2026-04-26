@@ -311,6 +311,36 @@ class CliTests(unittest.TestCase):
         with patch("getpass.getpass", side_effect=KeyboardInterrupt):
             self.assertIsNone(cli._read_secret_input("prompt"))
 
+        self.assertEqual(
+            cli._parse_assignment_pairs(["enabled=true", "port=8080", 'meta={"ok":true}']),
+            {"enabled": True, "port": 8080, "meta": {"ok": True}},
+        )
+        self.assertEqual(cli._coerce_cli_value("null"), None)
+        self.assertEqual(cli._coerce_cli_value("plain-text"), "plain-text")
+        self.assertTrue(cli._resolve_enablement(True, False))
+        self.assertFalse(cli._resolve_enablement(False, True))
+        self.assertIsNone(cli._resolve_enablement(False, False))
+        self.assertTrue(cli._resolve_default_flag(True, False))
+        self.assertFalse(cli._resolve_default_flag(False, True))
+        self.assertIsNone(cli._resolve_default_flag(False, False))
+        with self.assertRaises(ValueError):
+            cli._resolve_enablement(True, True)
+        with self.assertRaises(ValueError):
+            cli._resolve_default_flag(True, True)
+
+    def test_prompt_for_model_selection(self) -> None:
+        models = [
+            {"model_id": "gpt-5", "display_name": "GPT-5"},
+            {"model_id": "gpt-5-mini", "display_name": "GPT-5 Mini"},
+        ]
+        with patch("builtins.input", return_value="2"):
+            self.assertEqual(cli._prompt_for_model_selection(models), "gpt-5-mini")
+        with patch("builtins.input", return_value=""):
+            self.assertIsNone(cli._prompt_for_model_selection(models))
+        with patch("builtins.input", return_value="oops"):
+            with self.assertRaises(ValueError):
+                cli._prompt_for_model_selection(models)
+
     def test_main_routes_core_and_extended_commands(self) -> None:
         status_payload = _status_payload(
             {
@@ -378,6 +408,71 @@ class CliTests(unittest.TestCase):
                     return_value=_Serializable({"plugin_id": "custom.provider"})
                 ),
                 scaffold_tool=Mock(return_value=_Serializable({"plugin_id": "custom.tool"})),
+                configure_provider=Mock(
+                    side_effect=[
+                        {
+                            "component": "provider",
+                            "provider_id": "openai",
+                            "plugin_id": "builtin.openai",
+                            "enabled": True,
+                            "default": True,
+                            "config": {"model": "gpt-4.1-mini"},
+                        },
+                        {
+                            "component": "provider",
+                            "provider_id": "openai",
+                            "plugin_id": "builtin.openai",
+                            "enabled": True,
+                            "default": True,
+                            "config": {"model": "gpt-4.1"},
+                        },
+                        {
+                            "component": "provider",
+                            "provider_id": "openai",
+                            "plugin_id": "builtin.openai",
+                            "enabled": True,
+                            "default": True,
+                            "config": {"model": "gpt-4.1"},
+                        },
+                    ]
+                ),
+                configure_transport=Mock(
+                    return_value={
+                        "component": "transport",
+                        "transport_id": "webhook",
+                        "plugin_id": "builtin.webhook",
+                        "enabled": True,
+                    }
+                ),
+                configure_tool=Mock(
+                    return_value={
+                        "component": "tool",
+                        "tool_id": "workspace_fs",
+                        "plugin_id": "workspace.fs",
+                        "enabled": True,
+                    }
+                ),
+                configure_workspace=Mock(
+                    return_value={
+                        "component": "workspace",
+                        "workspace": {"root": "/tmp/workspace", "mode": "unsafe"},
+                    }
+                ),
+                configure_paths=Mock(
+                    return_value={
+                        "component": "paths",
+                        "paths": {"secrets_file": "/tmp/secrets.env"},
+                    }
+                ),
+                select_provider_model=Mock(
+                    return_value={
+                        "provider_id": "openai",
+                        "models": [
+                            {"model_id": "gpt-4.1-mini", "display_name": "GPT Mini"},
+                            {"model_id": "gpt-4.1", "display_name": "GPT"},
+                        ],
+                    }
+                ),
             ),
             status_service=SimpleNamespace(collect=Mock(return_value=status_payload)),
             preflight_service=SimpleNamespace(
@@ -481,6 +576,117 @@ class CliTests(unittest.TestCase):
 
         exit_code, _ = _run_main(["serve", "--once"], container=container)
         self.assertEqual(exit_code, 7)
+
+        exit_code, output = _run_main(
+            [
+                "setup",
+                "provider",
+                "openai",
+                "--enable",
+                "--default",
+                "--auth",
+                "api_key",
+                "--secret-name",
+                "OPENAI_API_KEY",
+                "--model",
+                "gpt-4.1-mini",
+                "--set",
+                "temperature=0.2",
+                "--format",
+                "json",
+            ],
+            container=container,
+        )
+        self.assertEqual(exit_code, 0)
+        self.assertIn('"provider_id": "openai"', output)
+        container.configuration_service.configure_provider.assert_any_call(
+            "openai",
+            plugin_id=None,
+            enabled=True,
+            default=True,
+            config_updates={
+                "auth": "api_key",
+                "api_key_secret": "OPENAI_API_KEY",
+                "model": "gpt-4.1-mini",
+                "temperature": 0.2,
+            },
+        )
+
+        with patch("builtins.input", return_value="2"):
+            exit_code, output = _run_main(
+                [
+                    "setup",
+                    "provider",
+                    "openai",
+                    "--select-model",
+                    "--format",
+                    "json",
+                ],
+                container=container,
+            )
+        self.assertEqual(exit_code, 0)
+        self.assertIn('"selected_model": "gpt-4.1"', output)
+        container.configuration_service.select_provider_model.assert_called_with("openai")
+
+        exit_code, output = _run_main(
+            [
+                "setup",
+                "transport",
+                "webhook",
+                "--enable",
+                "--set",
+                "listen_port=8081",
+                "--format",
+                "json",
+            ],
+            container=container,
+        )
+        self.assertEqual(exit_code, 0)
+        self.assertIn('"transport_id": "webhook"', output)
+
+        exit_code, output = _run_main(
+            [
+                "setup",
+                "tool",
+                "workspace_fs",
+                "--enable",
+                "--format",
+                "json",
+            ],
+            container=container,
+        )
+        self.assertEqual(exit_code, 0)
+        self.assertIn('"tool_id": "workspace_fs"', output)
+
+        exit_code, output = _run_main(
+            [
+                "setup",
+                "workspace",
+                "--root",
+                "/tmp/workspace",
+                "--mode",
+                "unsafe",
+                "--format",
+                "json",
+            ],
+            container=container,
+        )
+        self.assertEqual(exit_code, 0)
+        self.assertIn('"component": "workspace"', output)
+
+        exit_code, output = _run_main(
+            [
+                "setup",
+                "paths",
+                "--secrets-file",
+                "/tmp/secrets.env",
+                "--format",
+                "json",
+            ],
+            container=container,
+        )
+        self.assertEqual(exit_code, 0)
+        self.assertIn('"component": "paths"', output)
 
         exit_code, output = _run_main(
             ["transport", "list", "--format", "json"],

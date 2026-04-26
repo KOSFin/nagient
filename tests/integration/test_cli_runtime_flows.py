@@ -363,6 +363,117 @@ class CliRuntimeFlowsTests(unittest.TestCase):
             models_payload = json.loads(models_process.stdout)
             self.assertEqual(models_payload["models"][0]["model_id"], "custom-model")
 
+    def test_setup_commands_write_runtime_configuration(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir) / ".nagient"
+            env = {
+                **os.environ,
+                "PYTHONPATH": str(SRC_ROOT),
+                "NAGIENT_HOME": str(home_dir),
+            }
+            subprocess.run(
+                [sys.executable, "-m", "nagient", "init", "--format", "json"],
+                cwd=PROJECT_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            provider_process = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "nagient",
+                    "setup",
+                    "provider",
+                    "openai",
+                    "--enable",
+                    "--default",
+                    "--auth",
+                    "api_key",
+                    "--secret-name",
+                    "OPENAI_API_KEY",
+                    "--model",
+                    "gpt-4.1-mini",
+                    "--set",
+                    "base_url=https://api.openai.com/v1",
+                    "--format",
+                    "json",
+                ],
+                cwd=PROJECT_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            provider_payload = json.loads(provider_process.stdout)
+            self.assertEqual(provider_payload["provider_id"], "openai")
+            self.assertTrue(provider_payload["enabled"])
+            self.assertTrue(provider_payload["default"])
+
+            transport_process = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "nagient",
+                    "setup",
+                    "transport",
+                    "webhook",
+                    "--enable",
+                    "--set",
+                    "listen_port=9090",
+                    "--set",
+                    "path=/hook",
+                    "--format",
+                    "json",
+                ],
+                cwd=PROJECT_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            transport_payload = json.loads(transport_process.stdout)
+            self.assertEqual(transport_payload["transport_id"], "webhook")
+            self.assertTrue(transport_payload["enabled"])
+
+            workspace_process = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "nagient",
+                    "setup",
+                    "workspace",
+                    "--root",
+                    "/tmp/project",
+                    "--mode",
+                    "unsafe",
+                    "--format",
+                    "json",
+                ],
+                cwd=PROJECT_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            workspace_payload = json.loads(workspace_process.stdout)
+            self.assertEqual(workspace_payload["workspace"]["root"], "/tmp/project")
+            self.assertEqual(workspace_payload["workspace"]["mode"], "unsafe")
+
+            config_text = (home_dir / "config.toml").read_text(encoding="utf-8")
+            self.assertIn('default_provider = "openai"', config_text)
+            self.assertIn("require_provider = true", config_text)
+            self.assertIn("[providers.openai]", config_text)
+            self.assertIn('model = "gpt-4.1-mini"', config_text)
+            self.assertIn('base_url = "https://api.openai.com/v1"', config_text)
+            self.assertIn("[transports.webhook]", config_text)
+            self.assertIn("listen_port = 9090", config_text)
+            self.assertIn('path = "/hook"', config_text)
+            self.assertIn("[workspace]", config_text)
+            self.assertIn('root = "/tmp/project"', config_text)
+
 
 if __name__ == "__main__":
     unittest.main()

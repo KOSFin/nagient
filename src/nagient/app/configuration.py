@@ -143,6 +143,11 @@ def read_raw_config(config_file: Path) -> dict[str, object]:
     return {str(key): value for key, value in payload.items()}
 
 
+def write_raw_config(config_file: Path, payload: dict[str, object]) -> None:
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    config_file.write_text(render_toml(payload), encoding="utf-8")
+
+
 def load_secrets(secrets_file: Path) -> dict[str, str]:
     if not secrets_file.exists():
         return {}
@@ -647,3 +652,45 @@ def _ensure_mapping(payload: dict[str, object], key: str) -> dict[str, object]:
     created: dict[str, object] = {}
     payload[key] = created
     return created
+
+
+def render_toml(payload: dict[str, object]) -> str:
+    lines: list[str] = []
+    _render_toml_table(lines, payload, [])
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _render_toml_table(
+    lines: list[str],
+    payload: dict[str, object],
+    prefix: list[str],
+) -> None:
+    scalar_items = [
+        (key, value) for key, value in payload.items() if not isinstance(value, dict)
+    ]
+    nested_items = [
+        (key, value) for key, value in payload.items() if isinstance(value, dict)
+    ]
+    if prefix:
+        lines.append(f"[{'.'.join(prefix)}]")
+    for key, value in scalar_items:
+        lines.append(f"{key} = {_render_toml_value(value)}")
+    if scalar_items and nested_items:
+        lines.append("")
+    for index, (key, value) in enumerate(nested_items):
+        _render_toml_table(lines, value, [*prefix, key])
+        if index != len(nested_items) - 1:
+            lines.append("")
+
+
+def _render_toml_value(value: object) -> str:
+    if isinstance(value, bool):
+        return str(value).lower()
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return str(value)
+    if isinstance(value, list):
+        return "[" + ", ".join(_render_toml_value(item) for item in value) + "]"
+    escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'

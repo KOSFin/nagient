@@ -65,6 +65,73 @@ def build_parser() -> argparse.ArgumentParser:
     serve_parser = subparsers.add_parser("serve", help="Run the placeholder agent loop")
     serve_parser.add_argument("--once", action="store_true", help="Write one heartbeat and exit")
 
+    setup_parser = subparsers.add_parser(
+        "setup",
+        help="Configure runtime components through the CLI",
+    )
+    setup_subparsers = setup_parser.add_subparsers(dest="setup_command", required=True)
+
+    setup_provider_parser = setup_subparsers.add_parser(
+        "provider",
+        help="Configure a provider profile",
+    )
+    setup_provider_parser.add_argument("provider_id")
+    setup_provider_parser.add_argument("--plugin")
+    setup_provider_parser.add_argument("--enable", action="store_true")
+    setup_provider_parser.add_argument("--disable", action="store_true")
+    setup_provider_parser.add_argument("--default", action="store_true")
+    setup_provider_parser.add_argument("--not-default", action="store_true")
+    setup_provider_parser.add_argument("--auth")
+    setup_provider_parser.add_argument("--model")
+    setup_provider_parser.add_argument("--secret-name")
+    setup_provider_parser.add_argument("--base-url")
+    setup_provider_parser.add_argument("--fetch-models", action="store_true")
+    setup_provider_parser.add_argument("--select-model", action="store_true")
+    setup_provider_parser.add_argument("--set", action="append", default=[])
+    setup_provider_parser.add_argument("--format", choices=("text", "json"), default="text")
+
+    setup_transport_parser = setup_subparsers.add_parser(
+        "transport",
+        help="Configure a transport profile",
+    )
+    setup_transport_parser.add_argument("transport_id")
+    setup_transport_parser.add_argument("--plugin")
+    setup_transport_parser.add_argument("--enable", action="store_true")
+    setup_transport_parser.add_argument("--disable", action="store_true")
+    setup_transport_parser.add_argument("--set", action="append", default=[])
+    setup_transport_parser.add_argument("--format", choices=("text", "json"), default="text")
+
+    setup_tool_parser = setup_subparsers.add_parser(
+        "tool",
+        help="Configure a tool profile",
+    )
+    setup_tool_parser.add_argument("tool_id")
+    setup_tool_parser.add_argument("--plugin")
+    setup_tool_parser.add_argument("--enable", action="store_true")
+    setup_tool_parser.add_argument("--disable", action="store_true")
+    setup_tool_parser.add_argument("--set", action="append", default=[])
+    setup_tool_parser.add_argument("--format", choices=("text", "json"), default="text")
+
+    setup_workspace_parser = setup_subparsers.add_parser(
+        "workspace",
+        help="Configure workspace settings",
+    )
+    setup_workspace_parser.add_argument("--root")
+    setup_workspace_parser.add_argument("--mode", choices=("bounded", "unsafe"))
+    setup_workspace_parser.add_argument("--format", choices=("text", "json"), default="text")
+
+    setup_paths_parser = setup_subparsers.add_parser(
+        "paths",
+        help="Configure config-linked runtime paths",
+    )
+    setup_paths_parser.add_argument("--secrets-file")
+    setup_paths_parser.add_argument("--tool-secrets-file")
+    setup_paths_parser.add_argument("--plugins-dir")
+    setup_paths_parser.add_argument("--tools-dir")
+    setup_paths_parser.add_argument("--providers-dir")
+    setup_paths_parser.add_argument("--credentials-dir")
+    setup_paths_parser.add_argument("--format", choices=("text", "json"), default="text")
+
     transport_parser = subparsers.add_parser("transport", help="Manage transport plugins")
     transport_subparsers = transport_parser.add_subparsers(
         dest="transport_command",
@@ -287,6 +354,85 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "serve":
         return container.runtime_agent.serve(once=args.once)
+
+    if args.command == "setup" and args.setup_command == "provider":
+        config_updates = _parse_assignment_pairs(args.set)
+        if args.auth is not None:
+            config_updates["auth"] = args.auth
+        if args.model is not None:
+            config_updates["model"] = args.model
+        if args.secret_name is not None:
+            config_updates["api_key_secret"] = args.secret_name
+        if args.base_url is not None:
+            config_updates["base_url"] = args.base_url
+
+        payload = container.configuration_service.configure_provider(
+            args.provider_id,
+            plugin_id=args.plugin,
+            enabled=_resolve_enablement(args.enable, args.disable),
+            default=_resolve_default_flag(args.default, args.not_default),
+            config_updates=config_updates,
+        )
+
+        should_select_model = args.select_model and args.model is None
+        if args.fetch_models or should_select_model:
+            models_payload = container.configuration_service.select_provider_model(
+                args.provider_id
+            )
+            payload = dict(payload)
+            payload["models"] = models_payload.get("models", [])
+            if should_select_model:
+                selected_model = _prompt_for_model_selection(payload["models"])
+                if selected_model is not None:
+                    payload = container.configuration_service.configure_provider(
+                        args.provider_id,
+                        config_updates={"model": selected_model},
+                    )
+                    payload["selected_model"] = selected_model
+                    payload["models"] = models_payload.get("models", [])
+        return _emit(payload, args.format)
+
+    if args.command == "setup" and args.setup_command == "transport":
+        payload = container.configuration_service.configure_transport(
+            args.transport_id,
+            plugin_id=args.plugin,
+            enabled=_resolve_enablement(args.enable, args.disable),
+            config_updates=_parse_assignment_pairs(args.set),
+        )
+        return _emit(payload, args.format)
+
+    if args.command == "setup" and args.setup_command == "tool":
+        payload = container.configuration_service.configure_tool(
+            args.tool_id,
+            plugin_id=args.plugin,
+            enabled=_resolve_enablement(args.enable, args.disable),
+            config_updates=_parse_assignment_pairs(args.set),
+        )
+        return _emit(payload, args.format)
+
+    if args.command == "setup" and args.setup_command == "workspace":
+        payload = container.configuration_service.configure_workspace(
+            root=args.root,
+            mode=args.mode,
+        )
+        return _emit(payload, args.format)
+
+    if args.command == "setup" and args.setup_command == "paths":
+        payload = container.configuration_service.configure_paths(
+            {
+                key: value
+                for key, value in {
+                    "secrets_file": args.secrets_file,
+                    "tool_secrets_file": args.tool_secrets_file,
+                    "plugins_dir": args.plugins_dir,
+                    "tools_dir": args.tools_dir,
+                    "providers_dir": args.providers_dir,
+                    "credentials_dir": args.credentials_dir,
+                }.items()
+                if value is not None
+            }
+        )
+        return _emit(payload, args.format)
 
     if args.command == "transport" and args.transport_command == "list":
         discovery = container.plugin_registry.discover(container.settings.plugins_dir)
@@ -517,6 +663,84 @@ def main(argv: list[str] | None = None) -> int:
 
     parser.error("Unsupported command.")
     return 2
+
+
+def _parse_assignment_pairs(raw_pairs: list[str]) -> dict[str, object]:
+    payload: dict[str, object] = {}
+    for raw_pair in raw_pairs:
+        if "=" not in raw_pair:
+            raise ValueError(
+                f"Invalid assignment {raw_pair!r}. Expected the form key=value."
+            )
+        key, raw_value = raw_pair.split("=", 1)
+        normalized_key = key.strip()
+        if not normalized_key:
+            raise ValueError("Assignment keys must not be empty.")
+        payload[normalized_key] = _coerce_cli_value(raw_value.strip())
+    return payload
+
+
+def _coerce_cli_value(raw: str) -> object:
+    lowered = raw.lower()
+    if lowered == "true":
+        return True
+    if lowered == "false":
+        return False
+    if lowered == "null":
+        return None
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return raw
+
+
+def _resolve_enablement(enable: bool, disable: bool) -> bool | None:
+    if enable and disable:
+        raise ValueError("Choose only one of --enable or --disable.")
+    if enable:
+        return True
+    if disable:
+        return False
+    return None
+
+
+def _resolve_default_flag(default: bool, not_default: bool) -> bool | None:
+    if default and not_default:
+        raise ValueError("Choose only one of --default or --not-default.")
+    if default:
+        return True
+    if not_default:
+        return False
+    return None
+
+
+def _prompt_for_model_selection(models: list[object]) -> str | None:
+    normalized_models = [
+        item for item in models if isinstance(item, dict) and item.get("model_id")
+    ]
+    if not normalized_models:
+        return None
+
+    print("Available models:")
+    for index, model in enumerate(normalized_models, start=1):
+        model_id = str(model.get("model_id", "")).strip()
+        display_name = str(model.get("display_name", model_id)).strip()
+        label = display_name if display_name else model_id
+        print(f"{index}) {label} [{model_id}]")
+
+    try:
+        selection = input(f"Model [1-{len(normalized_models)}]: ").strip()
+    except EOFError:
+        return None
+    if not selection:
+        return None
+    if not selection.isdigit():
+        raise ValueError("Model selection must be a number.")
+    selected_index = int(selection)
+    if selected_index < 1 or selected_index > len(normalized_models):
+        raise ValueError("Model selection is out of range.")
+    selected = normalized_models[selected_index - 1]
+    return str(selected.get("model_id", "")).strip() or None
 
 
 def _build_release_manifest_payload(

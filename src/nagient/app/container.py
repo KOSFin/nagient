@@ -97,6 +97,14 @@ def build_container(settings: Settings | None = None) -> AppContainer:
         backup_manager=backup_manager,
         workflow_service=workflow_service,
     )
+    provider_service = ProviderService(
+        settings=resolved_settings,
+        provider_registry=provider_registry,
+        provider_manager=provider_manager,
+        credential_store=credential_store,
+        auth_session_store=auth_session_store,
+        secret_broker=secret_broker,
+    )
     preflight_service = PreflightService(
         settings=resolved_settings,
         plugin_registry=plugin_registry,
@@ -133,7 +141,13 @@ def build_container(settings: Settings | None = None) -> AppContainer:
             workspace_manager=workspace_manager,
         ),
         update_service=update_service,
-        configuration_service=ConfigurationService(resolved_settings),
+        configuration_service=ConfigurationService(
+            resolved_settings,
+            transport_registry=plugin_registry,
+            provider_registry=provider_registry,
+            tool_registry=tool_registry,
+            provider_service=provider_service,
+        ),
         plugin_registry=plugin_registry,
         transport_manager=transport_manager,
         provider_registry=provider_registry,
@@ -146,14 +160,7 @@ def build_container(settings: Settings | None = None) -> AppContainer:
         workflow_store=workflow_store,
         workflow_service=workflow_service,
         tool_service=tool_service,
-        provider_service=ProviderService(
-            settings=resolved_settings,
-            provider_registry=provider_registry,
-            provider_manager=provider_manager,
-            credential_store=credential_store,
-            auth_session_store=auth_session_store,
-            secret_broker=secret_broker,
-        ),
+        provider_service=provider_service,
         preflight_service=preflight_service,
         reconcile_service=reconcile_service,
         agent_turn_service=agent_turn_service,
