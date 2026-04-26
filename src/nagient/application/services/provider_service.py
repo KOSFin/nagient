@@ -81,6 +81,12 @@ class ProviderService:
                 "model discovery."
             )
         credential = self.credential_store.load(provider_config.provider_id)
+        credential = self._refresh_credential_if_needed(
+            plugin,
+            provider_config.provider_id,
+            provider_config.config,
+            credential,
+        )
         models = plugin.implementation.list_models(
             provider_config.provider_id,
             provider_config.config,
@@ -118,6 +124,12 @@ class ProviderService:
                 f"Provider {resolved_provider_id!r} does not support CLI chat."
             )
         credential = self.credential_store.load(provider_config.provider_id)
+        credential = self._refresh_credential_if_needed(
+            plugin,
+            provider_config.provider_id,
+            provider_config.config,
+            credential,
+        )
         response_text = generate_message(
             provider_config.provider_id,
             provider_config.config,
@@ -391,6 +403,22 @@ class ProviderService:
 
     def _secret_broker(self) -> SecretBroker:
         return self.secret_broker or SecretBroker(self.settings)
+
+    def _refresh_credential_if_needed(
+        self,
+        plugin: LoadedProviderPlugin,
+        provider_id: str,
+        config: dict[str, object],
+        credential: CredentialRecord | None,
+    ) -> CredentialRecord | None:
+        refresh_credential = getattr(plugin.implementation, "refresh_credential", None)
+        if not callable(refresh_credential):
+            return credential
+        refreshed = refresh_credential(provider_id, config, credential)
+        if not isinstance(refreshed, CredentialRecord):
+            return credential
+        self.credential_store.save(provider_id, refreshed)
+        return refreshed
 
 
 def _auth_mode(config: dict[str, object], default_auth_mode: str) -> str:

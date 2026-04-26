@@ -177,6 +177,48 @@ class ProviderBuiltinsTests(unittest.TestCase):
             "http://127.0.0.1:1455/auth/callback",
         )
 
+    def test_openai_codex_begin_login_supports_device_code(self) -> None:
+        plugin = cast(
+            Any,
+            next(
+                provider.implementation
+                for provider in builtin_providers()
+                if provider.manifest.plugin_id == "builtin.openai_codex"
+            ),
+        )
+
+        class _DeviceHttpClient:
+            def post_json(
+                self,
+                url: str,
+                payload: dict[str, Any],
+                *,
+                headers: dict[str, str] | None = None,
+                timeout: float | None = None,
+            ) -> dict[str, Any]:
+                del headers, timeout
+                self.assertEqual(url, "https://auth.openai.com/api/accounts/deviceauth/usercode")
+                self.assertEqual(payload["client_id"], "app_EMoamEEZ73f0CkXaXp7hrann")
+                return {
+                    "device_auth_id": "device-auth-id",
+                    "user_code": "ABCD-EFGH",
+                    "interval": 7,
+                    "expires_in": 1800,
+                }
+
+            def __init__(self, case: unittest.TestCase) -> None:
+                self.assertEqual = case.assertEqual
+
+        plugin = replace(plugin, http_client=cast(Any, _DeviceHttpClient(self)))
+
+        session = plugin.begin_login("openai-codex", {"auth": "device_code"}, {}, None)
+
+        self.assertEqual(session.auth_mode, "device_code")
+        self.assertEqual(session.submission_mode, "device_code")
+        self.assertEqual(session.user_code, "ABCD-EFGH")
+        self.assertEqual(session.poll_interval_seconds, 7)
+        self.assertEqual(session.authorization_url, "https://chatgpt.com/device")
+
     def test_openai_codex_complete_login_exchanges_callback_url_for_tokens(self) -> None:
         plugin = cast(
             Any,
@@ -215,6 +257,88 @@ class ProviderBuiltinsTests(unittest.TestCase):
         self.assertEqual(record.auth_mode, "oauth_browser")
         self.assertEqual(record.data["access_token"], "access-token")
         self.assertEqual(record.data["refresh_token"], "refresh-token")
+
+    def test_openai_codex_complete_device_code_login_exchanges_tokens(self) -> None:
+        plugin = cast(
+            Any,
+            next(
+                provider.implementation
+                for provider in builtin_providers()
+                if provider.manifest.plugin_id == "builtin.openai_codex"
+            ),
+        )
+
+        class _DeviceCompletionHttpClient:
+            def post_json(
+                self,
+                url: str,
+                payload: dict[str, Any],
+                *,
+                headers: dict[str, str] | None = None,
+                timeout: float | None = None,
+            ) -> dict[str, Any]:
+                del headers, timeout
+                if url == "https://auth.openai.com/api/accounts/deviceauth/usercode":
+                    self.assertEqual(payload["client_id"], "app_EMoamEEZ73f0CkXaXp7hrann")
+                    return {
+                        "device_auth_id": "device-auth-id",
+                        "user_code": "ABCD-EFGH",
+                        "interval": 5,
+                        "expires_in": 1800,
+                    }
+                self.assertEqual(url, "https://auth.openai.com/api/accounts/deviceauth/wait")
+                self.assertEqual(payload["device_auth_id"], "device-auth-id")
+                self.assertEqual(payload["user_code"], "ABCD-EFGH")
+                return {"code": "device-auth-code", "code_verifier": "device-verifier"}
+
+            def post_form_json(
+                self,
+                url: str,
+                form: dict[str, str],
+                *,
+                headers: dict[str, str] | None = None,
+                timeout: float | None = None,
+            ) -> dict[str, Any]:
+                del headers, timeout
+                self.assertEqual(url, "https://auth.openai.com/oauth/token")
+                self.assertEqual(form["grant_type"], "authorization_code")
+                self.assertEqual(form["redirect_uri"], "https://auth.openai.com/deviceauth/callback")
+                self.assertEqual(form["code"], "device-auth-code")
+                self.assertEqual(form["code_verifier"], "device-verifier")
+                return {
+                    "access_token": "device-access-token",
+                    "refresh_token": "device-refresh-token",
+                    "expires_in": 3600,
+                }
+
+            def __init__(self, case: unittest.TestCase) -> None:
+                self.assertEqual = case.assertEqual
+
+        plugin = replace(plugin, http_client=cast(Any, _DeviceCompletionHttpClient(self)))
+        session = plugin.begin_login(
+            "openai-codex",
+            {"auth": "device_code"},
+            {},
+            None,
+        )
+        session = replace(
+            session,
+            metadata={
+                "device_auth_id": "device-auth-id",
+                "user_code": "ABCD-EFGH",
+            },
+        )
+
+        record = plugin.complete_login(
+            "openai-codex",
+            {"auth": "device_code"},
+            None,
+            session,
+        )
+
+        self.assertEqual(record.auth_mode, "device_code")
+        self.assertEqual(record.data["access_token"], "device-access-token")
+        self.assertEqual(record.data["refresh_token"], "device-refresh-token")
 
 
 if __name__ == "__main__":

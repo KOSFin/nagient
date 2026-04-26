@@ -412,6 +412,49 @@ class CliTests(unittest.TestCase):
             scope_hint="core",
         )
 
+    def test_run_generic_field_editor_accepts_raw_secret_value_for_secret_fields(self) -> None:
+        container = SimpleNamespace(
+            secret_broker=SimpleNamespace(
+                store_secret=Mock(),
+                bind_secret=Mock(),
+            ),
+            settings=SimpleNamespace(
+                secrets_file=Path("/tmp/nagient/secrets.env"),
+                tool_secrets_file=Path("/tmp/nagient/tool-secrets.env"),
+            ),
+        )
+        save_callback = Mock(return_value={"component": "transport", "transport_id": "telegram"})
+
+        with patch("builtins.input", side_effect=["1", "123:abc", "0"]):
+            with patch("nagient.cli._read_secret_input") as read_secret_input:
+                stdout = io.StringIO()
+                with redirect_stdout(stdout):
+                    cli._run_generic_field_editor(
+                        title="Transport telegram fields:",
+                        current_config={"bot_token_secret": "TELEGRAM_BOT_TOKEN"},
+                        allowed_keys=["bot_token_secret"],
+                        save_callback=save_callback,
+                        container=container,
+                        secret_fields={"bot_token_secret"},
+                        secret_scope="core",
+                        target_kind="transport",
+                        target_id="telegram",
+                    )
+
+        read_secret_input.assert_not_called()
+        save_callback.assert_called_once_with({"bot_token_secret": "TELEGRAM_BOT_TOKEN"})
+        container.secret_broker.store_secret.assert_called_once_with(
+            "TELEGRAM_BOT_TOKEN",
+            "123:abc",
+            scope="core",
+        )
+        container.secret_broker.bind_secret.assert_called_once_with(
+            "TELEGRAM_BOT_TOKEN",
+            target_kind="transport",
+            target_id="telegram",
+            scope_hint="core",
+        )
+
     def test_interactive_chat_session_exits_cleanly(self) -> None:
         container = SimpleNamespace(
             provider_service=SimpleNamespace(

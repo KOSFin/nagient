@@ -658,7 +658,7 @@ USAGE
 provider_defaults() {
   case "$1" in
     openai) printf '%s\n' 'builtin.openai|api_key|OPENAI_API_KEY|gpt-4.1-mini||' ;;
-    openai-codex|openai_codex) printf '%s\n' 'builtin.openai_codex|oauth_browser|CODEX_API_KEY|gpt-5-codex||http://127.0.0.1:1455/auth/callback' ;;
+    openai-codex|openai_codex) printf '%s\n' 'builtin.openai_codex|device_code|CODEX_API_KEY|gpt-5-codex||' ;;
     anthropic) printf '%s\n' 'builtin.anthropic|api_key|ANTHROPIC_API_KEY|claude-sonnet-4-5||' ;;
     gemini) printf '%s\n' 'builtin.gemini|api_key|GEMINI_API_KEY|gemini-2.5-pro||' ;;
     deepseek) printf '%s\n' 'builtin.deepseek|api_key|DEEPSEEK_API_KEY|deepseek-chat||' ;;
@@ -918,6 +918,70 @@ PY
       compose_exec nagient auth complete "$provider_id" --session-id "$session_id" --code "$callback_input" --format text
       ;;
   esac
+}
+
+complete_openai_codex_device_login() {
+  local provider_id="$1"
+  local login_payload=""
+  local session_id=""
+  local authorization_url=""
+  local user_code=""
+  local answer=""
+
+  require_compose_files
+  login_payload="$(compose_exec nagient auth login "$provider_id" --format json)"
+  session_id="$("$(python_cmd)" - <<'PY' "$login_payload"
+import json
+import sys
+payload = json.loads(sys.argv[1])
+print(payload.get("session", {}).get("session_id", ""))
+PY
+)"
+  authorization_url="$("$(python_cmd)" - <<'PY' "$login_payload"
+import json
+import sys
+payload = json.loads(sys.argv[1])
+print(payload.get("session", {}).get("authorization_url", ""))
+PY
+)"
+  user_code="$("$(python_cmd)" - <<'PY' "$login_payload"
+import json
+import sys
+payload = json.loads(sys.argv[1])
+print(payload.get("session", {}).get("user_code", ""))
+PY
+)"
+
+  if [ -z "$session_id" ] || [ -z "$authorization_url" ] || [ -z "$user_code" ]; then
+    echo "Could not start OpenAI Codex device login." >&2
+    echo "$login_payload" >&2
+    return 1
+  fi
+
+  echo "OpenAI Codex device login:"
+  echo "  URL:  ${authorization_url}"
+  echo "  Code: ${user_code}"
+  if [ -t 0 ]; then
+    printf 'Open browser now? [Y/n]: '
+    read -r answer
+    case "${answer:-Y}" in
+      n|N|no|NO)
+        ;;
+      *)
+        open_url "$authorization_url" || true
+        ;;
+    esac
+
+    printf 'Press Enter after approving the code (or type 0 to finish later): '
+    read -r answer
+    if [ "${answer:-}" = "0" ]; then
+      echo "Login session created. Complete it later with:"
+      echo "  nagient auth complete $provider_id --session-id $session_id"
+      return 0
+    fi
+  fi
+
+  compose_exec nagient auth complete "$provider_id" --session-id "$session_id" --format text
 }
 
 provider_enable() {
@@ -1212,10 +1276,11 @@ EOF
 
   if [ "$provider_id" = "openai-codex" ] && [ -t 0 ] && [ -z "$api_key" ] && [ -z "$token" ]; then
     echo "Choose OpenAI Codex authentication:"
-    echo "  1) Browser login"
+    echo "  1) Device code login"
     echo "  2) Import existing ~/.codex session"
     echo "  3) API key"
-    printf 'Auth mode [1-3, default 1]: '
+    echo "  4) Browser login"
+    printf 'Auth mode [1-4, default 1]: '
     read -r answer
     case "${answer:-1}" in
       2)
@@ -1226,9 +1291,13 @@ EOF
         auth_mode="api_key"
         auth_file=""
         ;;
-      *)
+      4)
         auth_mode="oauth_browser"
-        auth_file="${default_auth_file}"
+        auth_file="http://127.0.0.1:1455/auth/callback"
+        ;;
+      *)
+        auth_mode="device_code"
+        auth_file=""
         ;;
     esac
   fi
@@ -1299,6 +1368,11 @@ EOF
 
   if [ "$provider_id" = "openai-codex" ] && [ "$auth_mode" = "oauth_browser" ] && [ -z "$api_key" ] && [ -z "$token" ]; then
     complete_openai_codex_browser_login "$provider_id" || return 1
+    require_compose_files
+    compose_exec nagient reconcile --format text
+  fi
+  if [ "$provider_id" = "openai-codex" ] && [ "$auth_mode" = "device_code" ] && [ -z "$api_key" ] && [ -z "$token" ]; then
+    complete_openai_codex_device_login "$provider_id" || return 1
     require_compose_files
     compose_exec nagient reconcile --format text
   fi
@@ -1550,7 +1624,7 @@ model = "gpt-4.1-mini"
 [providers.openai-codex]
 plugin = "builtin.openai_codex"
 enabled = false
-auth = "oauth_browser"
+auth = "device_code"
 redirect_uri = "http://127.0.0.1:1455/auth/callback"
 api_key_secret = "CODEX_API_KEY"
 model = "gpt-5-codex"

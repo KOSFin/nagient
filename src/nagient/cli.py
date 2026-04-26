@@ -4,7 +4,9 @@ import argparse
 import getpass
 import json
 import os
+import re
 import sys
+import time
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -21,6 +23,8 @@ from nagient.domain.entities.agent_runtime import AgentTurnRequest
 from nagient.domain.entities.tooling import ToolExecutionRequest
 from nagient.infrastructure.manifests import release_to_dict
 from nagient.version import __version__
+
+_SECRET_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -849,6 +853,12 @@ def _run_provider_profile_menu(container: AppContainer, provider_id: str) -> Non
             else "Set as default provider"
         )
         options: list[tuple[str, str]] = [
+            (
+                "connect",
+                "Quick connect"
+                if provider_id != "openai-codex"
+                else "Quick connect (recommended)",
+            ),
             ("toggle", enabled_label),
             ("default", default_label),
             (
@@ -893,6 +903,9 @@ def _run_provider_profile_menu(container: AppContainer, provider_id: str) -> Non
         )
         if selection is None:
             return
+        if selection == "connect":
+            _run_provider_quick_connect(container, provider_id)
+            continue
         if selection == "toggle":
             payload = container.configuration_service.configure_provider(
                 provider_id,
@@ -908,9 +921,13 @@ def _run_provider_profile_menu(container: AppContainer, provider_id: str) -> Non
             _emit(payload, "text")
             continue
         if selection == "auth":
+            auth_options = [
+                (item, _describe_auth_mode(item, provider_id=provider_id))
+                for item in manifest.supported_auth_modes
+            ]
             auth_mode = _prompt_menu_choice(
                 "Choose auth mode:",
-                [(item, item) for item in manifest.supported_auth_modes],
+                auth_options,
                 zero_label="Back",
             )
             if auth_mode is not None:
@@ -941,19 +958,23 @@ def _run_provider_profile_menu(container: AppContainer, provider_id: str) -> Non
                 default=_as_text(config.get("api_key_secret")),
             )
             if secret_name is not None:
-                payload = container.configuration_service.configure_provider(
-                    provider_id,
-                    config_updates={"api_key_secret": secret_name},
+                saved_secret_name = _save_secret_reference_value(
+                    container,
+                    field_name="api_key_secret",
+                    raw_value=secret_name,
+                    previous_value=previous_secret_name,
+                    save_callback=lambda updates: (
+                        container.configuration_service.configure_provider(
+                            provider_id,
+                            config_updates=updates,
+                        )
+                    ),
+                    scope="core",
+                    target_kind="provider",
+                    target_id=provider_id,
                 )
-                _emit(payload, "text")
-                if secret_name != previous_secret_name:
-                    _maybe_capture_secret_value(
-                        container,
-                        secret_name=secret_name,
-                        scope="core",
-                        target_kind="provider",
-                        target_id=provider_id,
-                    )
+                if saved_secret_name is not None:
+                    config["api_key_secret"] = saved_secret_name
             continue
         if selection == "base_url":
             base_url = _prompt_text("Base URL", default=_as_text(config.get("base_url")))
@@ -989,8 +1010,7 @@ def _run_provider_profile_menu(container: AppContainer, provider_id: str) -> Non
             )
             continue
         if selection == "login":
-            payload = container.provider_service.login(provider_id)
-            _emit(payload, "text")
+            _run_provider_login_flow(container, provider_id)
             continue
         if selection == "status":
             payload = container.provider_service.auth_status(provider_id)
@@ -1245,7 +1265,7 @@ def _run_auth_setup_menu(container: AppContainer) -> None:
             _emit(container.provider_service.auth_status(selection), "text", view="auth_status")
             continue
         if action == "login":
-            _emit(container.provider_service.login(selection), "text")
+            _run_provider_login_flow(container, selection)
             continue
         if action == "logout":
             _emit(container.provider_service.logout(selection), "text")
@@ -1274,6 +1294,255 @@ def _interactive_select_provider_model(
         config_updates={"model": selected_model},
     )
     _emit(payload, "text")
+
+
+def _describe_auth_mode(auth_mode: str, *, provider_id: str) -> str:
+    if provider_id == "openai-codex":
+        labels = {
+            "device_code": "device_code - ChatGPT device code (recommended)",
+            "oauth_browser": "oauth_browser - ChatGPT browser login",
+            "codex_auth_file": "codex_auth_file - reuse existing ~/.codex session",
+            "api_key": "api_key - OpenAI API key",
+            "stored_token": "stored_token - saved access token",
+        }
+        return labels.get(auth_mode, auth_mode)
+    return auth_mode
+
+
+def _run_provider_quick_connect(container: AppContainer, provider_id: str) -> None:
+    runtime_config = load_runtime_configuration(container.settings)
+    provider = next(item for item in runtime_config.providers if item.provider_id == provider_id)
+    current_auth_mode = _as_text(provider.config.get("auth"))
+    colors = _supports_color()
+
+    if provider_id == "openai-codex":
+        selection = _prompt_menu_choice(
+            "Choose how to connect OpenAI Codex:",
+            [
+                ("device_code", "ChatGPT device code login"),
+                ("codex_auth_file", "Import existing ~/.codex session"),
+                ("api_key", "OpenAI API key"),
+                ("oauth_browser", "ChatGPT browser login"),
+            ],
+            zero_label="Back",
+        )
+    else:
+        selection = _prompt_menu_choice(
+            f"Choose how to connect provider {provider_id}:",
+            [("api_key", "API key")],
+            zero_label="Back",
+        )
+
+    if selection is None:
+        return
+
+    updates: dict[str, object] = {"auth": selection}
+    if selection == "codex_auth_file":
+        updates["auth_file"] = "/root/.codex/auth.json"
+    if selection == "api_key" and "api_key_secret" not in provider.config:
+        if provider_id == "openai-codex":
+            updates["api_key_secret"] = "CODEX_API_KEY"
+        elif provider_id == "openai":
+            updates["api_key_secret"] = "OPENAI_API_KEY"
+
+    payload = container.configuration_service.configure_provider(
+        provider_id,
+        enabled=True,
+        default=(
+            runtime_config.default_provider != provider_id
+            and not runtime_config.default_provider
+        ),
+        config_updates=updates if selection != current_auth_mode or updates else None,
+    )
+    _emit(payload, "text")
+
+    if selection == "codex_auth_file":
+        print(
+            _paint(
+                "Nagient will read the mounted host Codex session from /root/.codex/auth.json.",
+                "2",
+                colors=colors,
+            )
+        )
+
+    _run_provider_login_flow(container, provider_id)
+
+
+def _run_provider_login_flow(container: AppContainer, provider_id: str) -> None:
+    payload = container.provider_service.login(provider_id)
+    _emit(payload, "text")
+
+    session = payload.get("session")
+    if not isinstance(session, dict):
+        return
+
+    session_id = _as_text(session.get("session_id"))
+    submission_mode = _as_text(session.get("submission_mode"))
+    if not session_id or not submission_mode:
+        return
+
+    colors = _supports_color()
+    if submission_mode == "none":
+        completed = container.provider_service.complete_login(provider_id, session_id)
+        _emit(completed, "text")
+        return
+
+    if submission_mode == "callback_url":
+        print("")
+        print(
+            _paint(
+                "Paste the full redirect URL from the browser, or paste only the auth code.",
+                "2",
+                colors=colors,
+            )
+        )
+        callback_input = _prompt_text("Callback URL or code")
+        if not callback_input:
+            return
+        if callback_input.startswith(("http://", "https://")):
+            completed = container.provider_service.complete_login(
+                provider_id,
+                session_id,
+                callback_url=callback_input,
+            )
+        else:
+            completed = container.provider_service.complete_login(
+                provider_id,
+                session_id,
+                code=callback_input,
+            )
+        _emit(completed, "text")
+        return
+
+    if submission_mode == "device_code":
+        print("")
+        print(
+            _paint(
+                "Approve the device code in your browser, then press Enter to continue.",
+                "2",
+                colors=colors,
+            )
+        )
+        try:
+            answer = input("Continue [Enter to poll, 0 to finish later]: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("")
+            return
+        if answer == "0":
+            return
+
+        poll_interval = session.get("poll_interval_seconds")
+        delay_seconds = poll_interval if isinstance(poll_interval, int) and poll_interval > 0 else 5
+        while True:
+            try:
+                completed = container.provider_service.complete_login(provider_id, session_id)
+                _emit(completed, "text")
+                return
+            except ValueError as exc:
+                if "still pending" not in str(exc).lower():
+                    raise
+                print(
+                    _paint(
+                        (
+                            "Still waiting for approval. "
+                            f"Retrying in {delay_seconds}s. Press Ctrl+C to stop."
+                        ),
+                        "2",
+                        colors=colors,
+                    )
+                )
+                try:
+                    time.sleep(delay_seconds)
+                except KeyboardInterrupt:
+                    print("")
+                    return
+
+
+def _save_secret_reference_value(
+    container: Any,
+    *,
+    field_name: str,
+    raw_value: str,
+    previous_value: str,
+    save_callback: Callable[[dict[str, object]], dict[str, object]],
+    scope: str,
+    target_kind: str,
+    target_id: str,
+) -> str | None:
+    colors = _supports_color()
+    normalized_value = raw_value.strip()
+    if not normalized_value:
+        payload = save_callback({field_name: ""})
+        _emit(payload, "text")
+        return ""
+
+    if _looks_like_secret_name(normalized_value):
+        payload = save_callback({field_name: normalized_value})
+        _emit(payload, "text")
+        if normalized_value != previous_value:
+            _maybe_capture_secret_value(
+                container,
+                secret_name=normalized_value,
+                scope=scope,
+                target_kind=target_kind,
+                target_id=target_id,
+            )
+        return normalized_value
+
+    secret_name = _suggest_secret_name(
+        field_name=field_name,
+        previous_value=previous_value,
+        target_kind=target_kind,
+        target_id=target_id,
+    )
+    print(
+        _paint(
+            f"Detected a raw secret value. Nagient will store it under {secret_name}.",
+            "33",
+            colors=colors,
+        )
+    )
+    payload = save_callback({field_name: secret_name})
+    _emit(payload, "text")
+    _maybe_capture_secret_value(
+        container,
+        secret_name=secret_name,
+        scope=scope,
+        target_kind=target_kind,
+        target_id=target_id,
+        secret_value=normalized_value,
+    )
+    return secret_name
+
+
+def _looks_like_secret_name(value: str) -> bool:
+    return bool(_SECRET_NAME_PATTERN.fullmatch(value.strip()))
+
+
+def _suggest_secret_name(
+    *,
+    field_name: str,
+    previous_value: str,
+    target_kind: str,
+    target_id: str,
+) -> str:
+    if _looks_like_secret_name(previous_value):
+        return previous_value.strip()
+
+    known_defaults = {
+        ("transport", "telegram", "bot_token_secret"): "TELEGRAM_BOT_TOKEN",
+        ("provider", "openai", "api_key_secret"): "OPENAI_API_KEY",
+        ("provider", "openai-codex", "api_key_secret"): "CODEX_API_KEY",
+        ("provider", "anthropic", "api_key_secret"): "ANTHROPIC_API_KEY",
+        ("provider", "gemini", "api_key_secret"): "GEMINI_API_KEY",
+        ("provider", "deepseek", "api_key_secret"): "DEEPSEEK_API_KEY",
+    }
+    known = known_defaults.get((target_kind, target_id, field_name))
+    if known is not None:
+        return known
+
+    raw_label = f"{target_kind}_{target_id}_{field_name}"
+    return re.sub(r"[^A-Za-z0-9]+", "_", raw_label).strip("_").upper()
 
 
 def _run_generic_field_editor(
@@ -1327,21 +1596,23 @@ def _run_generic_field_editor(
         )
         if raw_value is None:
             continue
-        payload = save_callback({selection: _coerce_cli_value(raw_value)})
-        current_config[selection] = _coerce_cli_value(raw_value)
-        _emit(payload, "text")
-        if (
-            container is not None
-            and selection in normalized_secret_fields
-            and raw_value != previous_value
-        ):
-            _maybe_capture_secret_value(
+        if container is not None and selection in normalized_secret_fields:
+            saved_secret_name = _save_secret_reference_value(
                 container,
-                secret_name=raw_value,
+                field_name=selection,
+                raw_value=raw_value,
+                previous_value=previous_value,
+                save_callback=save_callback,
                 scope=secret_scope,
                 target_kind=target_kind,
                 target_id=target_id,
             )
+            current_config[selection] = _coerce_cli_value(saved_secret_name or "")
+            continue
+
+        payload = save_callback({selection: _coerce_cli_value(raw_value)})
+        current_config[selection] = _coerce_cli_value(raw_value)
+        _emit(payload, "text")
 
 
 def _run_chat_session(
@@ -1726,17 +1997,20 @@ def _maybe_capture_secret_value(
     scope: str,
     target_kind: str,
     target_id: str,
+    secret_value: str | None = None,
 ) -> None:
     secret_broker = getattr(container, "secret_broker", None)
     if secret_broker is None or not secret_name:
         return
 
     colors = _supports_color()
-    value = _read_secret_input(
-        f"Secret value for {secret_name} (leave empty to skip for now): "
-    )
+    value = secret_value
     if value is None:
-        return
+        value = _read_secret_input(
+            f"Secret value for {secret_name} (leave empty to skip for now): "
+        )
+        if value is None:
+            return
 
     if value:
         secret_broker.store_secret(secret_name, value, scope=scope)

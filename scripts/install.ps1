@@ -409,7 +409,7 @@ model = "gpt-4.1-mini"
 [providers.openai-codex]
 plugin = "builtin.openai_codex"
 enabled = false
-auth = "oauth_browser"
+auth = "device_code"
 redirect_uri = "http://127.0.0.1:1455/auth/callback"
 api_key_secret = "CODEX_API_KEY"
 model = "gpt-5-codex"
