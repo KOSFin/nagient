@@ -7,11 +7,11 @@ from typing import Any
 import nagient.providers.scaffold as provider_scaffold
 from nagient.app.configuration import (
     _ensure_mapping,
+    read_raw_config,
     render_credentials_readme,
     render_default_config,
     render_default_secrets,
     render_default_tool_secrets,
-    read_raw_config,
     render_plugins_readme,
     render_providers_readme,
     render_tools_readme,
