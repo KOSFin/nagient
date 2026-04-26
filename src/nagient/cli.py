@@ -379,17 +379,20 @@ def main(argv: list[str] | None = None) -> int:
             models_payload = container.configuration_service.select_provider_model(
                 args.provider_id
             )
+            models = models_payload.get("models", [])
+            if not isinstance(models, list):
+                models = []
             payload = dict(payload)
-            payload["models"] = models_payload.get("models", [])
+            payload["models"] = models
             if should_select_model:
-                selected_model = _prompt_for_model_selection(payload["models"])
+                selected_model = _prompt_for_model_selection(models)
                 if selected_model is not None:
                     payload = container.configuration_service.configure_provider(
                         args.provider_id,
                         config_updates={"model": selected_model},
                     )
                     payload["selected_model"] = selected_model
-                    payload["models"] = models_payload.get("models", [])
+                    payload["models"] = models
         return _emit(payload, args.format)
 
     if args.command == "setup" and args.setup_command == "transport":

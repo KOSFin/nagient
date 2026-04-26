@@ -297,10 +297,10 @@ class ConfigurationService:
     ) -> dict[str, object]:
         if self.provider_service is None:
             raise ValueError("Provider service is not available.")
-        payload = self.provider_service.list_models(provider_id)
+        raw_payload = self.provider_service.list_models(provider_id)
+        payload = {str(key): value for key, value in dict(raw_payload).items()}
         models = payload.get("models", [])
         if isinstance(models, list) and limit is not None:
-            payload = dict(payload)
             payload["models"] = models[:limit]
         return payload
 
