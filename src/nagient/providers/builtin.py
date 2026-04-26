@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import os
+import time
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -14,6 +17,22 @@ from nagient.domain.entities.system_state import (
 )
 from nagient.providers.base import BaseProviderPlugin, LoadedProviderPlugin, ProviderPluginManifest
 from nagient.providers.http import JsonHttpClient, ProviderHttpError
+
+_CODEX_AUTH_FILE_ENV = "NAGIENT_OPENAI_CODEX_AUTH_FILE"
+_CODEX_ACCESS_TOKEN_ENV = "NAGIENT_OPENAI_CODEX_ACCESS_TOKEN"
+_NAGIENT_CODEX_API_KEY_ENV = "NAGIENT_OPENAI_CODEX_API_KEY"
+_CODEX_API_KEY_ENV = "CODEX_API_KEY"
+_OPENAI_API_KEY_ENV = "OPENAI_API_KEY"
+_CODEX_HOME_ENV = "CODEX_HOME"
+
+
+@dataclass(frozen=True)
+class _CodexAuthCache:
+    path: Path
+    api_key: str | None = None
+    access_token: str | None = None
+    refresh_token: str | None = None
+    error: str | None = None
 
 
 @dataclass(frozen=True)
@@ -609,6 +628,556 @@ class CredentialFileProviderPlugin(BaseProviderPlugin):
         raise NotImplementedError
 
 
+@dataclass(frozen=True)
+class OpenAICodexProviderPlugin(BaseProviderPlugin):
+    manifest: ProviderPluginManifest
+    default_base_url: str
+    default_secret_name: str = "CODEX_API_KEY"
+    default_auth_file: str = "~/.codex/auth.json"
+    login_url: str = "https://chatgpt.com/codex"
+    device_code_url: str = "https://auth.openai.com/codex/device"
+    http_client: JsonHttpClient = field(default_factory=JsonHttpClient)
+
+    def validate_config(
+        self,
+        provider_id: str,
+        config: Mapping[str, object],
+        secrets: Mapping[str, str],
+        credential: CredentialRecord | None,
+    ) -> list[CheckIssue]:
+        del secrets, credential
+        issues: list[CheckIssue] = []
+        auth_mode = _auth_mode(config, self.manifest.default_auth_mode)
+        if auth_mode not in self.manifest.supported_auth_modes:
+            issues.append(
+                _issue(
+                    "error",
+                    "provider.unsupported_auth_mode",
+                    provider_id,
+                    (
+                        f"Provider {provider_id!r} does not support auth mode "
+                        f"{auth_mode!r}."
+                    ),
+                )
+            )
+
+        base_url = _string_config(config, "base_url")
+        if base_url is not None and not base_url.startswith(("http://", "https://")):
+            issues.append(
+                _issue(
+                    "error",
+                    "provider.invalid_base_url",
+                    provider_id,
+                    f"Provider {provider_id!r} must define a valid base_url.",
+                )
+            )
+
+        models_path = _string_config(config, "models_path")
+        if models_path is not None and not models_path.startswith("/"):
+            issues.append(
+                _issue(
+                    "error",
+                    "provider.invalid_models_path",
+                    provider_id,
+                    f"Provider {provider_id!r} must use a models_path starting with '/'.",
+                )
+            )
+
+        timeout_seconds = config.get("timeout_seconds")
+        if timeout_seconds is not None and (
+            not isinstance(timeout_seconds, int) or timeout_seconds <= 0
+        ):
+            issues.append(
+                _issue(
+                    "error",
+                    "provider.invalid_timeout",
+                    provider_id,
+                    f"Provider {provider_id!r} must use a positive timeout_seconds value.",
+                )
+            )
+
+        configured_auth_file = _string_config(config, "auth_file")
+        if auth_mode == "codex_auth_file" and configured_auth_file:
+            auth_file = Path(configured_auth_file).expanduser()
+            if not auth_file.exists():
+                issues.append(
+                    _issue(
+                        "warning",
+                        "provider.codex_auth_file_missing",
+                        provider_id,
+                        (
+                            f"Provider {provider_id!r} references auth_file "
+                            f"{configured_auth_file!r}, but it does not exist yet."
+                        ),
+                        hint=(
+                            "Run `codex login` and retry, or set "
+                            f"{_CODEX_AUTH_FILE_ENV} to a valid file path."
+                        ),
+                    )
+                )
+
+        return issues
+
+    def auth_status(
+        self,
+        provider_id: str,
+        config: Mapping[str, object],
+        secrets: Mapping[str, str],
+        credential: CredentialRecord | None,
+    ) -> ProviderAuthStatus:
+        auth_mode = _auth_mode(config, self.manifest.default_auth_mode)
+        if auth_mode == "api_key":
+            return self._api_key_auth_status(provider_id, config, secrets, credential)
+        if auth_mode == "stored_token":
+            return self._stored_token_auth_status(provider_id, config, credential)
+        if auth_mode == "codex_auth_file":
+            return self._codex_auth_file_status(provider_id, config, credential)
+        return ProviderAuthStatus(
+            authenticated=False,
+            auth_mode=auth_mode,
+            status="unsupported",
+            message=f"Auth mode {auth_mode!r} is not implemented by this provider.",
+            issues=[
+                _issue(
+                    "warning",
+                    "provider.auth_not_implemented",
+                    provider_id,
+                    (
+                        f"Provider {provider_id!r} uses auth mode {auth_mode!r}, which "
+                        "is not implemented yet."
+                    ),
+                )
+            ],
+        )
+
+    def begin_login(
+        self,
+        provider_id: str,
+        config: Mapping[str, object],
+        secrets: Mapping[str, str],
+        credential: CredentialRecord | None,
+    ) -> AuthSessionState:
+        del secrets, credential
+        auth_file = self._auth_file_path(config)
+        return AuthSessionState(
+            session_id=str(uuid.uuid4()),
+            provider_id=provider_id,
+            plugin_id=self.manifest.plugin_id,
+            auth_mode="codex_auth_file",
+            status="awaiting_user_action",
+            submission_mode="none",
+            authorization_url=self.login_url,
+            callback_url=self.device_code_url,
+            instructions=[
+                "Open the Codex sign-in page and complete ChatGPT login.",
+                (
+                    "If Codex CLI is available, run `codex login` (or "
+                    "`codex login --device-auth` on headless hosts)."
+                ),
+                f"Nagient checks Codex auth cache at {str(auth_file)!r}.",
+                (
+                    "If CLI login is unavailable, set one of: "
+                    f"{_CODEX_AUTH_FILE_ENV}, {_CODEX_ACCESS_TOKEN_ENV}, "
+                    f"{_CODEX_API_KEY_ENV}, {_OPENAI_API_KEY_ENV}."
+                ),
+            ],
+            metadata={
+                "auth_file": str(auth_file),
+                "login_url": self.login_url,
+                "device_code_url": self.device_code_url,
+                "auth_file_env": _CODEX_AUTH_FILE_ENV,
+                "access_token_env": _CODEX_ACCESS_TOKEN_ENV,
+                "api_key_env": [_NAGIENT_CODEX_API_KEY_ENV, _CODEX_API_KEY_ENV, _OPENAI_API_KEY_ENV],
+            },
+        )
+
+    def complete_login(
+        self,
+        provider_id: str,
+        config: Mapping[str, object],
+        credential: CredentialRecord | None,
+        session: AuthSessionState,
+        *,
+        callback_url: str | None = None,
+        code: str | None = None,
+    ) -> CredentialRecord:
+        del credential, session
+        auth_mode = _auth_mode(config, self.manifest.default_auth_mode)
+        data: dict[str, object] = {}
+
+        manual_token = (code or callback_url or "").strip()
+        if manual_token:
+            data["access_token"] = manual_token
+
+        cache = _load_codex_auth_cache(self._auth_file_path(config))
+        if cache.error:
+            raise ValueError(f"Cannot read Codex auth cache: {cache.error}")
+        if cache.api_key:
+            data.setdefault("api_key", cache.api_key)
+        if cache.access_token:
+            data.setdefault("access_token", cache.access_token)
+        if cache.refresh_token:
+            data.setdefault("refresh_token", cache.refresh_token)
+        if cache.path.exists():
+            data.setdefault("auth_file", str(cache.path))
+
+        env_access_name, env_access_token = _first_present_env((_CODEX_ACCESS_TOKEN_ENV,))
+        if env_access_token:
+            data.setdefault("access_token", env_access_token)
+            data.setdefault("access_token_env", env_access_name)
+
+        env_api_name, env_api_key = _first_present_env(
+            (_NAGIENT_CODEX_API_KEY_ENV, _CODEX_API_KEY_ENV, _OPENAI_API_KEY_ENV)
+        )
+        if env_api_key:
+            data.setdefault("api_key", env_api_key)
+            data.setdefault("api_key_env", env_api_name)
+
+        if not data:
+            raise ValueError(
+                "No Codex credentials were found. Run `codex login`, provide `--code`, "
+                "or set NAGIENT_OPENAI_CODEX_ACCESS_TOKEN / CODEX_API_KEY."
+            )
+
+        return CredentialRecord(
+            provider_id=provider_id,
+            plugin_id=self.manifest.plugin_id,
+            auth_mode=auth_mode,
+            issued_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            data=data,
+        )
+
+    def list_models(
+        self,
+        provider_id: str,
+        config: Mapping[str, object],
+        secrets: Mapping[str, str],
+        credential: CredentialRecord | None,
+    ) -> list[ProviderModel]:
+        api_key = self._resolve_api_key(config, secrets, credential)
+        if not api_key:
+            raise ValueError(
+                "Model discovery for openai-codex requires an API key. "
+                "Set CODEX_API_KEY or OPENAI_API_KEY, or set auth=api_key for this provider."
+            )
+        payload = self.http_client.get_json(
+            self._models_url(config),
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=_timeout_seconds(config),
+        )
+        return _parse_data_models(payload, provider_id)
+
+    def _api_key_auth_status(
+        self,
+        provider_id: str,
+        config: Mapping[str, object],
+        secrets: Mapping[str, str],
+        credential: CredentialRecord | None,
+    ) -> ProviderAuthStatus:
+        secret_name = self._secret_name(config)
+        secret_value = secrets.get(secret_name, "")
+        if secret_value.strip():
+            return ProviderAuthStatus(
+                authenticated=True,
+                auth_mode="api_key",
+                status="ready",
+                message=f"Secret {secret_name!r} is configured.",
+            )
+
+        env_name, env_value = _first_present_env(
+            (_NAGIENT_CODEX_API_KEY_ENV, _CODEX_API_KEY_ENV, _OPENAI_API_KEY_ENV)
+        )
+        if env_value:
+            return ProviderAuthStatus(
+                authenticated=True,
+                auth_mode="api_key",
+                status="ready",
+                message=f"API key is available via environment variable {env_name!r}.",
+            )
+
+        cache = _load_codex_auth_cache(self._auth_file_path(config))
+        if cache.error:
+            return ProviderAuthStatus(
+                authenticated=False,
+                auth_mode="api_key",
+                status="missing_credentials",
+                message=f"Cannot read Codex auth cache: {cache.error}",
+                issues=[
+                    _issue(
+                        "warning",
+                        "provider.codex_auth_cache_invalid",
+                        provider_id,
+                        f"Provider {provider_id!r} cannot parse Codex auth cache.",
+                        hint=(
+                            "Fix the auth cache file or configure CODEX_API_KEY / "
+                            "OPENAI_API_KEY instead."
+                        ),
+                    )
+                ],
+            )
+        if cache.api_key:
+            return ProviderAuthStatus(
+                authenticated=True,
+                auth_mode="api_key",
+                status="ready",
+                message=f"Codex auth cache at {str(cache.path)!r} contains OPENAI_API_KEY.",
+            )
+
+        credential_api_key = _credential_field(credential, "api_key")
+        if credential_api_key:
+            return ProviderAuthStatus(
+                authenticated=True,
+                auth_mode="api_key",
+                status="ready",
+                message="An API key is available in the credential store.",
+            )
+
+        return ProviderAuthStatus(
+            authenticated=False,
+            auth_mode="api_key",
+            status="missing_credentials",
+            message=(
+                f"Secret {secret_name!r} is missing and no fallback API key was found."
+            ),
+            issues=[
+                _issue(
+                    "warning",
+                    "provider.secret_not_found",
+                    provider_id,
+                    (
+                        f"Provider {provider_id!r} expects API key secret {secret_name!r}, "
+                        "but it is missing."
+                    ),
+                    hint=(
+                        f"Run `nagient auth login {provider_id} --api-key ...`, add "
+                        f"{secret_name} to secrets.env, or export CODEX_API_KEY."
+                    ),
+                )
+            ],
+        )
+
+    def _stored_token_auth_status(
+        self,
+        provider_id: str,
+        config: Mapping[str, object],
+        credential: CredentialRecord | None,
+    ) -> ProviderAuthStatus:
+        token = _token_from_credential(credential)
+        if token:
+            return ProviderAuthStatus(
+                authenticated=True,
+                auth_mode="stored_token",
+                status="ready",
+                message="A stored token is available in the credential store.",
+            )
+
+        env_name, env_token = _first_present_env((_CODEX_ACCESS_TOKEN_ENV,))
+        if env_token:
+            return ProviderAuthStatus(
+                authenticated=True,
+                auth_mode="stored_token",
+                status="ready",
+                message=f"A token is available via environment variable {env_name!r}.",
+            )
+
+        cache = _load_codex_auth_cache(self._auth_file_path(config))
+        if cache.error:
+            return ProviderAuthStatus(
+                authenticated=False,
+                auth_mode="stored_token",
+                status="missing_credentials",
+                message=f"Cannot read Codex auth cache: {cache.error}",
+                issues=[
+                    _issue(
+                        "warning",
+                        "provider.codex_auth_cache_invalid",
+                        provider_id,
+                        f"Provider {provider_id!r} cannot parse Codex auth cache.",
+                    )
+                ],
+            )
+
+        if cache.access_token:
+            return ProviderAuthStatus(
+                authenticated=True,
+                auth_mode="stored_token",
+                status="ready",
+                message=f"Codex auth cache at {str(cache.path)!r} contains an access token.",
+            )
+
+        return ProviderAuthStatus(
+            authenticated=False,
+            auth_mode="stored_token",
+            status="missing_credentials",
+            message="No stored token was found for this provider.",
+            issues=[
+                _issue(
+                    "warning",
+                    "provider.token_not_found",
+                    provider_id,
+                    (
+                        f"Provider {provider_id!r} expects a stored token, but no token "
+                        "was found in credential store, env, or Codex auth cache."
+                    ),
+                    hint=(
+                        "Run `codex login` and reuse ~/.codex/auth.json, export "
+                        "NAGIENT_OPENAI_CODEX_ACCESS_TOKEN, or use `nagient auth login "
+                        f"{provider_id} --token ...`."
+                    ),
+                )
+            ],
+        )
+
+    def _codex_auth_file_status(
+        self,
+        provider_id: str,
+        config: Mapping[str, object],
+        credential: CredentialRecord | None,
+    ) -> ProviderAuthStatus:
+        token = _token_from_credential(credential)
+        if token:
+            return ProviderAuthStatus(
+                authenticated=True,
+                auth_mode="codex_auth_file",
+                status="ready",
+                message="Credential store contains a reusable token for this provider.",
+            )
+
+        env_access_name, env_access_token = _first_present_env((_CODEX_ACCESS_TOKEN_ENV,))
+        if env_access_token:
+            return ProviderAuthStatus(
+                authenticated=True,
+                auth_mode="codex_auth_file",
+                status="ready",
+                message=f"Token is available via environment variable {env_access_name!r}.",
+            )
+
+        env_api_name, env_api_key = _first_present_env(
+            (_NAGIENT_CODEX_API_KEY_ENV, _CODEX_API_KEY_ENV, _OPENAI_API_KEY_ENV)
+        )
+        if env_api_key:
+            return ProviderAuthStatus(
+                authenticated=True,
+                auth_mode="codex_auth_file",
+                status="ready",
+                message=f"API key is available via environment variable {env_api_name!r}.",
+            )
+
+        cache = _load_codex_auth_cache(self._auth_file_path(config))
+        if cache.error:
+            return ProviderAuthStatus(
+                authenticated=False,
+                auth_mode="codex_auth_file",
+                status="missing_credentials",
+                message=f"Cannot read Codex auth cache: {cache.error}",
+                issues=[
+                    _issue(
+                        "warning",
+                        "provider.codex_auth_cache_invalid",
+                        provider_id,
+                        (
+                            f"Provider {provider_id!r} could not parse Codex auth cache at "
+                            f"{str(cache.path)!r}."
+                        ),
+                        hint=(
+                            "Re-run `codex login` to refresh auth cache, or set "
+                            "NAGIENT_OPENAI_CODEX_AUTH_FILE to a valid file."
+                        ),
+                    )
+                ],
+            )
+
+        if cache.api_key:
+            return ProviderAuthStatus(
+                authenticated=True,
+                auth_mode="codex_auth_file",
+                status="ready",
+                message=f"Codex auth cache at {str(cache.path)!r} contains OPENAI_API_KEY.",
+            )
+        if cache.access_token:
+            return ProviderAuthStatus(
+                authenticated=True,
+                auth_mode="codex_auth_file",
+                status="ready",
+                message=f"Codex auth cache at {str(cache.path)!r} contains access token.",
+            )
+
+        return ProviderAuthStatus(
+            authenticated=False,
+            auth_mode="codex_auth_file",
+            status="missing_credentials",
+            message=(
+                f"No Codex credentials were found at {str(cache.path)!r}."
+            ),
+            issues=[
+                _issue(
+                    "warning",
+                    "provider.codex_auth_cache_missing",
+                    provider_id,
+                    (
+                        f"Provider {provider_id!r} expects Codex auth cache, but file "
+                        f"{str(cache.path)!r} is missing or empty."
+                    ),
+                    hint=(
+                        "Run `codex login` or `codex login --device-auth`, then rerun "
+                        f"`nagient auth status {provider_id}`."
+                    ),
+                )
+            ],
+        )
+
+    def _secret_name(self, config: Mapping[str, object]) -> str:
+        secret_name = _string_config(config, "api_key_secret")
+        if secret_name is not None:
+            return secret_name
+        return self.default_secret_name
+
+    def _models_url(self, config: Mapping[str, object]) -> str:
+        base_url = _string_config(config, "base_url") or self.default_base_url
+        models_path = _string_config(config, "models_path") or "/models"
+        return f"{base_url.rstrip('/')}{models_path}"
+
+    def _auth_file_path(self, config: Mapping[str, object]) -> Path:
+        configured_auth_file = _string_config(config, "auth_file")
+        if configured_auth_file:
+            return Path(configured_auth_file).expanduser()
+
+        env_auth_file = os.environ.get(_CODEX_AUTH_FILE_ENV, "").strip()
+        if env_auth_file:
+            return Path(env_auth_file).expanduser()
+
+        codex_home = os.environ.get(_CODEX_HOME_ENV, "").strip()
+        if codex_home:
+            return Path(codex_home).expanduser() / "auth.json"
+
+        return Path(self.default_auth_file).expanduser()
+
+    def _resolve_api_key(
+        self,
+        config: Mapping[str, object],
+        secrets: Mapping[str, str],
+        credential: CredentialRecord | None,
+    ) -> str:
+        secret_name = self._secret_name(config)
+        if secret_name in secrets and secrets[secret_name].strip():
+            return secrets[secret_name].strip()
+
+        env_name, env_value = _first_present_env(
+            (_NAGIENT_CODEX_API_KEY_ENV, _CODEX_API_KEY_ENV, _OPENAI_API_KEY_ENV)
+        )
+        if env_name and env_value:
+            return env_value
+
+        credential_api_key = _credential_field(credential, "api_key")
+        if credential_api_key:
+            return credential_api_key
+
+        cache = _load_codex_auth_cache(self._auth_file_path(config))
+        if cache.api_key:
+            return cache.api_key
+        return ""
+
+
 def builtin_providers() -> list[LoadedProviderPlugin]:
     providers: list[BaseProviderPlugin] = [
         HttpProviderPlugin(
@@ -636,6 +1205,39 @@ def builtin_providers() -> list[LoadedProviderPlugin]:
             ),
             default_base_url="https://api.openai.com/v1",
             default_secret_name="OPENAI_API_KEY",
+        ),
+        OpenAICodexProviderPlugin(
+            manifest=ProviderPluginManifest(
+                plugin_id="builtin.openai_codex",
+                display_name="OpenAI Codex",
+                version="0.1.0",
+                family="openai-codex",
+                entrypoint="<builtin>",
+                supported_auth_modes=["codex_auth_file", "api_key", "stored_token"],
+                default_auth_mode="codex_auth_file",
+                capabilities=[
+                    "list_models",
+                    "chatgpt_browser_login",
+                    "api_key_auth",
+                    "stored_token_auth",
+                    "codex_auth_file_auth",
+                ],
+                required_config=[],
+                optional_config=[
+                    "auth",
+                    "auth_file",
+                    "api_key_secret",
+                    "base_url",
+                    "model",
+                    "models_path",
+                    "timeout_seconds",
+                ],
+                secret_config=["api_key_secret"],
+                credential_fields=["api_key", "access_token", "refresh_token", "auth_file"],
+            ),
+            default_base_url="https://api.openai.com/v1",
+            default_secret_name="CODEX_API_KEY",
+            default_auth_file="~/.codex/auth.json",
         ),
         AnthropicProviderPlugin(
             manifest=ProviderPluginManifest(
@@ -882,6 +1484,54 @@ def _token_from_credential(credential: CredentialRecord | None) -> str:
         if isinstance(value, str) and value.strip():
             return value.strip()
     return ""
+
+
+def _credential_field(credential: CredentialRecord | None, field_name: str) -> str:
+    if credential is None:
+        return ""
+    value = credential.data.get(field_name)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return ""
+
+
+def _first_present_env(variable_names: tuple[str, ...]) -> tuple[str | None, str | None]:
+    for variable_name in variable_names:
+        value = os.environ.get(variable_name, "")
+        if value.strip():
+            return variable_name, value.strip()
+    return None, None
+
+
+def _load_codex_auth_cache(auth_file: Path) -> _CodexAuthCache:
+    if not auth_file.exists():
+        return _CodexAuthCache(path=auth_file)
+
+    try:
+        payload = json.loads(auth_file.read_text(encoding="utf-8"))
+    except OSError as exc:
+        return _CodexAuthCache(path=auth_file, error=str(exc))
+    except ValueError as exc:
+        return _CodexAuthCache(path=auth_file, error=f"invalid JSON: {exc}")
+
+    if not isinstance(payload, dict):
+        return _CodexAuthCache(path=auth_file, error="auth cache payload must be a JSON object")
+
+    tokens = payload.get("tokens")
+    token_payload = tokens if isinstance(tokens, dict) else {}
+
+    return _CodexAuthCache(
+        path=auth_file,
+        api_key=_as_string(payload.get("OPENAI_API_KEY")),
+        access_token=_as_string(token_payload.get("access_token")),
+        refresh_token=_as_string(token_payload.get("refresh_token")),
+    )
+
+
+def _as_string(value: object) -> str | None:
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
 
 
 def _parse_data_models(payload: object, provider_id: str) -> list[ProviderModel]:

@@ -763,6 +763,12 @@ def _render_status_summary(payload: dict[str, object]) -> str:
         detailed=False,
     )
 
+    readiness_lines = _agent_readiness_lines(activation)
+    if readiness_lines:
+        _append_section(lines, "Agent Readiness", colors)
+        for readiness_line in readiness_lines:
+            _append_line(lines, readiness_line)
+
     tools = _as_list(activation.get("tools"))
     _append_section(lines, "Tools", colors)
     if tools:
@@ -1248,6 +1254,35 @@ def _update_summary_lines(payload: dict[str, object], *, colors: bool) -> list[s
         ),
         message,
     ]
+
+
+def _agent_readiness_lines(activation: dict[str, object]) -> list[str]:
+    providers = _as_list(activation.get("providers"))
+    if not providers:
+        return ["Runtime is up, but provider status is not available yet."]
+
+    enabled_providers = [
+        provider for provider in providers if _as_bool(_as_dict(provider).get("enabled"))
+    ]
+    if not enabled_providers:
+        return [
+            "Runtime is running, but the agent is not configured yet.",
+            "No provider profile is enabled, so model requests cannot run.",
+        ]
+
+    authenticated_providers = [
+        provider
+        for provider in enabled_providers
+        if _as_bool(_as_dict(provider).get("authenticated"))
+        or _as_text(_as_dict(provider).get("auth_mode")) == "none"
+    ]
+    if not authenticated_providers:
+        return [
+            "Runtime is running, but enabled providers are missing usable credentials.",
+            "Complete provider auth before running full agent workflows.",
+        ]
+
+    return []
 
 
 def _next_steps(payload: dict[str, object]) -> list[str]:

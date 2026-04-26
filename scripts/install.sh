@@ -228,6 +228,94 @@ download_artifact() {
   chmod +x "$target" || true
 }
 
+supports_color() {
+  if [ -n "${NO_COLOR:-}" ]; then
+    return 1
+  fi
+  if [ "${TERM:-}" = "dumb" ]; then
+    return 1
+  fi
+  [ -t 1 ]
+}
+
+print_post_install_summary() {
+  local quick_start_command="$1"
+  local style_reset=""
+  local style_heading=""
+  local style_ok=""
+  local style_warn=""
+  local style_dim=""
+  local setup_payload=""
+  local default_provider=""
+  local enabled_count="0"
+  local enabled_providers=""
+
+  if supports_color; then
+    style_reset=$'\033[0m'
+    style_heading=$'\033[1;36m'
+    style_ok=$'\033[1;32m'
+    style_warn=$'\033[1;33m'
+    style_dim=$'\033[2m'
+  fi
+
+  setup_payload="$("$(python_cmd)" - "$NAGIENT_CONFIG_FILE" <<'PY'
+import sys
+import tomllib
+from pathlib import Path
+
+config_path = Path(sys.argv[1])
+default_provider = ""
+enabled: list[str] = []
+
+if config_path.exists():
+    payload = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    if isinstance(payload, dict):
+        agent = payload.get("agent")
+        if isinstance(agent, dict):
+            default_provider = str(agent.get("default_provider", "")).strip()
+
+        providers = payload.get("providers")
+        if isinstance(providers, dict):
+            for provider_id, values in providers.items():
+                if not isinstance(provider_id, str) or not isinstance(values, dict):
+                    continue
+                if values.get("enabled") is True:
+                    enabled.append(provider_id)
+
+print(f"{default_provider}|{len(enabled)}|{','.join(enabled)}")
+PY
+)"
+
+  IFS='|' read -r default_provider enabled_count enabled_providers <<EOF
+$setup_payload
+EOF
+
+  echo
+  echo "${style_heading}Nagient Install Summary${style_reset}"
+  echo "  Runtime: ${style_ok}started${style_reset}"
+
+  if [ "${enabled_count:-0}" -eq 0 ]; then
+    echo "  Agent setup: ${style_warn}incomplete${style_reset}"
+    echo "  ${style_dim}Runtime is running, but no provider profile is enabled yet.${style_reset}"
+    echo "  ${style_dim}Not enough provider data is configured for full agent workflows.${style_reset}"
+    echo "  Next: ${quick_start_command} setup"
+  elif [ -z "$default_provider" ]; then
+    echo "  Agent setup: ${style_warn}partial${style_reset}"
+    echo "  ${style_dim}Providers are enabled, but default provider is not set.${style_reset}"
+    echo "  Next: ${quick_start_command} provider use <provider_id>"
+  else
+    echo "  Agent setup: ${style_ok}configured${style_reset}"
+    echo "  Default provider: ${default_provider}"
+    if [ -n "$enabled_providers" ]; then
+      echo "  Enabled providers: ${enabled_providers}"
+    fi
+  fi
+
+  echo "  Status: ${quick_start_command} status"
+  echo "  Config paths: ${quick_start_command} paths"
+  echo "  Updater: ${quick_start_command} update"
+}
+
 write_nagientctl() {
   cat >"${NAGIENT_BIN_DIR}/nagientctl" <<'NAGIENTCTL'
 #!/usr/bin/env bash
@@ -399,6 +487,31 @@ Logs: $NAGIENT_LOG_DIR
 EOF
 }
 
+open_url() {
+  local url="$1"
+  if command -v open >/dev/null 2>&1; then
+    open "$url" >/dev/null 2>&1 || true
+    return 0
+  fi
+  if command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$url" >/dev/null 2>&1 || true
+    return 0
+  fi
+  return 1
+}
+
+resolve_codex_auth_file_default() {
+  if [ -n "${NAGIENT_OPENAI_CODEX_AUTH_FILE:-}" ]; then
+    printf '%s\n' "${NAGIENT_OPENAI_CODEX_AUTH_FILE}"
+    return 0
+  fi
+  if [ -n "${CODEX_HOME:-}" ]; then
+    printf '%s\n' "${CODEX_HOME%/}/auth.json"
+    return 0
+  fi
+  printf '%s\n' "$HOME/.codex/auth.json"
+}
+
 provider_usage() {
   cat <<USAGE
 Usage: ${PROGRAM_NAME} provider <command>
@@ -417,6 +530,7 @@ Options for enable/use:
   --token <value>             Store a token credential via nagient auth login
   --base-url <url>            Override base_url
   --auth <mode>               Override auth mode
+  --auth-file <path>          Override auth_file (used by openai-codex)
   --secret-name <name>        Override api_key_secret
   --plugin <plugin_id>        Use a custom provider plugin id
   --no-reconcile              Skip reconcile after editing files
@@ -425,11 +539,12 @@ USAGE
 
 provider_defaults() {
   case "$1" in
-    openai) printf '%s\n' 'builtin.openai|api_key|OPENAI_API_KEY|gpt-4.1-mini|' ;;
-    anthropic) printf '%s\n' 'builtin.anthropic|api_key|ANTHROPIC_API_KEY|claude-sonnet-4-5|' ;;
-    gemini) printf '%s\n' 'builtin.gemini|api_key|GEMINI_API_KEY|gemini-2.5-pro|' ;;
-    deepseek) printf '%s\n' 'builtin.deepseek|api_key|DEEPSEEK_API_KEY|deepseek-chat|' ;;
-    ollama) printf '%s\n' 'builtin.ollama|none||llama3.1:8b|http://127.0.0.1:11434' ;;
+    openai) printf '%s\n' 'builtin.openai|api_key|OPENAI_API_KEY|gpt-4.1-mini||' ;;
+    openai-codex|openai_codex) printf '%s\n' 'builtin.openai_codex|codex_auth_file|CODEX_API_KEY|gpt-5-codex||~/.codex/auth.json' ;;
+    anthropic) printf '%s\n' 'builtin.anthropic|api_key|ANTHROPIC_API_KEY|claude-sonnet-4-5||' ;;
+    gemini) printf '%s\n' 'builtin.gemini|api_key|GEMINI_API_KEY|gemini-2.5-pro||' ;;
+    deepseek) printf '%s\n' 'builtin.deepseek|api_key|DEEPSEEK_API_KEY|deepseek-chat||' ;;
+    ollama) printf '%s\n' 'builtin.ollama|none||llama3.1:8b|http://127.0.0.1:11434|' ;;
     *) return 1 ;;
   esac
 }
@@ -485,7 +600,8 @@ update_provider_config() {
   local auth_mode="$5"
   local secret_name="$6"
   local base_url="$7"
-  local plugin_id="$8"
+  local auth_file="$8"
+  local plugin_id="$9"
 
   "$(python_cmd)" - \
     "$NAGIENT_CONFIG_FILE" \
@@ -496,6 +612,7 @@ update_provider_config() {
     "$auth_mode" \
     "$secret_name" \
     "$base_url" \
+    "$auth_file" \
     "$plugin_id" <<'PY'
 from __future__ import annotations
 
@@ -511,7 +628,8 @@ model = sys.argv[5]
 auth_mode = sys.argv[6]
 secret_name = sys.argv[7]
 base_url = sys.argv[8]
-plugin_id = sys.argv[9]
+auth_file = sys.argv[9]
+plugin_id = sys.argv[10]
 
 
 def ensure_mapping(payload: dict[str, object], key: str) -> dict[str, object]:
@@ -586,6 +704,8 @@ if secret_name:
     profile["api_key_secret"] = secret_name
 if base_url:
     profile["base_url"] = base_url
+if auth_file:
+  profile["auth_file"] = auth_file
 
 providers[provider_id] = profile
 
@@ -622,6 +742,7 @@ provider_enable() {
   local token=""
   local base_url=""
   local auth_mode=""
+  local auth_file=""
   local secret_name=""
   local plugin_id=""
   local no_reconcile="false"
@@ -631,6 +752,7 @@ provider_enable() {
   local default_secret=""
   local default_model=""
   local default_base_url=""
+  local default_auth_file=""
 
   if [ -z "$provider_id" ]; then
     echo "Usage: ${PROGRAM_NAME} provider enable <provider_id>" >&2
@@ -663,6 +785,10 @@ provider_enable() {
         auth_mode="${2:-}"
         shift
         ;;
+      --auth-file)
+        auth_file="${2:-}"
+        shift
+        ;;
       --secret-name)
         secret_name="${2:-}"
         shift
@@ -683,12 +809,12 @@ provider_enable() {
   done
 
   if defaults="$(provider_defaults "$provider_id" 2>/dev/null)"; then
-    IFS='|' read -r default_plugin default_auth default_secret default_model default_base_url <<EOF
+    IFS='|' read -r default_plugin default_auth default_secret default_model default_base_url default_auth_file <<EOF
 $defaults
 EOF
   elif [ -z "$plugin_id" ]; then
     echo "Unknown built-in provider: $provider_id" >&2
-    echo "Supported built-ins: openai, anthropic, gemini, deepseek, ollama" >&2
+    echo "Supported built-ins: openai, openai-codex, anthropic, gemini, deepseek, ollama" >&2
     echo "Use --plugin for a custom provider profile." >&2
     return 1
   fi
@@ -698,6 +824,10 @@ EOF
   [ -n "$secret_name" ] || secret_name="$default_secret"
   [ -n "$model" ] || model="$default_model"
   [ -n "$base_url" ] || base_url="$default_base_url"
+  [ -n "$auth_file" ] || auth_file="$default_auth_file"
+  if [ "$provider_id" = "openai-codex" ] && [ -z "$auth_file" ]; then
+    auth_file="$(resolve_codex_auth_file_default)"
+  fi
 
   update_provider_config \
     "$provider_id" \
@@ -707,6 +837,7 @@ EOF
     "$auth_mode" \
     "$secret_name" \
     "$base_url" \
+    "$auth_file" \
     "$plugin_id"
 
   if [ -n "$api_key" ]; then
@@ -765,7 +896,7 @@ provider_disable() {
     shift
   done
 
-  update_provider_config "$provider_id" "false" "false" "" "" "" "" ""
+  update_provider_config "$provider_id" "false" "false" "" "" "" "" "" ""
   echo "Disabled provider '${provider_id}'."
   echo "Config: ${NAGIENT_CONFIG_FILE}"
 
@@ -800,6 +931,7 @@ setup_runtime() {
   local token=""
   local base_url=""
   local auth_mode=""
+  local auth_file=""
   local secret_name=""
   local plugin_id=""
   local no_reconcile="false"
@@ -809,6 +941,7 @@ setup_runtime() {
   local default_secret=""
   local default_model=""
   local default_base_url=""
+  local default_auth_file=""
   local answer=""
   local provider_args=()
 
@@ -838,6 +971,10 @@ setup_runtime() {
         auth_mode="${2:-}"
         shift
         ;;
+      --auth-file)
+        auth_file="${2:-}"
+        shift
+        ;;
       --secret-name)
         secret_name="${2:-}"
         shift
@@ -864,14 +1001,14 @@ setup_runtime() {
     fi
 
     echo "Choose a provider profile:"
-    PS3="Provider [1-5]: "
-    select provider_id in openai anthropic gemini deepseek ollama; do
+    PS3="Provider [1-6]: "
+    select provider_id in openai openai-codex anthropic gemini deepseek ollama; do
       [ -n "$provider_id" ] && break
     done
   fi
 
   if defaults="$(provider_defaults "$provider_id" 2>/dev/null)"; then
-    IFS='|' read -r plugin_id default_auth default_secret default_model default_base_url <<EOF
+    IFS='|' read -r plugin_id default_auth default_secret default_model default_base_url default_auth_file <<EOF
 $defaults
 EOF
   elif [ -z "$plugin_id" ]; then
@@ -883,6 +1020,10 @@ EOF
   [ -n "$auth_mode" ] || auth_mode="$default_auth"
   [ -n "$secret_name" ] || secret_name="$default_secret"
   [ -n "$plugin_id" ] || plugin_id="$default_plugin"
+  [ -n "$auth_file" ] || auth_file="$default_auth_file"
+  if [ "$provider_id" = "openai-codex" ] && [ -z "$auth_file" ]; then
+    auth_file="$(resolve_codex_auth_file_default)"
+  fi
 
   if [ -z "$model" ] && [ -t 0 ] && [ -n "$default_model" ]; then
     printf 'Model [%s]: ' "$default_model"
@@ -897,6 +1038,30 @@ EOF
     base_url="${answer:-$default_base_url}"
   fi
   [ -n "$base_url" ] || base_url="$default_base_url"
+
+  if [ "$provider_id" = "openai-codex" ] && [ "$auth_mode" = "codex_auth_file" ] && [ -t 0 ]; then
+    if [ -z "$auth_file" ]; then
+      auth_file="$(resolve_codex_auth_file_default)"
+    fi
+    printf 'Codex auth file [%s]: ' "$auth_file"
+    read -r answer
+    auth_file="${answer:-$auth_file}"
+
+    echo "Codex browser login URL: https://chatgpt.com/codex"
+    if [ ! -f "$auth_file" ]; then
+      printf 'Open browser now? [Y/n]: '
+      read -r answer
+      case "${answer:-Y}" in
+        n|N|no|NO)
+          ;;
+        *)
+          open_url "https://chatgpt.com/codex" || true
+          ;;
+      esac
+      echo "Headless tip: run \`codex login --device-auth\` and complete device-code auth via browser."
+      echo "Env fallback: set NAGIENT_OPENAI_CODEX_AUTH_FILE, NAGIENT_OPENAI_CODEX_ACCESS_TOKEN, CODEX_API_KEY, or OPENAI_API_KEY."
+    fi
+  fi
 
   if [ "$auth_mode" = "api_key" ] && [ -z "$api_key" ] && [ -t 0 ]; then
     printf 'API key for %s (leave empty to add later): ' "$provider_id" >&2
@@ -919,6 +1084,9 @@ EOF
   fi
   if [ -n "$auth_mode" ]; then
     provider_args+=(--auth "$auth_mode")
+  fi
+  if [ -n "$auth_file" ]; then
+    provider_args+=(--auth-file "$auth_file")
   fi
   if [ -n "$secret_name" ]; then
     provider_args+=(--secret-name "$secret_name")
@@ -1136,6 +1304,14 @@ auth = "api_key"
 api_key_secret = "OPENAI_API_KEY"
 model = "gpt-4.1-mini"
 
+[providers.openai-codex]
+plugin = "builtin.openai_codex"
+enabled = false
+auth = "codex_auth_file"
+auth_file = "~/.codex/auth.json"
+api_key_secret = "CODEX_API_KEY"
+model = "gpt-5-codex"
+
 [providers.anthropic]
 plugin = "builtin.anthropic"
 enabled = false
@@ -1170,6 +1346,7 @@ if [ ! -f "$NAGIENT_SECRETS_FILE" ]; then
   cat >"$NAGIENT_SECRETS_FILE" <<EOF
 # Fill only the secrets you actually use.
 # OPENAI_API_KEY=
+# CODEX_API_KEY=
 # ANTHROPIC_API_KEY=
 # GEMINI_API_KEY=
 # DEEPSEEK_API_KEY=
@@ -1213,7 +1390,4 @@ else
   echo "Command shims: ${SHELL_LINK_DIR:-$NAGIENT_BIN_DIR}"
   echo "Add to PATH: export PATH=\"${SHELL_LINK_DIR:-$NAGIENT_BIN_DIR}:\$PATH\""
 fi
-echo "Quick start: ${quick_start_command} setup"
-echo "Status: ${quick_start_command} status"
-echo "Config paths: ${quick_start_command} paths"
-echo "Updater: ${quick_start_command} update"
+print_post_install_summary "$quick_start_command"

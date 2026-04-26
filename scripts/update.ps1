@@ -301,4 +301,5 @@ Write-Step "Restarting Nagient container"
 Invoke-ComposeUpdateStep up -d
 
 Write-Host "Nagient upgraded: $currentVersion -> $targetVersion"
-Write-Host "Quick start: $(Join-Path $NagientHome 'bin/nagient.ps1') status"
+Write-Host "Status: $(Join-Path $NagientHome 'bin/nagient.ps1') status"
+Write-Host "Updater: $(Join-Path $NagientHome 'bin/nagient.ps1') update"

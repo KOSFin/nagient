@@ -354,6 +354,14 @@ auth = "api_key"
 api_key_secret = "OPENAI_API_KEY"
 model = "gpt-4.1-mini"
 
+[providers.openai-codex]
+plugin = "builtin.openai_codex"
+enabled = false
+auth = "codex_auth_file"
+auth_file = "~/.codex/auth.json"
+api_key_secret = "CODEX_API_KEY"
+model = "gpt-5-codex"
+
 [providers.anthropic]
 plugin = "builtin.anthropic"
 enabled = false
@@ -388,6 +396,7 @@ if (-not (Test-Path $SecretsFile)) {
   @"
 # Fill only the secrets you actually use.
 # OPENAI_API_KEY=
+# CODEX_API_KEY=
 # ANTHROPIC_API_KEY=
 # GEMINI_API_KEY=
 # DEEPSEEK_API_KEY=
@@ -417,6 +426,7 @@ Write-Step "Starting Nagient container"
 Invoke-ComposeInstallStep up -d
 
 Write-Host "Nagient $version installed into $NagientHome"
-Write-Host "Quick start: $(Join-Path $BinDir 'nagient.ps1') status"
+Write-Host "Runtime started, but provider setup is still incomplete until you enable one."
+Write-Host "Next: $(Join-Path $BinDir 'nagient.ps1') status"
 Write-Host "Config paths: $(Join-Path $BinDir 'nagient.ps1') paths"
 Write-Host "Updater: $(Join-Path $BinDir 'nagient.ps1') update"

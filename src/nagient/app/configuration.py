@@ -223,6 +223,14 @@ def render_default_config(settings: Settings) -> str:
             'api_key_secret = "OPENAI_API_KEY"',
             'model = "gpt-4.1-mini"',
             "",
+            "[providers.openai-codex]",
+            'plugin = "builtin.openai_codex"',
+            "enabled = false",
+            'auth = "codex_auth_file"',
+            'auth_file = "~/.codex/auth.json"',
+            'api_key_secret = "CODEX_API_KEY"',
+            'model = "gpt-5-codex"',
+            "",
             "[providers.anthropic]",
             'plugin = "builtin.anthropic"',
             "enabled = false",
@@ -289,6 +297,7 @@ def render_default_secrets() -> str:
         [
             "# Fill only the secrets you actually use.",
             "# OPENAI_API_KEY=",
+            "# CODEX_API_KEY=",
             "# ANTHROPIC_API_KEY=",
             "# GEMINI_API_KEY=",
             "# DEEPSEEK_API_KEY=",
@@ -589,6 +598,10 @@ def merge_runtime_config(
         if len(parts) < 3:
             continue
         provider_id = parts[1].strip().lower()
+        if provider_id not in providers:
+            hyphenated_provider_id = provider_id.replace("_", "-")
+            if hyphenated_provider_id in providers:
+                provider_id = hyphenated_provider_id
         field_name = "__".join(parts[2:]).strip().lower()
         if not provider_id or not field_name:
             continue

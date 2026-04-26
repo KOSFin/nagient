@@ -132,6 +132,44 @@ class ConfigurationTests(unittest.TestCase):
             self.assertEqual(runtime_config.providers[0].provider_id, "openai")
             self.assertTrue(runtime_config.providers[0].enabled)
 
+    def test_environment_provider_overrides_accept_underscore_alias_for_hyphenated_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir)
+            config_file = home_dir / "config.toml"
+            config_file.write_text(
+                "\n".join(
+                    [
+                        "[providers.openai-codex]",
+                        'plugin = "builtin.openai_codex"',
+                        "enabled = false",
+                        'auth = "codex_auth_file"',
+                        'auth_file = "~/.codex/auth.json"',
+                        'api_key_secret = "CODEX_API_KEY"',
+                        'model = "gpt-5-codex"',
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            settings = Settings.from_env(
+                {
+                    "NAGIENT_HOME": str(home_dir),
+                    "NAGIENT_CONFIG": str(config_file),
+                }
+            )
+
+            runtime_config = load_runtime_configuration(
+                settings,
+                environ={
+                    "NAGIENT_PROVIDER__OPENAI_CODEX__ENABLED": "true",
+                    "NAGIENT_PROVIDER__OPENAI_CODEX__MODEL": "gpt-5-codex",
+                },
+            )
+
+            self.assertEqual(len(runtime_config.providers), 1)
+            self.assertEqual(runtime_config.providers[0].provider_id, "openai-codex")
+            self.assertTrue(runtime_config.providers[0].enabled)
+
 
 if __name__ == "__main__":
     unittest.main()

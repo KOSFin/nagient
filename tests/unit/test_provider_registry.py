@@ -20,6 +20,7 @@ class ProviderPluginRegistryTests(unittest.TestCase):
             discovery = ProviderPluginRegistry().discover(providers_dir)
 
             self.assertIn("builtin.openai", discovery.plugins)
+            self.assertIn("builtin.openai_codex", discovery.plugins)
             self.assertIn("builtin.deepseek", discovery.plugins)
             self.assertIn("custom.provider", discovery.plugins)
             self.assertEqual(discovery.issues, [])
@@ -27,4 +28,3 @@ class ProviderPluginRegistryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

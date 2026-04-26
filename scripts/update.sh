@@ -310,6 +310,31 @@ Logs: $NAGIENT_LOG_DIR
 EOF
 }
 
+open_url() {
+  local url="$1"
+  if command -v open >/dev/null 2>&1; then
+    open "$url" >/dev/null 2>&1 || true
+    return 0
+  fi
+  if command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$url" >/dev/null 2>&1 || true
+    return 0
+  fi
+  return 1
+}
+
+resolve_codex_auth_file_default() {
+  if [ -n "${NAGIENT_OPENAI_CODEX_AUTH_FILE:-}" ]; then
+    printf '%s\n' "${NAGIENT_OPENAI_CODEX_AUTH_FILE}"
+    return 0
+  fi
+  if [ -n "${CODEX_HOME:-}" ]; then
+    printf '%s\n' "${CODEX_HOME%/}/auth.json"
+    return 0
+  fi
+  printf '%s\n' "$HOME/.codex/auth.json"
+}
+
 provider_usage() {
   cat <<USAGE
 Usage: ${PROGRAM_NAME} provider <command>
@@ -328,6 +353,7 @@ Options for enable/use:
   --token <value>             Store a token credential via nagient auth login
   --base-url <url>            Override base_url
   --auth <mode>               Override auth mode
+  --auth-file <path>          Override auth_file (used by openai-codex)
   --secret-name <name>        Override api_key_secret
   --plugin <plugin_id>        Use a custom provider plugin id
   --no-reconcile              Skip reconcile after editing files
@@ -336,11 +362,12 @@ USAGE
 
 provider_defaults() {
   case "$1" in
-    openai) printf '%s\n' 'builtin.openai|api_key|OPENAI_API_KEY|gpt-4.1-mini|' ;;
-    anthropic) printf '%s\n' 'builtin.anthropic|api_key|ANTHROPIC_API_KEY|claude-sonnet-4-5|' ;;
-    gemini) printf '%s\n' 'builtin.gemini|api_key|GEMINI_API_KEY|gemini-2.5-pro|' ;;
-    deepseek) printf '%s\n' 'builtin.deepseek|api_key|DEEPSEEK_API_KEY|deepseek-chat|' ;;
-    ollama) printf '%s\n' 'builtin.ollama|none||llama3.1:8b|http://127.0.0.1:11434' ;;
+    openai) printf '%s\n' 'builtin.openai|api_key|OPENAI_API_KEY|gpt-4.1-mini||' ;;
+    openai-codex|openai_codex) printf '%s\n' 'builtin.openai_codex|codex_auth_file|CODEX_API_KEY|gpt-5-codex||~/.codex/auth.json' ;;
+    anthropic) printf '%s\n' 'builtin.anthropic|api_key|ANTHROPIC_API_KEY|claude-sonnet-4-5||' ;;
+    gemini) printf '%s\n' 'builtin.gemini|api_key|GEMINI_API_KEY|gemini-2.5-pro||' ;;
+    deepseek) printf '%s\n' 'builtin.deepseek|api_key|DEEPSEEK_API_KEY|deepseek-chat||' ;;
+    ollama) printf '%s\n' 'builtin.ollama|none||llama3.1:8b|http://127.0.0.1:11434|' ;;
     *) return 1 ;;
   esac
 }
@@ -396,7 +423,8 @@ update_provider_config() {
   local auth_mode="$5"
   local secret_name="$6"
   local base_url="$7"
-  local plugin_id="$8"
+  local auth_file="$8"
+  local plugin_id="$9"
 
   "$(python_cmd)" - \
     "$NAGIENT_CONFIG_FILE" \
@@ -407,6 +435,7 @@ update_provider_config() {
     "$auth_mode" \
     "$secret_name" \
     "$base_url" \
+    "$auth_file" \
     "$plugin_id" <<'PY'
 from __future__ import annotations
 
@@ -422,7 +451,8 @@ model = sys.argv[5]
 auth_mode = sys.argv[6]
 secret_name = sys.argv[7]
 base_url = sys.argv[8]
-plugin_id = sys.argv[9]
+auth_file = sys.argv[9]
+plugin_id = sys.argv[10]
 
 
 def ensure_mapping(payload: dict[str, object], key: str) -> dict[str, object]:
@@ -497,6 +527,8 @@ if secret_name:
     profile["api_key_secret"] = secret_name
 if base_url:
     profile["base_url"] = base_url
+if auth_file:
+    profile["auth_file"] = auth_file
 
 providers[provider_id] = profile
 
@@ -532,6 +564,7 @@ provider_enable() {
   local token=""
   local base_url=""
   local auth_mode=""
+  local auth_file=""
   local secret_name=""
   local plugin_id=""
   local no_reconcile="false"
@@ -541,6 +574,7 @@ provider_enable() {
   local default_secret=""
   local default_model=""
   local default_base_url=""
+  local default_auth_file=""
 
   if [ -z "$provider_id" ]; then
     echo "Usage: ${PROGRAM_NAME} provider enable <provider_id>" >&2
@@ -573,6 +607,10 @@ provider_enable() {
         auth_mode="${2:-}"
         shift
         ;;
+      --auth-file)
+        auth_file="${2:-}"
+        shift
+        ;;
       --secret-name)
         secret_name="${2:-}"
         shift
@@ -593,12 +631,12 @@ provider_enable() {
   done
 
   if defaults="$(provider_defaults "$provider_id" 2>/dev/null)"; then
-    IFS='|' read -r default_plugin default_auth default_secret default_model default_base_url <<EOF
+    IFS='|' read -r default_plugin default_auth default_secret default_model default_base_url default_auth_file <<EOF
 $defaults
 EOF
   elif [ -z "$plugin_id" ]; then
     echo "Unknown built-in provider: $provider_id" >&2
-    echo "Supported built-ins: openai, anthropic, gemini, deepseek, ollama" >&2
+    echo "Supported built-ins: openai, openai-codex, anthropic, gemini, deepseek, ollama" >&2
     echo "Use --plugin for a custom provider profile." >&2
     return 1
   fi
@@ -608,6 +646,10 @@ EOF
   [ -n "$secret_name" ] || secret_name="$default_secret"
   [ -n "$model" ] || model="$default_model"
   [ -n "$base_url" ] || base_url="$default_base_url"
+  [ -n "$auth_file" ] || auth_file="$default_auth_file"
+  if [ "$provider_id" = "openai-codex" ] && [ -z "$auth_file" ]; then
+    auth_file="$(resolve_codex_auth_file_default)"
+  fi
 
   update_provider_config \
     "$provider_id" \
@@ -617,6 +659,7 @@ EOF
     "$auth_mode" \
     "$secret_name" \
     "$base_url" \
+    "$auth_file" \
     "$plugin_id"
 
   if [ -n "$api_key" ]; then
@@ -640,6 +683,11 @@ EOF
 
   if [ "$no_reconcile" = "true" ]; then
     echo "Run \`${PROGRAM_NAME} reconcile\` when ready."
+    return 0
+  fi
+
+  if [ ! -f "$NAGIENT_COMPOSE_FILE" ] || [ ! -f "$NAGIENT_ENV_FILE" ]; then
+    echo "Run \`${PROGRAM_NAME} reconcile\` after the runtime is installed."
     return 0
   fi
 
@@ -670,7 +718,7 @@ provider_disable() {
     shift
   done
 
-  update_provider_config "$provider_id" "false" "false" "" "" "" "" ""
+  update_provider_config "$provider_id" "false" "false" "" "" "" "" "" ""
   echo "Disabled provider '${provider_id}'."
   echo "Config: ${NAGIENT_CONFIG_FILE}"
 
@@ -679,12 +727,23 @@ provider_disable() {
     return 0
   fi
 
+  if [ ! -f "$NAGIENT_COMPOSE_FILE" ] || [ ! -f "$NAGIENT_ENV_FILE" ]; then
+    echo "Run \`${PROGRAM_NAME} reconcile\` after the runtime is installed."
+    return 0
+  fi
+
   require_compose_files
   compose_exec nagient reconcile --format text
 }
 
 provider_use() {
-  provider_enable "$1" --default "${@:2}"
+  local provider_id="${1:-}"
+
+  if [ -n "$provider_id" ]; then
+    shift
+  fi
+
+  provider_enable "$provider_id" --default "$@"
 }
 
 setup_runtime() {
@@ -694,6 +753,7 @@ setup_runtime() {
   local token=""
   local base_url=""
   local auth_mode=""
+  local auth_file=""
   local secret_name=""
   local plugin_id=""
   local no_reconcile="false"
@@ -703,7 +763,9 @@ setup_runtime() {
   local default_secret=""
   local default_model=""
   local default_base_url=""
+  local default_auth_file=""
   local answer=""
+  local provider_args=()
 
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -729,6 +791,10 @@ setup_runtime() {
         ;;
       --auth)
         auth_mode="${2:-}"
+        shift
+        ;;
+      --auth-file)
+        auth_file="${2:-}"
         shift
         ;;
       --secret-name)
@@ -757,14 +823,14 @@ setup_runtime() {
     fi
 
     echo "Choose a provider profile:"
-    PS3="Provider [1-5]: "
-    select provider_id in openai anthropic gemini deepseek ollama; do
+    PS3="Provider [1-6]: "
+    select provider_id in openai openai-codex anthropic gemini deepseek ollama; do
       [ -n "$provider_id" ] && break
     done
   fi
 
   if defaults="$(provider_defaults "$provider_id" 2>/dev/null)"; then
-    IFS='|' read -r default_plugin default_auth default_secret default_model default_base_url <<EOF
+    IFS='|' read -r default_plugin default_auth default_secret default_model default_base_url default_auth_file <<EOF
 $defaults
 EOF
   elif [ -z "$plugin_id" ]; then
@@ -776,6 +842,10 @@ EOF
   [ -n "$plugin_id" ] || plugin_id="$default_plugin"
   [ -n "$auth_mode" ] || auth_mode="$default_auth"
   [ -n "$secret_name" ] || secret_name="$default_secret"
+  [ -n "$auth_file" ] || auth_file="$default_auth_file"
+  if [ "$provider_id" = "openai-codex" ] && [ -z "$auth_file" ]; then
+    auth_file="$(resolve_codex_auth_file_default)"
+  fi
 
   if [ -z "$model" ] && [ -t 0 ] && [ -n "$default_model" ]; then
     printf 'Model [%s]: ' "$default_model"
@@ -791,22 +861,66 @@ EOF
   fi
   [ -n "$base_url" ] || base_url="$default_base_url"
 
+  if [ "$provider_id" = "openai-codex" ] && [ "$auth_mode" = "codex_auth_file" ] && [ -t 0 ]; then
+    if [ -z "$auth_file" ]; then
+      auth_file="$(resolve_codex_auth_file_default)"
+    fi
+    printf 'Codex auth file [%s]: ' "$auth_file"
+    read -r answer
+    auth_file="${answer:-$auth_file}"
+
+    echo "Codex browser login URL: https://chatgpt.com/codex"
+    if [ ! -f "$auth_file" ]; then
+      printf 'Open browser now? [Y/n]: '
+      read -r answer
+      case "${answer:-Y}" in
+        n|N|no|NO)
+          ;;
+        *)
+          open_url "https://chatgpt.com/codex" || true
+          ;;
+      esac
+      echo "Headless tip: run \`codex login --device-auth\` and complete device-code auth via browser."
+      echo "Env fallback: set NAGIENT_OPENAI_CODEX_AUTH_FILE, NAGIENT_OPENAI_CODEX_ACCESS_TOKEN, CODEX_API_KEY, or OPENAI_API_KEY."
+    fi
+  fi
+
   if [ "$auth_mode" = "api_key" ] && [ -z "$api_key" ] && [ -t 0 ]; then
     printf 'API key for %s (leave empty to add later): ' "$provider_id" >&2
     read -rs api_key
     printf '\n' >&2
   fi
 
-  provider_enable "$provider_id" \
-    --default \
-    ${model:+--model "$model"} \
-    ${api_key:+--api-key "$api_key"} \
-    ${token:+--token "$token"} \
-    ${base_url:+--base-url "$base_url"} \
-    ${auth_mode:+--auth "$auth_mode"} \
-    ${secret_name:+--secret-name "$secret_name"} \
-    ${plugin_id:+--plugin "$plugin_id"} \
-    ${no_reconcile:+--no-reconcile}
+  provider_args=(--default)
+  if [ -n "$model" ]; then
+    provider_args+=(--model "$model")
+  fi
+  if [ -n "$api_key" ]; then
+    provider_args+=(--api-key "$api_key")
+  fi
+  if [ -n "$token" ]; then
+    provider_args+=(--token "$token")
+  fi
+  if [ -n "$base_url" ]; then
+    provider_args+=(--base-url "$base_url")
+  fi
+  if [ -n "$auth_mode" ]; then
+    provider_args+=(--auth "$auth_mode")
+  fi
+  if [ -n "$auth_file" ]; then
+    provider_args+=(--auth-file "$auth_file")
+  fi
+  if [ -n "$secret_name" ]; then
+    provider_args+=(--secret-name "$secret_name")
+  fi
+  if [ -n "$plugin_id" ]; then
+    provider_args+=(--plugin "$plugin_id")
+  fi
+  if [ "$no_reconcile" = "true" ]; then
+    provider_args+=(--no-reconcile)
+  fi
+
+  provider_enable "$provider_id" "${provider_args[@]}"
 }
 
 command_name="${1:-help}"
@@ -855,6 +969,10 @@ case "$command_name" in
         ;;
       disable)
         provider_disable "$@"
+        ;;
+      models)
+        require_compose_files
+        compose_exec nagient provider models "$@"
         ;;
       help|-h|--help)
         provider_usage
