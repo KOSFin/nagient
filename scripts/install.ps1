@@ -198,6 +198,34 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
   throw "Docker is required."
 }
 
+$composeOutput = (& docker compose version 2>&1 | Out-String).Trim()
+if ($LASTEXITCODE -ne 0) {
+  throw "Docker Compose v2 is required. Install Docker Desktop or Docker Engine with the Compose plugin, then retry.`n$composeOutput"
+}
+
+$dockerInfoOutput = (& docker info 2>&1 | Out-String).Trim()
+if ($LASTEXITCODE -ne 0) {
+  throw "Docker is installed but the daemon is not available. Start Docker Desktop (macOS/Windows) or the Docker service (Linux), then retry. If you use a custom Docker context or socket, make sure 'docker info' succeeds first.`n$dockerInfoOutput"
+}
+
+function Invoke-ComposeInstallStep {
+  param([Parameter(ValueFromRemainingArguments = $true)][string[]]$ComposeArgs)
+
+  $output = (& docker compose -f $ComposeFile --env-file $EnvFile @ComposeArgs 2>&1 | Out-String).Trim()
+  if ($LASTEXITCODE -ne 0) {
+    if (-not [string]::IsNullOrWhiteSpace($output)) {
+      Write-Error $output
+    }
+    if ($output -like "*no matching manifest*" -and $output -like "*arm64*") {
+      throw "The published Docker image does not include an arm64 variant yet. Temporary workaround on Apple Silicon:`nDOCKER_DEFAULT_PLATFORM=linux/amd64 curl -fsSL https://ngnt-in.ruka.me/install.sh | bash"
+    }
+    throw "Docker Compose failed."
+  }
+  if (-not [string]::IsNullOrWhiteSpace($output)) {
+    Write-Host $output
+  }
+}
+
 New-Item -ItemType Directory -Force -Path $NagientHome, $ReleasesDir, $BinDir, $PluginsDir, $ProvidersDir, $CredentialsDir, (Join-Path $NagientHome "runtime") | Out-Null
 
 $channelPayload = Join-Path ([System.IO.Path]::GetTempPath()) "nagient-channel.json"
@@ -319,8 +347,8 @@ NAGIENT_DOCKER_PROJECT_NAME=nagient
 NAGIENT_SAFE_MODE=true
 "@ | Set-Content -Path $EnvFile -Encoding utf8
 
-docker compose -f $ComposeFile --env-file $EnvFile pull
-docker compose -f $ComposeFile --env-file $EnvFile up -d
+Invoke-ComposeInstallStep pull
+Invoke-ComposeInstallStep up -d
 
 Write-Host "Nagient $version installed into $NagientHome"
 Write-Host "Shortcut control: $(Join-Path $BinDir 'nagientctl.ps1') help"

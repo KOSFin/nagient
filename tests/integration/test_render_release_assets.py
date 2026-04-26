@@ -66,6 +66,56 @@ def _write_mock_docker(fake_bin: Path) -> None:
     mock_docker.chmod(0o755)
 
 
+def _write_unavailable_docker(fake_bin: Path) -> Path:
+    marker = fake_bin / "curl-should-not-run.marker"
+    mock_docker = fake_bin / "docker"
+    mock_docker.write_text(
+        "#!/usr/bin/env bash\n"
+        "if [ \"$1\" = \"compose\" ] && [ \"$2\" = \"version\" ]; then\n"
+        "  exit 0\n"
+        "fi\n"
+        "if [ \"$1\" = \"info\" ]; then\n"
+        "  echo \"failed to connect to the docker API at unix:///tmp/docker.sock\" >&2\n"
+        "  exit 1\n"
+        "fi\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    mock_docker.chmod(0o755)
+
+    mock_curl = fake_bin / "curl"
+    mock_curl.write_text(
+        "#!/usr/bin/env bash\n"
+        f"touch {marker}\n"
+        "exit 99\n",
+        encoding="utf-8",
+    )
+    mock_curl.chmod(0o755)
+    return marker
+
+
+def _write_arm64_mismatch_docker(fake_bin: Path) -> None:
+    mock_docker = fake_bin / "docker"
+    mock_docker.write_text(
+        "#!/usr/bin/env bash\n"
+        "if [ \"$1\" = \"compose\" ] && [ \"$2\" = \"version\" ]; then\n"
+        "  exit 0\n"
+        "fi\n"
+        "if [ \"$1\" = \"info\" ]; then\n"
+        "  exit 0\n"
+        "fi\n"
+        "for arg in \"$@\"; do\n"
+        "  if [ \"$1\" = \"compose\" ] && [ \"$arg\" = \"pull\" ]; then\n"
+        "  echo \"Error response from daemon: no matching manifest for linux/arm64/v8\" >&2\n"
+        "  exit 1\n"
+        "  fi\n"
+        "done\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    mock_docker.chmod(0o755)
+
+
 def _isolated_script_env(
     *,
     home_dir: Path,
@@ -249,6 +299,71 @@ class RenderReleaseAssetsTests(unittest.TestCase):
                 '"version": "9.9.9"',
                 (releases_dir / "current.json").read_text(encoding="utf-8"),
             )
+
+    def test_rendered_release_installer_reports_unavailable_docker_daemon(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir) / "out"
+            fake_bin = Path(temp_dir) / "bin"
+            home_dir = Path(temp_dir) / "home"
+            _render_release_assets(output_dir)
+            fake_bin.mkdir()
+            home_dir.mkdir()
+
+            curl_marker = _write_unavailable_docker(fake_bin)
+            env = _isolated_script_env(
+                home_dir=home_dir,
+                path_prefix=fake_bin,
+                mapping_path=Path(temp_dir) / "unused-url-map.json",
+            )
+
+            process = subprocess.run(
+                ["bash", str(output_dir / "install.sh")],
+                cwd=PROJECT_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertNotEqual(process.returncode, 0)
+            self.assertIn("Docker is installed but the daemon is not available.", process.stderr)
+            self.assertIn("docker info", process.stderr)
+            self.assertFalse(curl_marker.exists())
+
+    def test_rendered_release_installer_reports_arm64_manifest_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir) / "out"
+            fixtures_dir = Path(temp_dir) / "fixtures"
+            fake_bin = Path(temp_dir) / "bin"
+            home_dir = Path(temp_dir) / "home"
+            _render_release_assets(output_dir)
+            fixtures_dir.mkdir()
+            fake_bin.mkdir()
+            home_dir.mkdir()
+
+            mapping_path = _write_release_fixture_map(output_dir, fixtures_dir)
+            _write_mock_curl(fake_bin)
+            _write_arm64_mismatch_docker(fake_bin)
+
+            env = _isolated_script_env(
+                home_dir=home_dir,
+                path_prefix=fake_bin,
+                mapping_path=mapping_path,
+            )
+
+            process = subprocess.run(
+                ["bash", str(output_dir / "install.sh")],
+                cwd=PROJECT_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertNotEqual(process.returncode, 0)
+            self.assertIn(
+                "The published Docker image does not include an arm64 variant yet.",
+                process.stderr,
+            )
+            self.assertIn("DOCKER_DEFAULT_PLATFORM=linux/amd64", process.stderr)
 
 
 if __name__ == "__main__":

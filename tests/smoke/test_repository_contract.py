@@ -77,6 +77,14 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertNotIn("if: ${{ secrets.DOCKERHUB_USERNAME", release_workflow)
         self.assertNotIn("push: ${{ secrets.DOCKERHUB_USERNAME", release_workflow)
 
+    def test_release_workflow_publishes_multiarch_docker_images(self) -> None:
+        release_workflow = (PROJECT_ROOT / ".github/workflows/release.yml").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("docker/setup-qemu-action@v3", release_workflow)
+        self.assertIn("platforms: linux/amd64,linux/arm64", release_workflow)
+
     def test_workflows_opt_in_to_node_24_for_javascript_actions(self) -> None:
         for relative_path in [
             ".github/workflows/auto-tag.yml",

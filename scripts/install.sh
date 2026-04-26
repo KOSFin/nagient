@@ -47,6 +47,51 @@ require_cmd() {
   fi
 }
 
+require_docker_runtime() {
+  local compose_error=""
+  local docker_error=""
+
+  if ! compose_error="$(docker compose version 2>&1 >/dev/null)"; then
+    echo "Docker Compose v2 is required." >&2
+    echo "Install Docker Desktop or Docker Engine with the Compose plugin, then retry." >&2
+    if [ -n "$compose_error" ]; then
+      echo "$compose_error" >&2
+    fi
+    exit 1
+  fi
+
+  if ! docker_error="$(docker info 2>&1 >/dev/null)"; then
+    echo "Docker is installed but the daemon is not available." >&2
+    echo "Start Docker Desktop (macOS/Windows) or the Docker service (Linux), then retry." >&2
+    echo "If you use a custom Docker context or socket, make sure 'docker info' succeeds first." >&2
+    if [ -n "$docker_error" ]; then
+      echo "$docker_error" >&2
+    fi
+    exit 1
+  fi
+}
+
+run_compose_install_step() {
+  local output=""
+  if ! output="$(docker compose -f "$NAGIENT_COMPOSE_FILE" --env-file "$NAGIENT_ENV_FILE" "$@" 2>&1)"; then
+    if [ -n "$output" ]; then
+      printf '%s\n' "$output" >&2
+    fi
+    case "$output" in
+      *"no matching manifest"*arm64*|*"no matching manifest"*linux/arm64*)
+        echo "The published Docker image does not include an arm64 variant yet." >&2
+        echo "Temporary workaround on Apple Silicon:" >&2
+        echo "DOCKER_DEFAULT_PLATFORM=linux/amd64 curl -fsSL https://ngnt-in.ruka.me/install.sh | bash" >&2
+        ;;
+    esac
+    exit 1
+  fi
+
+  if [ -n "$output" ]; then
+    printf '%s\n' "$output"
+  fi
+}
+
 python_cmd() {
   if command -v python3 >/dev/null 2>&1; then
     echo "python3"
@@ -233,6 +278,7 @@ EOF
 }
 
 require_cmd docker
+require_docker_runtime
 ensure_release_defaults
 mkdir -p "$NAGIENT_HOME" "$NAGIENT_RELEASES_DIR" "$NAGIENT_BIN_DIR" "$NAGIENT_HOME/runtime" "$NAGIENT_PLUGINS_DIR" "$NAGIENT_PROVIDERS_DIR" "$NAGIENT_CREDENTIALS_DIR"
 
@@ -356,8 +402,8 @@ NAGIENT_DOCKER_PROJECT_NAME=nagient
 NAGIENT_SAFE_MODE=true
 EOF
 
-docker compose -f "$NAGIENT_COMPOSE_FILE" --env-file "$NAGIENT_ENV_FILE" pull
-docker compose -f "$NAGIENT_COMPOSE_FILE" --env-file "$NAGIENT_ENV_FILE" up -d
+run_compose_install_step pull
+run_compose_install_step up -d
 
 echo "Nagient ${version} installed into ${NAGIENT_HOME}"
 echo "Use ${NAGIENT_BIN_DIR}/nagient-update for future upgrades."

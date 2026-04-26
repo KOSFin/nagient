@@ -11,6 +11,34 @@
 1. Docker установлен.
 2. Docker daemon запущен.
 3. `docker` доступен в `PATH`.
+4. `docker compose version` выполняется без ошибки.
+5. `docker info` выполняется без ошибки.
+
+Типичный симптом на macOS:
+
+```text
+failed to connect to the docker API at unix:///Users/<user>/.docker/run/docker.sock
+```
+
+Обычно это значит, что Docker Desktop еще не запущен.
+
+## Несовпадение архитектуры образа на Apple Silicon
+
+Симптом:
+
+```text
+no matching manifest for linux/arm64/v8 in the manifest list entries
+```
+
+Причина: опубликованный Docker tag пока не содержит `arm64`-образ.
+
+Временный обходной путь на Apple Silicon:
+
+```bash
+DOCKER_DEFAULT_PLATFORM=linux/amd64 curl -fsSL https://ngnt-in.ruka.me/install.sh | bash
+```
+
+Так будет запущен `amd64`-образ через эмуляцию, пока не опубликован multi-arch release.
 
 ## NAGIENT_UPDATE_BASE_URL is not configured
 

@@ -11,6 +11,34 @@ Check:
 1. Docker is installed.
 2. Docker daemon is running.
 3. `docker` is available in `PATH`.
+4. `docker compose version` succeeds.
+5. `docker info` succeeds.
+
+Typical macOS symptom:
+
+```text
+failed to connect to the docker API at unix:///Users/<user>/.docker/run/docker.sock
+```
+
+This usually means Docker Desktop is not running yet.
+
+## Apple Silicon image mismatch
+
+Symptom:
+
+```text
+no matching manifest for linux/arm64/v8 in the manifest list entries
+```
+
+Cause: the published Docker tag does not include an `arm64` image yet.
+
+Temporary workaround on Apple Silicon:
+
+```bash
+DOCKER_DEFAULT_PLATFORM=linux/amd64 curl -fsSL https://ngnt-in.ruka.me/install.sh | bash
+```
+
+This runs the `amd64` image through emulation until a multi-arch release is published.
 
 ## NAGIENT_UPDATE_BASE_URL is not configured
 
