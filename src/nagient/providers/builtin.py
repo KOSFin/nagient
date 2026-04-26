@@ -437,7 +437,7 @@ class AnthropicProviderPlugin(HttpProviderPlugin):
         headers["anthropic-version"] = str(config.get("api_version", "2023-06-01"))
         payload: dict[str, object] = {
             "model": model,
-            "max_tokens": int(config.get("max_tokens", 1024)),
+            "max_tokens": _int_config(config, "max_tokens", 1024),
             "messages": [{"role": "user", "content": message}],
         }
         if system_prompt:
@@ -522,7 +522,7 @@ class GeminiProviderPlugin(HttpProviderPlugin):
         if system_prompt:
             payload["systemInstruction"] = {"parts": [{"text": system_prompt}]}
         response = self.http_client.post_json(
-            self._chat_url(config, model),
+            self._generate_content_url(config, model),
             payload,
             headers=headers,
             query=query,
@@ -530,7 +530,7 @@ class GeminiProviderPlugin(HttpProviderPlugin):
         )
         return _parse_gemini_message(response, provider_id)
 
-    def _chat_url(self, config: Mapping[str, object], model: str) -> str:
+    def _generate_content_url(self, config: Mapping[str, object], model: str) -> str:
         base_url = _string_config(config, "base_url") or self.default_base_url
         return f"{base_url.rstrip('/')}/models/{model}:generateContent"
 
@@ -1094,6 +1094,38 @@ class OpenAICodexProviderPlugin(BaseProviderPlugin):
             timeout=_timeout_seconds(config),
         )
         return _parse_data_models(payload, provider_id)
+
+    def generate_message(
+        self,
+        provider_id: str,
+        config: Mapping[str, object],
+        secrets: Mapping[str, str],
+        credential: CredentialRecord | None,
+        *,
+        message: str,
+        system_prompt: str | None = None,
+    ) -> str:
+        bearer_token = self._resolve_bearer_token(config, secrets, credential)
+        if not bearer_token:
+            raise ValueError(
+                "Chat for openai-codex requires either OAuth credentials or an API key."
+            )
+        model = _require_model(provider_id, config)
+        messages: list[dict[str, object]] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": message})
+        payload = self.http_client.post_json(
+            self._chat_url(config),
+            {
+                "model": model,
+                "messages": messages,
+                "stream": False,
+            },
+            headers={"Authorization": f"Bearer {bearer_token}"},
+            timeout=_timeout_seconds(config),
+        )
+        return _parse_openai_chat_message(payload, provider_id)
 
     def _oauth_browser_auth_status(
         self,
@@ -2171,6 +2203,22 @@ def _timeout_seconds(config: Mapping[str, object]) -> float:
         except ValueError:
             return 15.0
     return 15.0
+
+
+def _int_config(config: Mapping[str, object], key: str, default: int) -> int:
+    value = config.get(key, default)
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return default
+    return default
 
 
 def _issue(

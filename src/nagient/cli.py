@@ -1,14 +1,21 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
 import getpass
 import json
 import os
 import sys
 from pathlib import Path
 
-from nagient.app.configuration import load_runtime_configuration
-from nagient.app.container import build_container
+from nagient.app.configuration import (
+    ProviderInstanceConfig,
+    ToolInstanceConfig,
+    TransportInstanceConfig,
+    load_runtime_configuration,
+)
+from nagient.app.container import AppContainer, build_container
+from nagient.app.settings import Settings
 from nagient.domain.entities.agent_runtime import AgentTurnRequest
 from nagient.domain.entities.tooling import ToolExecutionRequest
 from nagient.infrastructure.manifests import release_to_dict
@@ -738,7 +745,7 @@ def main(argv: list[str] | None = None) -> int:
     return 2
 
 
-def _run_setup_wizard(container: object) -> int:
+def _run_setup_wizard(container: AppContainer) -> int:
     while True:
         runtime_config = load_runtime_configuration(container.settings)
         default_provider = runtime_config.default_provider or "none"
@@ -787,7 +794,7 @@ def _run_setup_wizard(container: object) -> int:
             _emit(container.status_service.collect(), "text", view="status")
 
 
-def _run_provider_setup_menu(container: object) -> None:
+def _run_provider_setup_menu(container: AppContainer) -> None:
     while True:
         runtime_config = load_runtime_configuration(container.settings)
         options = [
@@ -807,7 +814,7 @@ def _run_provider_setup_menu(container: object) -> None:
         _run_provider_profile_menu(container, selection)
 
 
-def _run_provider_profile_menu(container: object, provider_id: str) -> None:
+def _run_provider_profile_menu(container: AppContainer, provider_id: str) -> None:
     while True:
         runtime_config = load_runtime_configuration(container.settings)
         provider = next(
@@ -946,7 +953,7 @@ def _run_provider_profile_menu(container: object, provider_id: str) -> None:
             _run_chat_session(container, provider_id=provider_id, system_prompt=None)
 
 
-def _run_transport_setup_menu(container: object) -> None:
+def _run_transport_setup_menu(container: AppContainer) -> None:
     while True:
         runtime_config = load_runtime_configuration(container.settings)
         options = [
@@ -963,7 +970,7 @@ def _run_transport_setup_menu(container: object) -> None:
         _run_transport_profile_menu(container, selection)
 
 
-def _run_transport_profile_menu(container: object, transport_id: str) -> None:
+def _run_transport_profile_menu(container: AppContainer, transport_id: str) -> None:
     while True:
         runtime_config = load_runtime_configuration(container.settings)
         transport = next(
@@ -1003,7 +1010,7 @@ def _run_transport_profile_menu(container: object, transport_id: str) -> None:
             )
 
 
-def _run_tool_setup_menu(container: object) -> None:
+def _run_tool_setup_menu(container: AppContainer) -> None:
     while True:
         runtime_config = load_runtime_configuration(container.settings)
         options = [(tool.tool_id, _describe_tool_profile(tool)) for tool in runtime_config.tools]
@@ -1017,7 +1024,7 @@ def _run_tool_setup_menu(container: object) -> None:
         _run_tool_profile_menu(container, selection)
 
 
-def _run_tool_profile_menu(container: object, tool_id: str) -> None:
+def _run_tool_profile_menu(container: AppContainer, tool_id: str) -> None:
     while True:
         runtime_config = load_runtime_configuration(container.settings)
         tool = next(item for item in runtime_config.tools if item.tool_id == tool_id)
@@ -1055,7 +1062,7 @@ def _run_tool_profile_menu(container: object, tool_id: str) -> None:
             )
 
 
-def _run_workspace_setup_menu(container: object) -> None:
+def _run_workspace_setup_menu(container: AppContainer) -> None:
     while True:
         runtime_config = load_runtime_configuration(container.settings)
         selection = _prompt_menu_choice(
@@ -1099,7 +1106,7 @@ def _run_workspace_setup_menu(container: object) -> None:
                 _emit(payload, "text")
 
 
-def _run_paths_setup_menu(container: object) -> None:
+def _run_paths_setup_menu(container: AppContainer) -> None:
     configurable_paths = {
         "@secrets": ("secrets_file", container.settings.secrets_file),
         "@tool_secrets": ("tool_secrets_file", container.settings.tool_secrets_file),
@@ -1132,7 +1139,7 @@ def _run_paths_setup_menu(container: object) -> None:
         _emit(payload, "text")
 
 
-def _run_auth_setup_menu(container: object) -> None:
+def _run_auth_setup_menu(container: AppContainer) -> None:
     while True:
         runtime_config = load_runtime_configuration(container.settings)
         selection = _prompt_menu_choice(
@@ -1170,7 +1177,7 @@ def _run_auth_setup_menu(container: object) -> None:
 
 
 def _interactive_select_provider_model(
-    container: object,
+    container: AppContainer,
     provider_id: str,
     *,
     current_model: object,
@@ -1196,7 +1203,7 @@ def _run_generic_field_editor(
     title: str,
     current_config: dict[str, object],
     allowed_keys: list[str],
-    save_callback: object,
+    save_callback: Callable[[dict[str, object]], dict[str, object]],
 ) -> None:
     if not allowed_keys:
         print("No extra config fields are available here.")
@@ -1227,7 +1234,7 @@ def _run_generic_field_editor(
 
 
 def _run_chat_session(
-    container: object,
+    container: AppContainer,
     *,
     provider_id: str | None,
     system_prompt: str | None,
@@ -1255,7 +1262,7 @@ def _run_chat_session(
         print("")
 
 
-def _paths_payload(container: object) -> dict[str, object]:
+def _paths_payload(container: AppContainer) -> dict[str, object]:
     aliases = _path_aliases(container.settings)
     return {
         "aliases": [
@@ -1265,7 +1272,7 @@ def _paths_payload(container: object) -> dict[str, object]:
     }
 
 
-def _path_aliases(settings: object) -> dict[str, str]:
+def _path_aliases(settings: Settings) -> dict[str, str]:
     return {
         "@home": str(settings.home_dir),
         "@config": str(settings.config_file),
@@ -1282,7 +1289,7 @@ def _path_aliases(settings: object) -> dict[str, str]:
     }
 
 
-def _resolve_path_alias(raw_value: str, settings: object) -> str:
+def _resolve_path_alias(raw_value: str, settings: Settings) -> str:
     value = raw_value.strip()
     if not value:
         return value
@@ -1302,7 +1309,7 @@ def _resolve_path_alias(raw_value: str, settings: object) -> str:
     return str(Path(value).expanduser())
 
 
-def _render_path_value(path: str, settings: object) -> str:
+def _render_path_value(path: str, settings: Settings) -> str:
     aliases = _path_aliases(settings)
     normalized = str(Path(path).expanduser())
     sorted_aliases = sorted(
@@ -1358,7 +1365,10 @@ def _prompt_text(prompt: str, *, default: str = "") -> str | None:
     return raw_value
 
 
-def _describe_provider_profile(provider: object, default_provider: str | None) -> str:
+def _describe_provider_profile(
+    provider: ProviderInstanceConfig,
+    default_provider: str | None,
+) -> str:
     label = provider.provider_id
     if default_provider == provider.provider_id:
         label += " [default]"
@@ -1370,13 +1380,13 @@ def _describe_provider_profile(provider: object, default_provider: str | None) -
     return label
 
 
-def _describe_transport_profile(transport: object) -> str:
+def _describe_transport_profile(transport: TransportInstanceConfig) -> str:
     label = transport.transport_id + " - "
     label += "enabled" if transport.enabled else "disabled"
     return label
 
 
-def _describe_tool_profile(tool: object) -> str:
+def _describe_tool_profile(tool: ToolInstanceConfig) -> str:
     label = tool.tool_id + " - "
     label += "enabled" if tool.enabled else "disabled"
     return label
