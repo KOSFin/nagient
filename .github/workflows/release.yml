@@ -100,7 +100,7 @@ jobs:
 
       - name: Log in to Docker Hub
         if: steps.docker_publish.outputs.push_enabled == 'true'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           username: ${{ env.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN }}
