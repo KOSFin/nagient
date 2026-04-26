@@ -1,0 +1,47 @@
+name: ${NAGIENT_DOCKER_PROJECT_NAME:-nagient}
+
+services:
+  nagient:
+    image: ${NAGIENT_IMAGE:-docker.io/parampo/nagient:0.4.9}
+    container_name: ${NAGIENT_CONTAINER_NAME:-nagient}
+    restart: unless-stopped
+    working_dir: /workspace
+    env_file:
+      - .env
+    environment:
+      NAGIENT_HOME: /opt/nagient
+      NAGIENT_CONFIG: /opt/nagient/config.toml
+      NAGIENT_SECRETS_FILE: /opt/nagient/secrets.env
+      NAGIENT_TOOL_SECRETS_FILE: /opt/nagient/tool-secrets.env
+      NAGIENT_PLUGINS_DIR: /opt/nagient/plugins
+      NAGIENT_TOOLS_DIR: /opt/nagient/tools
+      NAGIENT_PROVIDERS_DIR: /opt/nagient/providers
+      NAGIENT_CREDENTIALS_DIR: /opt/nagient/credentials
+      NAGIENT_STATE_DIR: /opt/nagient/state
+      NAGIENT_LOG_DIR: /opt/nagient/logs
+      NAGIENT_RELEASES_DIR: /opt/nagient/releases
+      NAGIENT_WORKSPACE_ROOT: ${NAGIENT_WORKSPACE_ROOT:-/workspace}
+      NAGIENT_CHANNEL: ${NAGIENT_CHANNEL:-stable}
+      NAGIENT_UPDATE_BASE_URL: ${NAGIENT_UPDATE_BASE_URL:-https://ngnt-in.ruka.me}
+      NAGIENT_HEARTBEAT_INTERVAL: ${NAGIENT_HEARTBEAT_INTERVAL:-30}
+      NAGIENT_DOCKER_PROJECT_NAME: ${NAGIENT_DOCKER_PROJECT_NAME:-nagient}
+      NAGIENT_SAFE_MODE: ${NAGIENT_SAFE_MODE:-true}
+    volumes:
+      - ./workspace:/workspace
+      - ./state:/opt/nagient/state
+      - ./logs:/opt/nagient/logs
+      - ./releases:/opt/nagient/releases
+      - ./.codex-host:/root/.codex:ro
+      - ./config.toml:/opt/nagient/config.toml
+      - ./secrets.env:/opt/nagient/secrets.env
+      - ./tool-secrets.env:/opt/nagient/tool-secrets.env
+      - ./plugins:/opt/nagient/plugins
+      - ./tools:/opt/nagient/tools
+      - ./providers:/opt/nagient/providers
+      - ./credentials:/opt/nagient/credentials
+    healthcheck:
+      test: ["CMD", "python", "-m", "nagient", "doctor", "--format", "json"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
