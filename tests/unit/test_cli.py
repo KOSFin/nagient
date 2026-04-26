@@ -256,7 +256,7 @@ class CliTests(unittest.TestCase):
 
         self.assertIn("Nagient Status", status_text)
         self.assertIn("Overview", status_text)
-        self.assertIn("Config: /host/.nagient/config.toml", status_text)
+        self.assertIn("@config: /host/.nagient/config.toml", status_text)
         self.assertIn("Status: update available", status_text)
         self.assertIn("Next Steps", status_text)
         self.assertIn("nagient auth login <provider_id>", status_text)
@@ -327,6 +327,27 @@ class CliTests(unittest.TestCase):
             cli._resolve_enablement(True, True)
         with self.assertRaises(ValueError):
             cli._resolve_default_flag(True, True)
+        settings = SimpleNamespace(
+            home_dir=Path("/tmp/nagient"),
+            config_file=Path("/tmp/nagient/config.toml"),
+            secrets_file=Path("/tmp/nagient/secrets.env"),
+            tool_secrets_file=Path("/tmp/nagient/tool-secrets.env"),
+            plugins_dir=Path("/tmp/nagient/plugins"),
+            providers_dir=Path("/tmp/nagient/providers"),
+            tools_dir=Path("/tmp/nagient/tools"),
+            credentials_dir=Path("/tmp/nagient/credentials"),
+            state_dir=Path("/tmp/nagient/state"),
+            log_dir=Path("/tmp/nagient/logs"),
+            releases_dir=Path("/tmp/nagient/releases"),
+        )
+        self.assertEqual(
+            cli._resolve_path_alias("@home/cache", settings),
+            "/tmp/nagient/cache",
+        )
+        self.assertEqual(
+            cli._render_path_value("/tmp/nagient/plugins/custom", settings),
+            "@plugins/custom",
+        )
 
     def test_prompt_for_model_selection(self) -> None:
         models = [
@@ -335,11 +356,30 @@ class CliTests(unittest.TestCase):
         ]
         with patch("builtins.input", return_value="2"):
             self.assertEqual(cli._prompt_for_model_selection(models), "gpt-5-mini")
+        with patch("builtins.input", return_value="0"):
+            self.assertIsNone(cli._prompt_for_model_selection(models))
         with patch("builtins.input", return_value=""):
             self.assertIsNone(cli._prompt_for_model_selection(models))
         with patch("builtins.input", return_value="oops"):
             with self.assertRaises(ValueError):
                 cli._prompt_for_model_selection(models)
+
+    def test_interactive_chat_session_exits_cleanly(self) -> None:
+        container = SimpleNamespace(
+            provider_service=SimpleNamespace(
+                chat=Mock(return_value={"message": "hello", "provider_id": "openai"})
+            )
+        )
+        with patch("builtins.input", side_effect=["hey", "0"]):
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                exit_code = cli._run_chat_session(
+                    container,
+                    provider_id="openai",
+                    system_prompt=None,
+                )
+        self.assertEqual(exit_code, 0)
+        self.assertIn("assistant> hello", stdout.getvalue())
 
     def test_main_routes_core_and_extended_commands(self) -> None:
         status_payload = _status_payload(
@@ -398,7 +438,19 @@ class CliTests(unittest.TestCase):
             planned_migrations=[update_step],
         )
         container = SimpleNamespace(
-            settings=SimpleNamespace(plugins_dir=Path("plugins"), providers_dir=Path("providers")),
+            settings=SimpleNamespace(
+                home_dir=Path("/tmp/nagient"),
+                config_file=Path("/tmp/nagient/config.toml"),
+                secrets_file=Path("/tmp/nagient/secrets.env"),
+                tool_secrets_file=Path("/tmp/nagient/tool-secrets.env"),
+                plugins_dir=Path("/tmp/nagient/plugins"),
+                providers_dir=Path("/tmp/nagient/providers"),
+                tools_dir=Path("/tmp/nagient/tools"),
+                credentials_dir=Path("/tmp/nagient/credentials"),
+                state_dir=Path("/tmp/nagient/state"),
+                log_dir=Path("/tmp/nagient/logs"),
+                releases_dir=Path("/tmp/nagient/releases"),
+            ),
             configuration_service=SimpleNamespace(
                 initialize=Mock(return_value={"written_files": ["config.toml"]}),
                 scaffold_transport=Mock(
@@ -519,6 +571,15 @@ class CliTests(unittest.TestCase):
                 login=Mock(return_value={"provider": {"provider_id": "openai"}}),
                 complete_login=Mock(return_value={"provider": {"provider_id": "openai"}}),
                 logout=Mock(return_value={"provider": {"provider_id": "openai"}}),
+                chat=Mock(
+                    return_value={
+                        "provider_id": "openai",
+                        "plugin_id": "builtin.openai",
+                        "model": "gpt-4.1-mini",
+                        "transport_id": "console",
+                        "message": "hello from provider",
+                    }
+                ),
             ),
             tool_service=SimpleNamespace(
                 list_tools=Mock(return_value={"tools": [{"tool_id": "workspace_fs"}]}),
@@ -561,6 +622,11 @@ class CliTests(unittest.TestCase):
         exit_code, output = _run_main(["status"], container=container)
         self.assertEqual(exit_code, 0)
         self.assertIn("Nagient Status", output)
+
+        exit_code, output = _run_main(["paths"], container=container)
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Nagient Paths", output)
+        self.assertIn("@config", output)
 
         exit_code, output = _run_main(["doctor", "--verbose"], container=container)
         self.assertEqual(exit_code, 0)
@@ -722,6 +788,13 @@ class CliTests(unittest.TestCase):
         )
         self.assertEqual(exit_code, 0)
         self.assertIn('"models"', output)
+
+        exit_code, output = _run_main(
+            ["chat", "hello", "--format", "json"],
+            container=container,
+        )
+        self.assertEqual(exit_code, 0)
+        self.assertIn('"message": "hello from provider"', output)
 
         exit_code, output = _run_main(
             ["tool", "list", "--format", "json"],

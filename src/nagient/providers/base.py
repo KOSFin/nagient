@@ -140,3 +140,16 @@ class BaseProviderPlugin:
     ) -> list[ProviderModel]:
         del provider_id, config, secrets, credential
         return []
+
+    def generate_message(
+        self,
+        provider_id: str,
+        config: Mapping[str, object],
+        secrets: Mapping[str, str],
+        credential: CredentialRecord | None,
+        *,
+        message: str,
+        system_prompt: str | None = None,
+    ) -> str:
+        del provider_id, config, secrets, credential, message, system_prompt
+        raise NotImplementedError

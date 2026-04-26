@@ -241,11 +241,52 @@ class CliRuntimeFlowsTests(unittest.TestCase):
 
             self.assertIn("Nagient Status", status_process.stdout)
             self.assertIn("Overview", status_process.stdout)
-            self.assertIn(f"Config: {home_dir / 'config.toml'}", status_process.stdout)
+            self.assertIn(f"@config: {home_dir / 'config.toml'}", status_process.stdout)
             self.assertIn("Next Steps", status_process.stdout)
             self.assertNotIn("effective_config.settings.version", status_process.stdout)
             self.assertNotIn("activation.effective_config", status_process.stdout)
             self.assertNotIn("Already up to date", status_process.stdout)
+
+    def test_paths_command_and_interactive_setup_workspace_flow(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir) / ".nagient"
+            env = {
+                **os.environ,
+                "PYTHONPATH": str(SRC_ROOT),
+                "NAGIENT_HOME": str(home_dir),
+            }
+            subprocess.run(
+                [sys.executable, "-m", "nagient", "init", "--format", "json"],
+                cwd=PROJECT_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            paths_process = subprocess.run(
+                [sys.executable, "-m", "nagient", "paths"],
+                cwd=PROJECT_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertIn("Nagient Paths", paths_process.stdout)
+            self.assertIn("@config", paths_process.stdout)
+
+            setup_process = subprocess.run(
+                [sys.executable, "-m", "nagient", "setup"],
+                cwd=PROJECT_ROOT,
+                env=env,
+                input="4\n1\n@home/project\n0\n0\n",
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertIn("Nagient Setup", setup_process.stdout)
+            config_text = (home_dir / "config.toml").read_text(encoding="utf-8")
+            self.assertIn(f'root = "{(home_dir / "project").resolve()}"', config_text)
 
     def test_auth_login_status_and_provider_models_flow(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

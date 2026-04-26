@@ -75,9 +75,10 @@ powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagientctl.ps1" rem
 ## Быстрый старт
 
 1. Запустите установщик под вашу платформу.
-2. Отредактируйте `~/.nagient/config.toml`.
-3. Добавьте секреты провайдеров в `~/.nagient/secrets.env`.
-4. Используйте короткие команды.
+2. Запустите `nagient setup`.
+3. Используйте `nagient paths`, чтобы увидеть алиасы вроде `@config` и `@secrets`.
+4. Используйте `nagient chat` для прямой CLI-сессии с настроенным provider.
+5. Используйте короткие команды.
 
 ```bash
 ~/.nagient/bin/nagientctl up
@@ -94,7 +95,8 @@ powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagientctl.ps1" rem
 
 ## Полный CLI-набор
 
-- `nagient init`, `nagient preflight`, `nagient reconcile`, `nagient serve`
+- `nagient init`, `nagient paths`, `nagient preflight`, `nagient reconcile`, `nagient serve`
+- `nagient setup`, `nagient chat`
 - `nagient transport list|scaffold`
 - `nagient provider list|scaffold|models`
 - `nagient auth status|login|complete|logout`

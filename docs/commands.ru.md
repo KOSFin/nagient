@@ -47,9 +47,26 @@ nagient <command> [subcommand] [options]
 - `nagient init [--force] [--format text|json]`
 - `nagient status [--format text|json]`
 - `nagient doctor [--format text|json]`
+- `nagient paths [--format text|json]`
 - `nagient preflight [--format text|json]`
 - `nagient reconcile [--format text|json]`
 - `nagient serve [--once]`
+- `nagient setup`
+- `nagient chat [message] [--provider <id>] [--system <prompt>] [--interactive] [--format text|json]`
+
+`nagient setup` открывает интерактивный мастер настройки. Во всех меню `0` возвращает назад или завершает setup.
+
+`nagient paths` показывает алиасы путей: `@home`, `@config`, `@secrets`, `@plugins`, `@providers` и другие. Эти алиасы можно использовать в setup и path-параметрах CLI.
+
+`nagient chat` — это консольная точка входа для общения из CLI. Команда использует выбранный provider или `[agent].default_provider`, если `--provider` не передан.
+
+### 2.1.1 Интерактивные команды setup
+
+- `nagient setup provider <provider_id> ...`
+- `nagient setup transport <transport_id> ...`
+- `nagient setup tool <tool_id> ...`
+- `nagient setup workspace [--root <path-or-alias>] [--mode bounded|unsafe]`
+- `nagient setup paths [--secrets-file <path-or-alias>] [--tool-secrets-file <path-or-alias>] [--plugins-dir <path-or-alias>] [--tools-dir <path-or-alias>] [--providers-dir <path-or-alias>] [--credentials-dir <path-or-alias>]`
 
 ### 2.2 Transport
 
@@ -91,3 +108,10 @@ nagient <command> [subcommand] [options]
 ### 2.8 Agent turn
 
 - `nagient agent turn --request-file <path.json> [--format text|json]`
+
+`nagient agent turn` — это низкоуровневый интерфейс для структурированных workflow.
+
+Для обычной работы в терминале лучше использовать:
+
+- `nagient chat`
+- `nagient setup`

@@ -93,6 +93,47 @@ class ProviderService:
             "models": [model.to_dict() for model in models],
         }
 
+    def chat(
+        self,
+        *,
+        message: str,
+        provider_id: str | None = None,
+        system_prompt: str | None = None,
+    ) -> dict[str, object]:
+        runtime_config = load_runtime_configuration(self.settings)
+        discovery = self.provider_registry.discover(self.settings.providers_dir)
+        resolved_provider_id = provider_id or runtime_config.default_provider
+        if not resolved_provider_id:
+            raise ValueError(
+                "No provider was selected. Configure [agent].default_provider or pass --provider."
+            )
+        provider_config, plugin = self._resolve_provider(
+            runtime_config,
+            discovery.plugins,
+            resolved_provider_id,
+        )
+        generate_message = getattr(plugin.implementation, "generate_message", None)
+        if not callable(generate_message):
+            raise ValueError(
+                f"Provider {resolved_provider_id!r} does not support CLI chat."
+            )
+        credential = self.credential_store.load(provider_config.provider_id)
+        response_text = generate_message(
+            provider_config.provider_id,
+            provider_config.config,
+            runtime_config.secrets,
+            credential,
+            message=message,
+            system_prompt=system_prompt,
+        )
+        return {
+            "provider_id": provider_config.provider_id,
+            "plugin_id": provider_config.plugin_id,
+            "model": provider_config.config.get("model"),
+            "transport_id": "console",
+            "message": response_text,
+        }
+
     def login(
         self,
         provider_id: str,

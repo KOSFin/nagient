@@ -75,9 +75,10 @@ To remove all local runtime data, set `NAGIENT_PURGE=true` before running uninst
 ## Quick Start
 
 1. Run installer for your platform.
-2. Edit `~/.nagient/config.toml`.
-3. Put provider secrets into `~/.nagient/secrets.env`.
-4. Run short commands:
+2. Run `nagient setup`.
+3. Use `nagient paths` to inspect aliases such as `@config` and `@secrets`.
+4. Use `nagient chat` for a direct CLI console session with the configured provider.
+5. Run short commands:
 
 ```bash
 ~/.nagient/bin/nagientctl up
@@ -94,7 +95,8 @@ To remove all local runtime data, set `NAGIENT_PURGE=true` before running uninst
 
 ## Full CLI Surface
 
-- `nagient init`, `nagient preflight`, `nagient reconcile`, `nagient serve`
+- `nagient init`, `nagient paths`, `nagient preflight`, `nagient reconcile`, `nagient serve`
+- `nagient setup`, `nagient chat`
 - `nagient transport list|scaffold`
 - `nagient provider list|scaffold|models`
 - `nagient auth status|login|complete|logout`

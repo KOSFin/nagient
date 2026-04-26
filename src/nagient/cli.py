@@ -7,6 +7,7 @@ import os
 import sys
 from pathlib import Path
 
+from nagient.app.configuration import load_runtime_configuration
 from nagient.app.container import build_container
 from nagient.domain.entities.agent_runtime import AgentTurnRequest
 from nagient.domain.entities.tooling import ToolExecutionRequest
@@ -31,6 +32,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Show the full diagnostic tree instead of the compact summary",
     )
+
+    paths_parser = subparsers.add_parser(
+        "paths",
+        help="Show path aliases and resolved runtime paths",
+    )
+    paths_parser.add_argument("--format", choices=("text", "json"), default="text")
 
     doctor_parser = subparsers.add_parser("doctor", help="Show detailed runtime diagnostics")
     doctor_parser.add_argument("--format", choices=("text", "json"), default="text")
@@ -67,9 +74,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     setup_parser = subparsers.add_parser(
         "setup",
-        help="Configure runtime components through the CLI",
+        help="Open the interactive setup wizard or configure runtime components",
+        description=(
+            "Without a subcommand, open the interactive setup wizard. "
+            "All setup menus use 0 to go back or exit."
+        ),
     )
-    setup_subparsers = setup_parser.add_subparsers(dest="setup_command", required=True)
+    setup_subparsers = setup_parser.add_subparsers(dest="setup_command", required=False)
 
     setup_provider_parser = setup_subparsers.add_parser(
         "provider",
@@ -131,6 +142,20 @@ def build_parser() -> argparse.ArgumentParser:
     setup_paths_parser.add_argument("--providers-dir")
     setup_paths_parser.add_argument("--credentials-dir")
     setup_paths_parser.add_argument("--format", choices=("text", "json"), default="text")
+
+    chat_parser = subparsers.add_parser(
+        "chat",
+        help="Talk to the default provider through the CLI console transport",
+        description=(
+            "Open a direct CLI console chat against the selected provider or the "
+            "configured default provider."
+        ),
+    )
+    chat_parser.add_argument("message", nargs="?")
+    chat_parser.add_argument("--provider")
+    chat_parser.add_argument("--system")
+    chat_parser.add_argument("--interactive", action="store_true")
+    chat_parser.add_argument("--format", choices=("text", "json"), default="text")
 
     transport_parser = subparsers.add_parser("transport", help="Manage transport plugins")
     transport_subparsers = transport_parser.add_subparsers(
@@ -338,6 +363,10 @@ def main(argv: list[str] | None = None) -> int:
         payload = container.status_service.collect()
         return _emit(payload, args.format, view="status", verbose=args.verbose)
 
+    if args.command == "paths":
+        payload = _paths_payload(container)
+        return _emit(payload, args.format, view="paths")
+
     if args.command == "doctor":
         payload = container.status_service.collect()
         return _emit(payload, args.format, view="doctor", verbose=args.verbose)
@@ -354,6 +383,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "serve":
         return container.runtime_agent.serve(once=args.once)
+
+    if args.command == "setup" and args.setup_command is None:
+        return _run_setup_wizard(container)
 
     if args.command == "setup" and args.setup_command == "provider":
         config_updates = _parse_assignment_pairs(args.set)
@@ -415,7 +447,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "setup" and args.setup_command == "workspace":
         payload = container.configuration_service.configure_workspace(
-            root=args.root,
+            root=_resolve_path_alias(args.root, container.settings) if args.root else None,
             mode=args.mode,
         )
         return _emit(payload, args.format)
@@ -425,12 +457,34 @@ def main(argv: list[str] | None = None) -> int:
             {
                 key: value
                 for key, value in {
-                    "secrets_file": args.secrets_file,
-                    "tool_secrets_file": args.tool_secrets_file,
-                    "plugins_dir": args.plugins_dir,
-                    "tools_dir": args.tools_dir,
-                    "providers_dir": args.providers_dir,
-                    "credentials_dir": args.credentials_dir,
+                    "secrets_file": _resolve_path_alias(
+                        args.secrets_file, container.settings
+                    )
+                    if args.secrets_file
+                    else None,
+                    "tool_secrets_file": _resolve_path_alias(
+                        args.tool_secrets_file, container.settings
+                    )
+                    if args.tool_secrets_file
+                    else None,
+                    "plugins_dir": _resolve_path_alias(
+                        args.plugins_dir, container.settings
+                    )
+                    if args.plugins_dir
+                    else None,
+                    "tools_dir": _resolve_path_alias(args.tools_dir, container.settings)
+                    if args.tools_dir
+                    else None,
+                    "providers_dir": _resolve_path_alias(
+                        args.providers_dir, container.settings
+                    )
+                    if args.providers_dir
+                    else None,
+                    "credentials_dir": _resolve_path_alias(
+                        args.credentials_dir, container.settings
+                    )
+                    if args.credentials_dir
+                    else None,
                 }.items()
                 if value is not None
             }
@@ -556,6 +610,22 @@ def main(argv: list[str] | None = None) -> int:
         payload = container.provider_service.logout(args.provider_id)
         return _emit(payload, args.format)
 
+    if args.command == "chat":
+        if args.interactive or args.message is None:
+            if args.format != "text":
+                raise ValueError("Interactive chat currently supports only --format text.")
+            return _run_chat_session(
+                container,
+                provider_id=args.provider,
+                system_prompt=args.system,
+            )
+        payload = container.provider_service.chat(
+            provider_id=args.provider,
+            message=args.message,
+            system_prompt=args.system,
+        )
+        return _emit(payload, args.format, view="chat")
+
     if args.command == "update" and args.update_command == "check":
         notice = container.update_service.check(
             current_version=args.current_version,
@@ -668,6 +738,645 @@ def main(argv: list[str] | None = None) -> int:
     return 2
 
 
+def _run_setup_wizard(container: object) -> int:
+    while True:
+        runtime_config = load_runtime_configuration(container.settings)
+        default_provider = runtime_config.default_provider or "none"
+        print("")
+        print("Nagient Setup")
+        print(f"Default provider: {default_provider}")
+        selection = _prompt_menu_choice(
+            "Choose a setup area:",
+            [
+                ("providers", "Providers"),
+                ("transports", "Transports"),
+                ("tools", "Tools"),
+                ("workspace", "Workspace"),
+                ("paths", "Path aliases"),
+                ("auth", "Authentication"),
+                ("chat", "Agent console"),
+                ("status", "Show status"),
+            ],
+            zero_label="Exit setup",
+        )
+        if selection is None:
+            print("Leaving setup.")
+            return 0
+        if selection == "providers":
+            _run_provider_setup_menu(container)
+            continue
+        if selection == "transports":
+            _run_transport_setup_menu(container)
+            continue
+        if selection == "tools":
+            _run_tool_setup_menu(container)
+            continue
+        if selection == "workspace":
+            _run_workspace_setup_menu(container)
+            continue
+        if selection == "paths":
+            _run_paths_setup_menu(container)
+            continue
+        if selection == "auth":
+            _run_auth_setup_menu(container)
+            continue
+        if selection == "chat":
+            _run_chat_session(container, provider_id=None, system_prompt=None)
+            continue
+        if selection == "status":
+            _emit(container.status_service.collect(), "text", view="status")
+
+
+def _run_provider_setup_menu(container: object) -> None:
+    while True:
+        runtime_config = load_runtime_configuration(container.settings)
+        options = [
+            (
+                provider.provider_id,
+                _describe_provider_profile(provider, runtime_config.default_provider),
+            )
+            for provider in runtime_config.providers
+        ]
+        selection = _prompt_menu_choice(
+            "Choose a provider profile:",
+            options,
+            zero_label="Back",
+        )
+        if selection is None:
+            return
+        _run_provider_profile_menu(container, selection)
+
+
+def _run_provider_profile_menu(container: object, provider_id: str) -> None:
+    while True:
+        runtime_config = load_runtime_configuration(container.settings)
+        provider = next(
+            item for item in runtime_config.providers if item.provider_id == provider_id
+        )
+        discovery = container.provider_registry.discover(container.settings.providers_dir)
+        plugin = discovery.plugins.get(provider.plugin_id)
+        if plugin is None:
+            print(f"Provider plugin {provider.plugin_id!r} is missing.")
+            return
+        manifest = plugin.manifest
+        config = dict(provider.config)
+        enabled_label = "Disable profile" if provider.enabled else "Enable profile"
+        default_label = (
+            "Unset as default provider"
+            if runtime_config.default_provider == provider_id
+            else "Set as default provider"
+        )
+        options: list[tuple[str, str]] = [
+            ("toggle", enabled_label),
+            ("default", default_label),
+            (
+                "auth",
+                "Auth mode"
+                + _suffix_value(_as_text(config.get("auth", manifest.default_auth_mode))),
+            ),
+            ("model", "Model" + _suffix_value(_as_text(config.get("model")))),
+        ]
+        if "api_key_secret" in manifest.allowed_config:
+            options.append(
+                (
+                    "secret",
+                    "API key secret" + _suffix_value(_as_text(config.get("api_key_secret"))),
+                )
+            )
+        if "base_url" in manifest.allowed_config:
+            options.append(
+                ("base_url", "Base URL" + _suffix_value(_as_text(config.get("base_url"))))
+            )
+        options.extend(
+            [
+                ("advanced", "Advanced config fields"),
+                ("login", "Run auth/login flow"),
+                ("status", "Show auth status"),
+            ]
+        )
+        if callable(getattr(plugin.implementation, "generate_message", None)):
+            options.append(("chat", "Open agent console with this provider"))
+
+        selection = _prompt_menu_choice(
+            f"Provider {provider_id}:",
+            options,
+            zero_label="Back",
+        )
+        if selection is None:
+            return
+        if selection == "toggle":
+            payload = container.configuration_service.configure_provider(
+                provider_id,
+                enabled=not provider.enabled,
+            )
+            _emit(payload, "text")
+            continue
+        if selection == "default":
+            payload = container.configuration_service.configure_provider(
+                provider_id,
+                default=runtime_config.default_provider != provider_id,
+            )
+            _emit(payload, "text")
+            continue
+        if selection == "auth":
+            auth_mode = _prompt_menu_choice(
+                "Choose auth mode:",
+                [(item, item) for item in manifest.supported_auth_modes],
+                zero_label="Back",
+            )
+            if auth_mode is not None:
+                payload = container.configuration_service.configure_provider(
+                    provider_id,
+                    config_updates={"auth": auth_mode},
+                )
+                _emit(payload, "text")
+            continue
+        if selection == "model":
+            _interactive_select_provider_model(container, provider_id, current_model=config.get("model"))
+            continue
+        if selection == "secret":
+            secret_name = _prompt_text(
+                "API key secret",
+                default=_as_text(config.get("api_key_secret")),
+            )
+            if secret_name is not None:
+                payload = container.configuration_service.configure_provider(
+                    provider_id,
+                    config_updates={"api_key_secret": secret_name},
+                )
+                _emit(payload, "text")
+            continue
+        if selection == "base_url":
+            base_url = _prompt_text("Base URL", default=_as_text(config.get("base_url")))
+            if base_url is not None:
+                payload = container.configuration_service.configure_provider(
+                    provider_id,
+                    config_updates={"base_url": base_url},
+                )
+                _emit(payload, "text")
+            continue
+        if selection == "advanced":
+            _run_generic_field_editor(
+                title=f"Provider {provider_id} fields:",
+                current_config=config,
+                allowed_keys=sorted(
+                    key
+                    for key in manifest.allowed_config
+                    if key not in {"auth", "model", "api_key_secret", "base_url"}
+                ),
+                save_callback=lambda updates: container.configuration_service.configure_provider(
+                    provider_id,
+                    config_updates=updates,
+                ),
+            )
+            continue
+        if selection == "login":
+            payload = container.provider_service.login(provider_id)
+            _emit(payload, "text")
+            continue
+        if selection == "status":
+            payload = container.provider_service.auth_status(provider_id)
+            _emit(payload, "text", view="auth_status")
+            continue
+        if selection == "chat":
+            _run_chat_session(container, provider_id=provider_id, system_prompt=None)
+
+
+def _run_transport_setup_menu(container: object) -> None:
+    while True:
+        runtime_config = load_runtime_configuration(container.settings)
+        options = [
+            (transport.transport_id, _describe_transport_profile(transport))
+            for transport in runtime_config.transports
+        ]
+        selection = _prompt_menu_choice(
+            "Choose a transport profile:",
+            options,
+            zero_label="Back",
+        )
+        if selection is None:
+            return
+        _run_transport_profile_menu(container, selection)
+
+
+def _run_transport_profile_menu(container: object, transport_id: str) -> None:
+    while True:
+        runtime_config = load_runtime_configuration(container.settings)
+        transport = next(
+            item for item in runtime_config.transports if item.transport_id == transport_id
+        )
+        discovery = container.plugin_registry.discover(container.settings.plugins_dir)
+        plugin = discovery.plugins.get(transport.plugin_id)
+        if plugin is None:
+            print(f"Transport plugin {transport.plugin_id!r} is missing.")
+            return
+        selection = _prompt_menu_choice(
+            f"Transport {transport_id}:",
+            [
+                ("toggle", "Disable profile" if transport.enabled else "Enable profile"),
+                ("fields", "Edit config fields"),
+            ],
+            zero_label="Back",
+        )
+        if selection is None:
+            return
+        if selection == "toggle":
+            payload = container.configuration_service.configure_transport(
+                transport_id,
+                enabled=not transport.enabled,
+            )
+            _emit(payload, "text")
+            continue
+        if selection == "fields":
+            _run_generic_field_editor(
+                title=f"Transport {transport_id} fields:",
+                current_config=dict(transport.config),
+                allowed_keys=sorted(plugin.manifest.allowed_config),
+                save_callback=lambda updates: container.configuration_service.configure_transport(
+                    transport_id,
+                    config_updates=updates,
+                ),
+            )
+
+
+def _run_tool_setup_menu(container: object) -> None:
+    while True:
+        runtime_config = load_runtime_configuration(container.settings)
+        options = [(tool.tool_id, _describe_tool_profile(tool)) for tool in runtime_config.tools]
+        selection = _prompt_menu_choice(
+            "Choose a tool profile:",
+            options,
+            zero_label="Back",
+        )
+        if selection is None:
+            return
+        _run_tool_profile_menu(container, selection)
+
+
+def _run_tool_profile_menu(container: object, tool_id: str) -> None:
+    while True:
+        runtime_config = load_runtime_configuration(container.settings)
+        tool = next(item for item in runtime_config.tools if item.tool_id == tool_id)
+        discovery = container.tool_registry.discover(container.settings.tools_dir)
+        plugin = discovery.plugins.get(tool.plugin_id)
+        if plugin is None:
+            print(f"Tool plugin {tool.plugin_id!r} is missing.")
+            return
+        selection = _prompt_menu_choice(
+            f"Tool {tool_id}:",
+            [
+                ("toggle", "Disable profile" if tool.enabled else "Enable profile"),
+                ("fields", "Edit config fields"),
+            ],
+            zero_label="Back",
+        )
+        if selection is None:
+            return
+        if selection == "toggle":
+            payload = container.configuration_service.configure_tool(
+                tool_id,
+                enabled=not tool.enabled,
+            )
+            _emit(payload, "text")
+            continue
+        if selection == "fields":
+            _run_generic_field_editor(
+                title=f"Tool {tool_id} fields:",
+                current_config=dict(tool.config),
+                allowed_keys=sorted(plugin.manifest.allowed_config),
+                save_callback=lambda updates: container.configuration_service.configure_tool(
+                    tool_id,
+                    config_updates=updates,
+                ),
+            )
+
+
+def _run_workspace_setup_menu(container: object) -> None:
+    while True:
+        runtime_config = load_runtime_configuration(container.settings)
+        selection = _prompt_menu_choice(
+            "Workspace settings:",
+            [
+                (
+                    "root",
+                    "Workspace root"
+                    + _suffix_value(_render_path_value(str(runtime_config.workspace.root), container.settings)),
+                ),
+                ("mode", "Workspace mode" + _suffix_value(runtime_config.workspace.mode)),
+            ],
+            zero_label="Back",
+        )
+        if selection is None:
+            return
+        if selection == "root":
+            root_value = _prompt_text(
+                "Workspace root",
+                default=_render_path_value(str(runtime_config.workspace.root), container.settings),
+            )
+            if root_value is not None:
+                payload = container.configuration_service.configure_workspace(
+                    root=_resolve_path_alias(root_value, container.settings)
+                )
+                _emit(payload, "text")
+            continue
+        if selection == "mode":
+            mode = _prompt_menu_choice(
+                "Choose workspace mode:",
+                [("bounded", "bounded"), ("unsafe", "unsafe")],
+                zero_label="Back",
+            )
+            if mode is not None:
+                payload = container.configuration_service.configure_workspace(mode=mode)
+                _emit(payload, "text")
+
+
+def _run_paths_setup_menu(container: object) -> None:
+    configurable_paths = {
+        "@secrets": ("secrets_file", container.settings.secrets_file),
+        "@tool_secrets": ("tool_secrets_file", container.settings.tool_secrets_file),
+        "@plugins": ("plugins_dir", container.settings.plugins_dir),
+        "@tools": ("tools_dir", container.settings.tools_dir),
+        "@providers": ("providers_dir", container.settings.providers_dir),
+        "@credentials": ("credentials_dir", container.settings.credentials_dir),
+    }
+    while True:
+        selection = _prompt_menu_choice(
+            "Choose a path alias to edit:",
+            [
+                (alias, f"{alias} -> {_render_path_value(str(path), container.settings)}")
+                for alias, (_config_key, path) in configurable_paths.items()
+            ],
+            zero_label="Back",
+        )
+        if selection is None:
+            return
+        config_key, current_path = configurable_paths[selection]
+        raw_value = _prompt_text(
+            f"{selection}",
+            default=_render_path_value(str(current_path), container.settings),
+        )
+        if raw_value is None:
+            continue
+        payload = container.configuration_service.configure_paths(
+            {config_key: _resolve_path_alias(raw_value, container.settings)}
+        )
+        _emit(payload, "text")
+
+
+def _run_auth_setup_menu(container: object) -> None:
+    while True:
+        runtime_config = load_runtime_configuration(container.settings)
+        selection = _prompt_menu_choice(
+            "Choose a provider for auth actions:",
+            [
+                (
+                    provider.provider_id,
+                    _describe_provider_profile(provider, runtime_config.default_provider),
+                )
+                for provider in runtime_config.providers
+            ],
+            zero_label="Back",
+        )
+        if selection is None:
+            return
+        action = _prompt_menu_choice(
+            f"Auth actions for {selection}:",
+            [
+                ("status", "Show auth status"),
+                ("login", "Run login flow"),
+                ("logout", "Logout and remove stored credentials"),
+            ],
+            zero_label="Back",
+        )
+        if action is None:
+            continue
+        if action == "status":
+            _emit(container.provider_service.auth_status(selection), "text", view="auth_status")
+            continue
+        if action == "login":
+            _emit(container.provider_service.login(selection), "text")
+            continue
+        if action == "logout":
+            _emit(container.provider_service.logout(selection), "text")
+
+
+def _interactive_select_provider_model(
+    container: object,
+    provider_id: str,
+    *,
+    current_model: object,
+) -> None:
+    try:
+        models_payload = container.configuration_service.select_provider_model(provider_id)
+        selected_model = _prompt_for_model_selection(models_payload.get("models", []))
+    except Exception:
+        selected_model = None
+    if selected_model is None:
+        selected_model = _prompt_text("Model", default=_as_text(current_model))
+    if selected_model is None:
+        return
+    payload = container.configuration_service.configure_provider(
+        provider_id,
+        config_updates={"model": selected_model},
+    )
+    _emit(payload, "text")
+
+
+def _run_generic_field_editor(
+    *,
+    title: str,
+    current_config: dict[str, object],
+    allowed_keys: list[str],
+    save_callback: object,
+) -> None:
+    if not allowed_keys:
+        print("No extra config fields are available here.")
+        return
+    while True:
+        selection = _prompt_menu_choice(
+            title,
+            [
+                (
+                    field_name,
+                    field_name + _suffix_value(_as_text(current_config.get(field_name))),
+                )
+                for field_name in allowed_keys
+            ],
+            zero_label="Back",
+        )
+        if selection is None:
+            return
+        raw_value = _prompt_text(
+            selection,
+            default=_as_text(current_config.get(selection)),
+        )
+        if raw_value is None:
+            continue
+        payload = save_callback({selection: _coerce_cli_value(raw_value)})
+        current_config[selection] = _coerce_cli_value(raw_value)
+        _emit(payload, "text")
+
+
+def _run_chat_session(
+    container: object,
+    *,
+    provider_id: str | None,
+    system_prompt: str | None,
+) -> int:
+    print("")
+    print("Nagient Chat")
+    print("Type your message and press Enter. Use 0, exit, or quit to leave.")
+    while True:
+        try:
+            message = input("you> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("")
+            return 0
+        if not message:
+            continue
+        if message.lower() in {"0", "exit", "quit", "/exit"}:
+            return 0
+        payload = container.provider_service.chat(
+            provider_id=provider_id,
+            message=message,
+            system_prompt=system_prompt,
+        )
+        print("")
+        print(f"assistant> {payload['message']}")
+        print("")
+
+
+def _paths_payload(container: object) -> dict[str, object]:
+    aliases = _path_aliases(container.settings)
+    return {
+        "aliases": [
+            {"alias": alias, "path": path}
+            for alias, path in aliases.items()
+        ]
+    }
+
+
+def _path_aliases(settings: object) -> dict[str, str]:
+    return {
+        "@home": str(settings.home_dir),
+        "@config": str(settings.config_file),
+        "@config_dir": str(settings.config_file.parent),
+        "@secrets": str(settings.secrets_file),
+        "@tool_secrets": str(settings.tool_secrets_file),
+        "@plugins": str(settings.plugins_dir),
+        "@providers": str(settings.providers_dir),
+        "@tools": str(settings.tools_dir),
+        "@credentials": str(settings.credentials_dir),
+        "@state": str(settings.state_dir),
+        "@logs": str(settings.log_dir),
+        "@releases": str(settings.releases_dir),
+    }
+
+
+def _resolve_path_alias(raw_value: str, settings: object) -> str:
+    value = raw_value.strip()
+    if not value:
+        return value
+    aliases = _path_aliases(settings)
+    file_aliases = {"@config", "@secrets", "@tool_secrets"}
+    for alias, resolved_path in aliases.items():
+        if value == alias:
+            return resolved_path
+        for separator in ("/", os.sep):
+            prefix = f"{alias}{separator}"
+            if value.startswith(prefix):
+                suffix = value[len(prefix) :]
+                base = Path(resolved_path)
+                if alias in file_aliases:
+                    base = base.parent
+                return str((base / suffix).expanduser())
+    return str(Path(value).expanduser())
+
+
+def _render_path_value(path: str, settings: object) -> str:
+    aliases = _path_aliases(settings)
+    normalized = str(Path(path).expanduser())
+    sorted_aliases = sorted(
+        aliases.items(),
+        key=lambda item: len(item[1]),
+        reverse=True,
+    )
+    for alias, resolved_path in sorted_aliases:
+        if normalized == resolved_path:
+            return alias
+        prefix = resolved_path.rstrip("/\\") + os.sep
+        if normalized.startswith(prefix):
+            suffix = normalized[len(resolved_path.rstrip("/\\")) :].lstrip("/\\")
+            return f"{alias}/{suffix}"
+    return normalized
+
+
+def _prompt_menu_choice(
+    title: str,
+    options: list[tuple[str, str]],
+    *,
+    zero_label: str,
+) -> str | None:
+    print("")
+    print(title)
+    for index, (_value, label) in enumerate(options, start=1):
+        print(f"{index}) {label}")
+    print(f"0) {zero_label}")
+    try:
+        raw_choice = input(f"Choice [0-{len(options)}]: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print("")
+        return None
+    if not raw_choice or raw_choice == "0":
+        return None
+    if not raw_choice.isdigit():
+        raise ValueError("Menu choice must be a number.")
+    selected_index = int(raw_choice)
+    if selected_index < 1 or selected_index > len(options):
+        raise ValueError("Menu choice is out of range.")
+    return options[selected_index - 1][0]
+
+
+def _prompt_text(prompt: str, *, default: str = "") -> str | None:
+    suffix = f" [{default}]" if default else ""
+    try:
+        raw_value = input(f"{prompt}{suffix}: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print("")
+        return None
+    if not raw_value:
+        return default or None
+    return raw_value
+
+
+def _describe_provider_profile(provider: object, default_provider: str | None) -> str:
+    label = provider.provider_id
+    if default_provider == provider.provider_id:
+        label += " [default]"
+    label += " - "
+    label += "enabled" if provider.enabled else "disabled"
+    model = _as_text(provider.config.get("model"))
+    if model:
+        label += f", model {model}"
+    return label
+
+
+def _describe_transport_profile(transport: object) -> str:
+    label = transport.transport_id + " - "
+    label += "enabled" if transport.enabled else "disabled"
+    return label
+
+
+def _describe_tool_profile(tool: object) -> str:
+    label = tool.tool_id + " - "
+    label += "enabled" if tool.enabled else "disabled"
+    return label
+
+
+def _suffix_value(value: str) -> str:
+    return f" [{value}]" if value else ""
+
+
 def _parse_assignment_pairs(raw_pairs: list[str]) -> dict[str, object]:
     payload: dict[str, object] = {}
     for raw_pair in raw_pairs:
@@ -730,12 +1439,13 @@ def _prompt_for_model_selection(models: list[object]) -> str | None:
         display_name = str(model.get("display_name", model_id)).strip()
         label = display_name if display_name else model_id
         print(f"{index}) {label} [{model_id}]")
+    print("0) Back")
 
     try:
-        selection = input(f"Model [1-{len(normalized_models)}]: ").strip()
+        selection = input(f"Model [0-{len(normalized_models)}]: ").strip()
     except EOFError:
         return None
-    if not selection:
+    if not selection or selection == "0":
         return None
     if not selection.isdigit():
         raise ValueError("Model selection must be a number.")
@@ -873,10 +1583,44 @@ def _render_text(payload: dict[str, object], *, view: str, verbose: bool) -> str
         return _render_auth_status(payload)
     if view == "update_check":
         return _render_update_check(payload)
+    if view == "paths":
+        return _render_paths_summary(payload)
+    if view == "chat":
+        return _render_chat_summary(payload)
 
     default_lines: list[str] = []
     _append_lines(default_lines, payload)
     return "\n".join(default_lines)
+
+
+def _render_paths_summary(payload: dict[str, object]) -> str:
+    colors = _supports_color()
+    lines = [_heading("Nagient Paths", colors)]
+    aliases = payload.get("aliases", [])
+    if not isinstance(aliases, list) or not aliases:
+        _append_line(lines, "No path aliases are available.")
+        return "\n".join(lines)
+    for item in aliases:
+        alias_payload = _as_dict(item)
+        alias = _as_text(alias_payload.get("alias"))
+        path = _as_text(alias_payload.get("path"))
+        if alias:
+            _append_key_value(lines, alias, path)
+    return "\n".join(lines)
+
+
+def _render_chat_summary(payload: dict[str, object]) -> str:
+    colors = _supports_color()
+    lines = [_heading("Nagient Chat", colors)]
+    provider_id = _as_text(payload.get("provider_id"))
+    model = _as_text(payload.get("model"))
+    if provider_id:
+        _append_key_value(lines, "Provider", provider_id)
+    if model:
+        _append_key_value(lines, "Model", model)
+    _append_section(lines, "Reply", colors)
+    _append_line(lines, _as_text(payload.get("message")))
+    return "\n".join(lines)
 
 
 def _append_lines(lines: list[str], payload: dict[str, object], prefix: str = "") -> None:
@@ -947,12 +1691,15 @@ def _render_status_summary(payload: dict[str, object]) -> str:
 
     if host_paths:
         _append_section(lines, "Files", colors)
-        if "config" in host_paths:
-            _append_key_value(lines, "Config", host_paths["config"])
-        if "secrets" in host_paths:
-            _append_key_value(lines, "Secrets", host_paths["secrets"])
-        if "workspace" in host_paths:
-            _append_key_value(lines, "Workspace", host_paths["workspace"])
+        for label, key in (
+            ("@home", "home"),
+            ("@config", "config"),
+            ("@secrets", "secrets"),
+            ("@tool_secrets", "tool_secrets"),
+            ("@workspace", "workspace"),
+        ):
+            if key in host_paths:
+                _append_key_value(lines, label, host_paths[key])
 
     _append_section(lines, "Workspace", colors)
     _append_key_value(
@@ -1094,28 +1841,28 @@ def _render_doctor_summary(payload: dict[str, object]) -> str:
     if host_paths:
         _append_section(lines, "Host Files", colors)
         for label, key in (
-            ("Home", "home"),
-            ("Config", "config"),
-            ("Secrets", "secrets"),
-            ("Tool secrets", "tool_secrets"),
-            ("Workspace", "workspace"),
+            ("@home", "home"),
+            ("@config", "config"),
+            ("@secrets", "secrets"),
+            ("@tool_secrets", "tool_secrets"),
+            ("@workspace", "workspace"),
         ):
             if key in host_paths:
                 _append_key_value(lines, label, host_paths[key])
 
     _append_section(lines, "Runtime Files", colors)
     for label, key in (
-        ("Home", "home"),
-        ("Config", "config"),
-        ("Secrets", "secrets"),
-        ("Tool secrets", "tool_secrets"),
-        ("Plugins", "plugins"),
-        ("Tools", "tools"),
-        ("Providers", "providers"),
-        ("Credentials", "credentials"),
-        ("State", "state"),
-        ("Logs", "logs"),
-        ("Releases", "releases"),
+        ("@home", "home"),
+        ("@config", "config"),
+        ("@secrets", "secrets"),
+        ("@tool_secrets", "tool_secrets"),
+        ("@plugins", "plugins"),
+        ("@tools", "tools"),
+        ("@providers", "providers"),
+        ("@credentials", "credentials"),
+        ("@state", "state"),
+        ("@logs", "logs"),
+        ("@releases", "releases"),
     ):
         if key in runtime_paths:
             _append_key_value(lines, label, _as_text(runtime_paths[key]))
@@ -1525,8 +2272,8 @@ def _next_steps(payload: dict[str, object]) -> list[str]:
     ]
 
     host_paths = _host_paths()
-    config_path = host_paths.get("config", "config.toml")
-    secrets_path = host_paths.get("secrets", "secrets.env")
+    config_path = "@config"
+    secrets_path = "@secrets"
 
     if not activation:
         steps.append("Run `nagient reconcile` to generate the activation report.")

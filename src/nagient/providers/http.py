@@ -78,6 +78,27 @@ class JsonHttpClient:
         )
         return self._open_json(request, timeout or self.default_timeout)
 
+    def post_json(
+        self,
+        url: str,
+        payload: object,
+        *,
+        headers: Mapping[str, str] | None = None,
+        query: Mapping[str, str] | None = None,
+        timeout: float | None = None,
+    ) -> object:
+        request_headers = {
+            "Content-Type": "application/json",
+            **dict(headers or {}),
+        }
+        request = Request(
+            _merge_query(url, query or {}),
+            data=json.dumps(payload).encode("utf-8"),
+            headers=request_headers,
+            method="POST",
+        )
+        return self._open_json(request, timeout or self.default_timeout)
+
     def _open_json(self, request: Request, timeout: float) -> object:
         try:
             with self.opener(request, timeout=timeout) as response:

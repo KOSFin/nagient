@@ -326,6 +326,67 @@ class HttpProviderPlugin(BaseProviderPlugin):
         )
         return _parse_data_models(payload, provider_id)
 
+    def generate_message(
+        self,
+        provider_id: str,
+        config: Mapping[str, object],
+        secrets: Mapping[str, str],
+        credential: CredentialRecord | None,
+        *,
+        message: str,
+        system_prompt: str | None = None,
+    ) -> str:
+        bearer_token = self._resolve_bearer_token(config, secrets, credential)
+        if not bearer_token:
+            raise ValueError(
+                "Chat for openai-codex requires either OAuth credentials or an API key."
+            )
+        model = _require_model(provider_id, config)
+        messages: list[dict[str, object]] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": message})
+        payload = self.http_client.post_json(
+            self._chat_url(config),
+            {
+                "model": model,
+                "messages": messages,
+                "stream": False,
+            },
+            headers={"Authorization": f"Bearer {bearer_token}"},
+            timeout=_timeout_seconds(config),
+        )
+        return _parse_openai_chat_message(payload, provider_id)
+
+    def generate_message(
+        self,
+        provider_id: str,
+        config: Mapping[str, object],
+        secrets: Mapping[str, str],
+        credential: CredentialRecord | None,
+        *,
+        message: str,
+        system_prompt: str | None = None,
+    ) -> str:
+        model = _require_model(provider_id, config)
+        headers, query = self._build_request_auth(config, secrets, credential)
+        messages: list[dict[str, object]] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": message})
+        payload = self.http_client.post_json(
+            self._chat_url(config),
+            {
+                "model": model,
+                "messages": messages,
+                "stream": False,
+            },
+            headers=headers,
+            query=query,
+            timeout=_timeout_seconds(config),
+        )
+        return _parse_openai_chat_message(payload, provider_id)
+
     def _secret_name(self, config: Mapping[str, object]) -> str | None:
         secret_name = _string_config(config, "api_key_secret")
         if secret_name is not None:
@@ -336,6 +397,11 @@ class HttpProviderPlugin(BaseProviderPlugin):
         base_url = _string_config(config, "base_url") or self.default_base_url
         models_path = _string_config(config, "models_path") or self.list_models_path
         return f"{base_url.rstrip('/')}{models_path}"
+
+    def _chat_url(self, config: Mapping[str, object]) -> str:
+        base_url = _string_config(config, "base_url") or self.default_base_url
+        chat_path = _string_config(config, "chat_path") or "/chat/completions"
+        return f"{base_url.rstrip('/')}{chat_path}"
 
     def _build_request_auth(
         self,
@@ -388,6 +454,40 @@ class AnthropicProviderPlugin(HttpProviderPlugin):
         )
         return _parse_data_models(payload, provider_id)
 
+    def generate_message(
+        self,
+        provider_id: str,
+        config: Mapping[str, object],
+        secrets: Mapping[str, str],
+        credential: CredentialRecord | None,
+        *,
+        message: str,
+        system_prompt: str | None = None,
+    ) -> str:
+        model = _require_model(provider_id, config)
+        headers, query = self._build_request_auth(config, secrets, credential)
+        headers["anthropic-version"] = str(config.get("api_version", "2023-06-01"))
+        payload: dict[str, object] = {
+            "model": model,
+            "max_tokens": int(config.get("max_tokens", 1024)),
+            "messages": [{"role": "user", "content": message}],
+        }
+        if system_prompt:
+            payload["system"] = system_prompt
+        response = self.http_client.post_json(
+            self._chat_url(config),
+            payload,
+            headers=headers,
+            query=query,
+            timeout=_timeout_seconds(config),
+        )
+        return _parse_anthropic_message(response, provider_id)
+
+    def _chat_url(self, config: Mapping[str, object]) -> str:
+        base_url = _string_config(config, "base_url") or self.default_base_url
+        chat_path = _string_config(config, "chat_path") or "/messages"
+        return f"{base_url.rstrip('/')}{chat_path}"
+
 
 @dataclass(frozen=True)
 class GeminiProviderPlugin(HttpProviderPlugin):
@@ -431,6 +531,41 @@ class GeminiProviderPlugin(HttpProviderPlugin):
             )
         return models
 
+    def generate_message(
+        self,
+        provider_id: str,
+        config: Mapping[str, object],
+        secrets: Mapping[str, str],
+        credential: CredentialRecord | None,
+        *,
+        message: str,
+        system_prompt: str | None = None,
+    ) -> str:
+        model = _require_model(provider_id, config)
+        headers, query = self._build_request_auth(config, secrets, credential)
+        payload: dict[str, object] = {
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [{"text": message}],
+                }
+            ]
+        }
+        if system_prompt:
+            payload["systemInstruction"] = {"parts": [{"text": system_prompt}]}
+        response = self.http_client.post_json(
+            self._chat_url(config, model),
+            payload,
+            headers=headers,
+            query=query,
+            timeout=_timeout_seconds(config),
+        )
+        return _parse_gemini_message(response, provider_id)
+
+    def _chat_url(self, config: Mapping[str, object], model: str) -> str:
+        base_url = _string_config(config, "base_url") or self.default_base_url
+        return f"{base_url.rstrip('/')}/models/{model}:generateContent"
+
 
 @dataclass(frozen=True)
 class OllamaProviderPlugin(HttpProviderPlugin):
@@ -472,6 +607,40 @@ class OllamaProviderPlugin(HttpProviderPlugin):
                 )
             )
         return models
+
+    def generate_message(
+        self,
+        provider_id: str,
+        config: Mapping[str, object],
+        secrets: Mapping[str, str],
+        credential: CredentialRecord | None,
+        *,
+        message: str,
+        system_prompt: str | None = None,
+    ) -> str:
+        model = _require_model(provider_id, config)
+        headers, query = self._build_request_auth(config, secrets, credential)
+        messages: list[dict[str, object]] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": message})
+        response = self.http_client.post_json(
+            self._chat_url(config),
+            {
+                "model": model,
+                "messages": messages,
+                "stream": False,
+            },
+            headers=headers,
+            query=query,
+            timeout=_timeout_seconds(config),
+        )
+        return _parse_ollama_message(response, provider_id)
+
+    def _chat_url(self, config: Mapping[str, object]) -> str:
+        base_url = _string_config(config, "base_url") or self.default_base_url
+        chat_path = _string_config(config, "chat_path") or "/api/chat"
+        return f"{base_url.rstrip('/')}{chat_path}"
 
 
 @dataclass(frozen=True)
@@ -1304,6 +1473,11 @@ class OpenAICodexProviderPlugin(BaseProviderPlugin):
         models_path = _string_config(config, "models_path") or "/models"
         return f"{base_url.rstrip('/')}{models_path}"
 
+    def _chat_url(self, config: Mapping[str, object]) -> str:
+        base_url = _string_config(config, "base_url") or self.default_base_url
+        chat_path = _string_config(config, "chat_path") or "/chat/completions"
+        return f"{base_url.rstrip('/')}{chat_path}"
+
     def _auth_file_path(self, config: Mapping[str, object]) -> Path:
         configured_auth_file = _string_config(config, "auth_file")
         if configured_auth_file:
@@ -1445,7 +1619,7 @@ def builtin_providers() -> list[LoadedProviderPlugin]:
                 entrypoint="<builtin>",
                 supported_auth_modes=["api_key", "stored_token"],
                 default_auth_mode="api_key",
-                capabilities=["list_models", "api_key_auth", "stored_token_auth"],
+                capabilities=["list_models", "chat", "api_key_auth", "stored_token_auth"],
                 required_config=[],
                 optional_config=[
                     "auth",
@@ -1453,6 +1627,7 @@ def builtin_providers() -> list[LoadedProviderPlugin]:
                     "base_url",
                     "model",
                     "models_path",
+                    "chat_path",
                     "organization",
                     "timeout_seconds",
                 ],
@@ -1478,6 +1653,7 @@ def builtin_providers() -> list[LoadedProviderPlugin]:
                 default_auth_mode="oauth_browser",
                 capabilities=[
                     "list_models",
+                    "chat",
                     "oauth_pkce_login",
                     "api_key_auth",
                     "stored_token_auth",
@@ -1490,6 +1666,7 @@ def builtin_providers() -> list[LoadedProviderPlugin]:
                     "base_url",
                     "model",
                     "models_path",
+                    "chat_path",
                     "redirect_uri",
                     "timeout_seconds",
                     "auth_file",
@@ -1519,7 +1696,7 @@ def builtin_providers() -> list[LoadedProviderPlugin]:
                 entrypoint="<builtin>",
                 supported_auth_modes=["api_key", "stored_token"],
                 default_auth_mode="api_key",
-                capabilities=["list_models", "api_key_auth", "stored_token_auth"],
+                capabilities=["list_models", "chat", "api_key_auth", "stored_token_auth"],
                 required_config=[],
                 optional_config=[
                     "auth",
@@ -1527,7 +1704,9 @@ def builtin_providers() -> list[LoadedProviderPlugin]:
                     "base_url",
                     "model",
                     "models_path",
+                    "chat_path",
                     "api_version",
+                    "max_tokens",
                     "timeout_seconds",
                 ],
                 secret_config=["api_key_secret"],
@@ -1547,7 +1726,7 @@ def builtin_providers() -> list[LoadedProviderPlugin]:
                 entrypoint="<builtin>",
                 supported_auth_modes=["api_key"],
                 default_auth_mode="api_key",
-                capabilities=["list_models", "api_key_auth"],
+                capabilities=["list_models", "chat", "api_key_auth"],
                 required_config=[],
                 optional_config=[
                     "auth",
@@ -1572,7 +1751,7 @@ def builtin_providers() -> list[LoadedProviderPlugin]:
                 entrypoint="<builtin>",
                 supported_auth_modes=["api_key", "stored_token"],
                 default_auth_mode="api_key",
-                capabilities=["list_models", "api_key_auth", "stored_token_auth"],
+                capabilities=["list_models", "chat", "api_key_auth", "stored_token_auth"],
                 required_config=[],
                 optional_config=[
                     "auth",
@@ -1580,6 +1759,7 @@ def builtin_providers() -> list[LoadedProviderPlugin]:
                     "base_url",
                     "model",
                     "models_path",
+                    "chat_path",
                     "timeout_seconds",
                 ],
                 secret_config=["api_key_secret"],
@@ -1597,13 +1777,14 @@ def builtin_providers() -> list[LoadedProviderPlugin]:
                 entrypoint="<builtin>",
                 supported_auth_modes=["api_key", "stored_token"],
                 default_auth_mode="api_key",
-                capabilities=["list_models", "api_key_auth", "stored_token_auth"],
+                capabilities=["list_models", "chat", "api_key_auth", "stored_token_auth"],
                 required_config=["base_url"],
                 optional_config=[
                     "auth",
                     "api_key_secret",
                     "model",
                     "models_path",
+                    "chat_path",
                     "timeout_seconds",
                 ],
                 secret_config=["api_key_secret"],
@@ -1621,14 +1802,16 @@ def builtin_providers() -> list[LoadedProviderPlugin]:
                 entrypoint="<builtin>",
                 supported_auth_modes=["api_key", "stored_token"],
                 default_auth_mode="api_key",
-                capabilities=["list_models", "api_key_auth", "stored_token_auth"],
+                capabilities=["list_models", "chat", "api_key_auth", "stored_token_auth"],
                 required_config=["base_url"],
                 optional_config=[
                     "auth",
                     "api_key_secret",
                     "model",
                     "models_path",
+                    "chat_path",
                     "api_version",
+                    "max_tokens",
                     "timeout_seconds",
                 ],
                 secret_config=["api_key_secret"],
@@ -1648,7 +1831,7 @@ def builtin_providers() -> list[LoadedProviderPlugin]:
                 entrypoint="<builtin>",
                 supported_auth_modes=["none", "api_key", "stored_token"],
                 default_auth_mode="none",
-                capabilities=["list_models", "local_http", "api_key_auth", "no_auth"],
+                capabilities=["list_models", "chat", "local_http", "api_key_auth", "no_auth"],
                 required_config=[],
                 optional_config=[
                     "auth",
@@ -1656,6 +1839,7 @@ def builtin_providers() -> list[LoadedProviderPlugin]:
                     "base_url",
                     "model",
                     "models_path",
+                    "chat_path",
                     "timeout_seconds",
                 ],
                 secret_config=["api_key_secret"],
@@ -1888,6 +2072,123 @@ def _parse_data_models(payload: object, provider_id: str) -> list[ProviderModel]
             )
         )
     return models
+
+
+def _require_model(provider_id: str, config: Mapping[str, object]) -> str:
+    model = _string_config(config, "model")
+    if model is None:
+        raise ValueError(f"Provider {provider_id!r} does not define a model yet.")
+    return model
+
+
+def _parse_openai_chat_message(payload: object, provider_id: str) -> str:
+    if not isinstance(payload, dict):
+        raise ProviderHttpError(
+            f"Provider {provider_id!r} returned an unexpected chat response."
+        )
+    choices = payload.get("choices", [])
+    if not isinstance(choices, list) or not choices:
+        raise ProviderHttpError(
+            f"Provider {provider_id!r} returned no chat choices."
+        )
+    first = choices[0]
+    if not isinstance(first, dict):
+        raise ProviderHttpError(
+            f"Provider {provider_id!r} returned an invalid chat choice."
+        )
+    message = first.get("message", {})
+    if isinstance(message, dict):
+        content = message.get("content")
+        if isinstance(content, str) and content.strip():
+            return content.strip()
+        if isinstance(content, list):
+            text_parts = [
+                str(part.get("text", "")).strip()
+                for part in content
+                if isinstance(part, dict) and str(part.get("text", "")).strip()
+            ]
+            if text_parts:
+                return "\n".join(text_parts)
+    raise ProviderHttpError(
+        f"Provider {provider_id!r} returned a chat response without text."
+    )
+
+
+def _parse_anthropic_message(payload: object, provider_id: str) -> str:
+    if not isinstance(payload, dict):
+        raise ProviderHttpError(
+            f"Provider {provider_id!r} returned an unexpected Anthropic response."
+        )
+    content = payload.get("content", [])
+    if not isinstance(content, list):
+        raise ProviderHttpError(
+            f"Provider {provider_id!r} returned an invalid Anthropic content payload."
+        )
+    text_parts = [
+        str(item.get("text", "")).strip()
+        for item in content
+        if isinstance(item, dict) and str(item.get("text", "")).strip()
+    ]
+    if text_parts:
+        return "\n".join(text_parts)
+    raise ProviderHttpError(
+        f"Provider {provider_id!r} returned an Anthropic response without text."
+    )
+
+
+def _parse_gemini_message(payload: object, provider_id: str) -> str:
+    if not isinstance(payload, dict):
+        raise ProviderHttpError(
+            f"Provider {provider_id!r} returned an unexpected Gemini response."
+        )
+    candidates = payload.get("candidates", [])
+    if not isinstance(candidates, list) or not candidates:
+        raise ProviderHttpError(
+            f"Provider {provider_id!r} returned no Gemini candidates."
+        )
+    first = candidates[0]
+    if not isinstance(first, dict):
+        raise ProviderHttpError(
+            f"Provider {provider_id!r} returned an invalid Gemini candidate."
+        )
+    content = first.get("content", {})
+    if not isinstance(content, dict):
+        raise ProviderHttpError(
+            f"Provider {provider_id!r} returned Gemini content in an invalid shape."
+        )
+    parts = content.get("parts", [])
+    if not isinstance(parts, list):
+        raise ProviderHttpError(
+            f"Provider {provider_id!r} returned invalid Gemini parts."
+        )
+    text_parts = [
+        str(item.get("text", "")).strip()
+        for item in parts
+        if isinstance(item, dict) and str(item.get("text", "")).strip()
+    ]
+    if text_parts:
+        return "\n".join(text_parts)
+    raise ProviderHttpError(
+        f"Provider {provider_id!r} returned a Gemini response without text."
+    )
+
+
+def _parse_ollama_message(payload: object, provider_id: str) -> str:
+    if not isinstance(payload, dict):
+        raise ProviderHttpError(
+            f"Provider {provider_id!r} returned an unexpected Ollama response."
+        )
+    message = payload.get("message", {})
+    if not isinstance(message, dict):
+        raise ProviderHttpError(
+            f"Provider {provider_id!r} returned an invalid Ollama message payload."
+        )
+    content = message.get("content")
+    if isinstance(content, str) and content.strip():
+        return content.strip()
+    raise ProviderHttpError(
+        f"Provider {provider_id!r} returned an Ollama response without text."
+    )
 
 
 def _timeout_seconds(config: Mapping[str, object]) -> float:

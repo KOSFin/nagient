@@ -8,6 +8,8 @@ Linux/macOS:
 
 ```bash
 curl -fsSL https://ngnt-in.ruka.me/install.sh | bash
+~/.nagient/bin/nagient setup
+~/.nagient/bin/nagient chat
 ~/.nagient/bin/nagientctl up
 ~/.nagient/bin/nagientctl status
 ```
