@@ -92,6 +92,8 @@ function Show-Usage {
   @"
 Usage: $ProgramName <command>
 
+Full CLI: $(Join-Path $NagientHome 'bin/nagient.ps1') help
+
 Commands:
   status|st          Show compact runtime status
   doctor|cfg         Show detailed runtime diagnostics
@@ -107,7 +109,7 @@ Commands:
   exec|x <cmd...>    Execute command in runtime container
   update             Run installed updater
   remove|uninstall   Run installed uninstaller
-  help               Show this help
+  help               Show this runtime control help
   <other command>    Pass through to the in-container nagient CLI
 "@ | Write-Host
 }
@@ -145,92 +147,144 @@ Logs: $LogDir
 "@ | Write-Host
 }
 
+function Invoke-ControlCommand {
+  param(
+    [Parameter(Mandatory = $true)][string]$Command,
+    [string[]]$Rest = @()
+  )
+
+  switch ($Command) {
+    { $_ -in @("status", "st") } {
+      Assert-ComposeFiles
+      Compose-ExecNagient nagient status --format text @Rest
+      break
+    }
+    { $_ -in @("doctor", "cfg") } {
+      Assert-ComposeFiles
+      Compose-ExecNagient nagient doctor --format text @Rest
+      break
+    }
+    { $_ -in @("paths", "config") } {
+      Show-Paths
+      break
+    }
+    "ps" {
+      Assert-ComposeFiles
+      Compose ps
+      break
+    }
+    { $_ -in @("up", "start") } {
+      Assert-ComposeFiles
+      Compose up -d
+      break
+    }
+    { $_ -in @("down", "stop") } {
+      Assert-ComposeFiles
+      Compose down --remove-orphans
+      break
+    }
+    "restart" {
+      Assert-ComposeFiles
+      Compose down --remove-orphans
+      Compose up -d
+      break
+    }
+    { $_ -in @("preflight", "check") } {
+      Assert-ComposeFiles
+      Compose-ExecNagient nagient preflight --format text @Rest
+      break
+    }
+    { $_ -in @("reconcile", "fix") } {
+      Assert-ComposeFiles
+      Compose-ExecNagient nagient reconcile --format text @Rest
+      break
+    }
+    { $_ -in @("logs", "log") } {
+      Assert-ComposeFiles
+      if ($Rest.Count -eq 0) {
+        $Rest = @($Service)
+      }
+      Compose logs -f @Rest
+      break
+    }
+    { $_ -in @("shell", "sh") } {
+      Assert-ComposeFiles
+      Compose exec $Service sh
+      break
+    }
+    { $_ -in @("exec", "x") } {
+      Assert-ComposeFiles
+      if ($Rest.Count -eq 0) {
+        throw "Usage: $ProgramName exec <cmd...>"
+      }
+      Compose exec $Service @Rest
+      break
+    }
+    "update" {
+      & (Join-Path $NagientHome "bin/nagient-update.ps1")
+      break
+    }
+    { $_ -in @("remove", "uninstall") } {
+      & (Join-Path $NagientHome "bin/nagient-uninstall.ps1")
+      break
+    }
+    { $_ -in @("help", "-h", "--help") } {
+      Show-Usage
+      break
+    }
+    default {
+      Assert-ComposeFiles
+      Compose-ExecNagient nagient $Command @Rest
+    }
+  }
+}
+
+function Invoke-CliCommand {
+  param(
+    [Parameter(Mandatory = $true)][string]$Command,
+    [string[]]$Rest = @()
+  )
+
+  switch ($Command) {
+    { $_ -in @("help", "-h", "--help") } {
+      Assert-ComposeFiles
+      $helpArgs = @("nagient")
+      if ($Rest.Count -eq 0) {
+        $helpArgs += "--help"
+      } else {
+        $helpArgs += $Rest
+        $helpArgs += "--help"
+      }
+      Compose-ExecNagient @helpArgs
+      break
+    }
+    { $_ -in @("ps", "up", "start", "down", "stop", "restart", "logs", "log", "shell", "sh", "exec", "x", "remove", "uninstall", "config", "st", "cfg", "check", "fix") } {
+      & (Join-Path $NagientHome "bin/nagientctl.ps1") $Command @Rest
+      break
+    }
+    "update" {
+      if ($Rest.Count -eq 0) {
+        & (Join-Path $NagientHome "bin/nagientctl.ps1") update
+        break
+      }
+      Assert-ComposeFiles
+      Compose-ExecNagient nagient update @Rest
+      break
+    }
+    default {
+      Assert-ComposeFiles
+      Compose-ExecNagient nagient $Command @Rest
+    }
+  }
+}
+
 $Command = if ($args.Count -gt 0) { $args[0].ToLowerInvariant() } else { "help" }
 $Rest = if ($args.Count -gt 1) { $args[1..($args.Count - 1)] } else { @() }
 
-switch ($Command) {
-  { $_ -in @("status", "st") } {
-    Assert-ComposeFiles
-    Compose-ExecNagient nagient status --format text @Rest
-    break
-  }
-  { $_ -in @("doctor", "cfg") } {
-    Assert-ComposeFiles
-    Compose-ExecNagient nagient doctor --format text @Rest
-    break
-  }
-  { $_ -in @("paths", "config") } {
-    Show-Paths
-    break
-  }
-  "ps" {
-    Assert-ComposeFiles
-    Compose ps
-    break
-  }
-  { $_ -in @("up", "start") } {
-    Assert-ComposeFiles
-    Compose up -d
-    break
-  }
-  { $_ -in @("down", "stop") } {
-    Assert-ComposeFiles
-    Compose down --remove-orphans
-    break
-  }
-  "restart" {
-    Assert-ComposeFiles
-    Compose down --remove-orphans
-    Compose up -d
-    break
-  }
-  { $_ -in @("preflight", "check") } {
-    Assert-ComposeFiles
-    Compose-ExecNagient nagient preflight --format text @Rest
-    break
-  }
-  { $_ -in @("reconcile", "fix") } {
-    Assert-ComposeFiles
-    Compose-ExecNagient nagient reconcile --format text @Rest
-    break
-  }
-  { $_ -in @("logs", "log") } {
-    Assert-ComposeFiles
-    if ($Rest.Count -eq 0) {
-      $Rest = @($Service)
-    }
-    Compose logs -f @Rest
-    break
-  }
-  { $_ -in @("shell", "sh") } {
-    Assert-ComposeFiles
-    Compose exec $Service sh
-    break
-  }
-  { $_ -in @("exec", "x") } {
-    Assert-ComposeFiles
-    if ($Rest.Count -eq 0) {
-      throw "Usage: $ProgramName exec <cmd...>"
-    }
-    Compose exec $Service @Rest
-    break
-  }
-  "update" {
-    & (Join-Path $NagientHome "bin/nagient-update.ps1")
-    break
-  }
-  { $_ -in @("remove", "uninstall") } {
-    & (Join-Path $NagientHome "bin/nagient-uninstall.ps1")
-    break
-  }
-  { $_ -in @("help", "-h", "--help") } {
-    Show-Usage
-    break
-  }
-  default {
-    Assert-ComposeFiles
-    Compose-ExecNagient nagient $Command @Rest
-  }
+if ($ProgramName.ToLowerInvariant() -eq "nagient") {
+  Invoke-CliCommand -Command $Command -Rest $Rest
+} else {
+  Invoke-ControlCommand -Command $Command -Rest $Rest
 }
 '@
   $launcher | Set-Content -Path $target -Encoding utf8

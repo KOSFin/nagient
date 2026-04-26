@@ -260,9 +260,11 @@ usage() {
   cat <<USAGE
 Usage: ${PROGRAM_NAME} <command>
 
+Full CLI: ${NAGIENT_HOME}/bin/nagient help
+
 Commands:
   init               Show local Nagient files and first-run hints
-  setup              Guided first-run provider setup
+  setup              Guided provider bootstrap shortcut
   status|st          Show compact runtime status
   doctor|cfg         Show detailed runtime diagnostics
   paths|config       Show local config and workspace paths
@@ -280,7 +282,7 @@ Commands:
   exec|x <cmd...>    Execute command in runtime container
   update             Run installed updater
   remove|uninstall   Run installed uninstaller
-  help               Show this help
+  help               Show this runtime control help
   <other command>    Pass through to the in-container nagient CLI
 USAGE
 }
@@ -1107,124 +1109,167 @@ EOF
   fi
 }
 
-command_name="${1:-help}"
-if [ "$#" -gt 0 ]; then
-  shift
-fi
+run_control_command() {
+  local command_name="${1:-help}"
+  local subcommand=""
 
-case "$command_name" in
-  init)
-    init_runtime
-    ;;
-  setup)
-    setup_runtime "$@"
-    ;;
-  status|st)
-    require_compose_files
-    compose_exec nagient status --format text "$@"
-    ;;
-  doctor|cfg)
-    require_compose_files
-    compose_exec nagient doctor --format text "$@"
-    ;;
-  paths|config)
-    print_paths
-    ;;
-  shell-install|link)
-    shell_install
-    ;;
-  shellenv)
-    print_shellenv
-    ;;
-  provider)
-    subcommand="${1:-list}"
-    if [ "$#" -gt 0 ]; then
-      shift
-    fi
-    case "$subcommand" in
-      list|ls|status)
-        list_providers
-        ;;
-      enable)
-        provider_enable "$@"
-        ;;
-      use|default)
-        provider_use "$@"
-        ;;
-      disable)
-        provider_disable "$@"
-        ;;
-      models)
-        require_compose_files
-        compose_exec nagient provider models "$@"
-        ;;
-      help|-h|--help)
-        provider_usage
-        ;;
-      *)
-        require_compose_files
-        compose_exec nagient provider "$subcommand" "$@"
-        ;;
-    esac
-    ;;
-  ps)
-    require_compose_files
-    compose ps
-    ;;
-  up|start)
-    require_compose_files
-    compose up -d
-    ;;
-  down|stop)
-    require_compose_files
-    compose down --remove-orphans
-    ;;
-  restart)
-    require_compose_files
-    compose down --remove-orphans
-    compose up -d
-    ;;
-  preflight|check)
-    require_compose_files
-    compose_exec nagient preflight --format text "$@"
-    ;;
-  reconcile|fix)
-    require_compose_files
-    compose_exec nagient reconcile --format text "$@"
-    ;;
-  logs|log)
-    require_compose_files
-    if [ "$#" -eq 0 ]; then
-      set -- "$NAGIENT_SERVICE"
-    fi
-    compose logs -f "$@"
-    ;;
-  shell|sh)
-    require_compose_files
-    compose exec "$NAGIENT_SERVICE" sh
-    ;;
-  exec|x)
-    require_compose_files
-    if [ "$#" -eq 0 ]; then
-      echo "Usage: ${PROGRAM_NAME} exec <cmd...>" >&2
-      exit 1
-    fi
-    compose exec "$NAGIENT_SERVICE" "$@"
-    ;;
-  update)
-    exec "${NAGIENT_HOME}/bin/nagient-update"
-    ;;
-  remove|uninstall)
-    exec "${NAGIENT_HOME}/bin/nagient-uninstall"
-    ;;
-  help|-h|--help)
-    usage
-    ;;
-  *)
-    require_compose_files
-    compose_exec nagient "$command_name" "$@"
-    ;;
-esac
+  if [ "$#" -gt 0 ]; then
+    shift
+  fi
+
+  case "$command_name" in
+    init)
+      init_runtime
+      ;;
+    setup)
+      setup_runtime "$@"
+      ;;
+    status|st)
+      require_compose_files
+      compose_exec nagient status --format text "$@"
+      ;;
+    doctor|cfg)
+      require_compose_files
+      compose_exec nagient doctor --format text "$@"
+      ;;
+    paths|config)
+      print_paths
+      ;;
+    shell-install|link)
+      shell_install
+      ;;
+    shellenv)
+      print_shellenv
+      ;;
+    provider)
+      subcommand="${1:-list}"
+      if [ "$#" -gt 0 ]; then
+        shift
+      fi
+      case "$subcommand" in
+        list|ls|status)
+          list_providers
+          ;;
+        enable)
+          provider_enable "$@"
+          ;;
+        use|default)
+          provider_use "$@"
+          ;;
+        disable)
+          provider_disable "$@"
+          ;;
+        models)
+          require_compose_files
+          compose_exec nagient provider models "$@"
+          ;;
+        help|-h|--help)
+          provider_usage
+          ;;
+        *)
+          require_compose_files
+          compose_exec nagient provider "$subcommand" "$@"
+          ;;
+      esac
+      ;;
+    ps)
+      require_compose_files
+      compose ps
+      ;;
+    up|start)
+      require_compose_files
+      compose up -d
+      ;;
+    down|stop)
+      require_compose_files
+      compose down --remove-orphans
+      ;;
+    restart)
+      require_compose_files
+      compose down --remove-orphans
+      compose up -d
+      ;;
+    preflight|check)
+      require_compose_files
+      compose_exec nagient preflight --format text "$@"
+      ;;
+    reconcile|fix)
+      require_compose_files
+      compose_exec nagient reconcile --format text "$@"
+      ;;
+    logs|log)
+      require_compose_files
+      if [ "$#" -eq 0 ]; then
+        set -- "$NAGIENT_SERVICE"
+      fi
+      compose logs -f "$@"
+      ;;
+    shell|sh)
+      require_compose_files
+      compose exec "$NAGIENT_SERVICE" sh
+      ;;
+    exec|x)
+      require_compose_files
+      if [ "$#" -eq 0 ]; then
+        echo "Usage: ${PROGRAM_NAME} exec <cmd...>" >&2
+        exit 1
+      fi
+      compose exec "$NAGIENT_SERVICE" "$@"
+      ;;
+    update)
+      exec "${NAGIENT_HOME}/bin/nagient-update"
+      ;;
+    remove|uninstall)
+      exec "${NAGIENT_HOME}/bin/nagient-uninstall"
+      ;;
+    help|-h|--help)
+      usage
+      ;;
+    *)
+      require_compose_files
+      compose_exec nagient "$command_name" "$@"
+      ;;
+  esac
+}
+
+run_cli_command() {
+  local command_name="${1:-help}"
+
+  if [ "$#" -gt 0 ]; then
+    shift
+  fi
+
+  case "$command_name" in
+    help|-h|--help)
+      require_compose_files
+      if [ "$#" -eq 0 ]; then
+        compose_exec nagient --help
+      else
+        compose_exec nagient "$@" --help
+      fi
+      ;;
+    shell-install|link|shellenv|ps|up|start|down|stop|restart|logs|log|shell|sh|exec|x|remove|uninstall|config|st|cfg|check|fix)
+      exec "${NAGIENT_HOME}/bin/nagientctl" "$command_name" "$@"
+      ;;
+    update)
+      if [ "$#" -eq 0 ]; then
+        exec "${NAGIENT_HOME}/bin/nagientctl" update
+      fi
+      require_compose_files
+      compose_exec nagient update "$@"
+      ;;
+    *)
+      require_compose_files
+      compose_exec nagient "$command_name" "$@"
+      ;;
+  esac
+}
+
+if [ "$PROGRAM_NAME" = "nagient" ]; then
+  run_cli_command "$@"
+else
+  run_control_command "$@"
+fi
 NAGIENTCTL
   chmod +x "$target"
   cp "$target" "${NAGIENT_HOME}/bin/nagient"
