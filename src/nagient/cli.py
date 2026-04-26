@@ -630,9 +630,9 @@ def _read_secret_input(prompt: str) -> str | None:
 
 def _render_text(payload: dict[str, object], *, view: str, verbose: bool) -> str:
     if verbose:
-        lines: list[str] = []
-        _append_lines(lines, payload)
-        return "\n".join(lines)
+        verbose_lines: list[str] = []
+        _append_lines(verbose_lines, payload)
+        return "\n".join(verbose_lines)
 
     if view == "status":
         return _render_status_summary(payload)
@@ -647,9 +647,9 @@ def _render_text(payload: dict[str, object], *, view: str, verbose: bool) -> str
     if view == "update_check":
         return _render_update_check(payload)
 
-    lines: list[str] = []
-    _append_lines(lines, payload)
-    return "\n".join(lines)
+    default_lines: list[str] = []
+    _append_lines(default_lines, payload)
+    return "\n".join(default_lines)
 
 
 def _append_lines(lines: list[str], payload: dict[str, object], prefix: str = "") -> None:
