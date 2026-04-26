@@ -4,8 +4,8 @@ import argparse
 import getpass
 import json
 import os
-from pathlib import Path
 import sys
+from pathlib import Path
 
 from nagient.app.container import build_container
 from nagient.domain.entities.agent_runtime import AgentTurnRequest
@@ -1208,7 +1208,9 @@ def _component_lines(
 
 def _update_summary_lines(payload: dict[str, object], *, colors: bool) -> list[str]:
     status = _normalized_status(payload.get("status"))
-    if _has_value(payload.get("update_available")) and _as_bool(payload.get("update_available")):
+    update_available = payload.get("update_available")
+
+    if _has_value(update_available) and _as_bool(update_available):
         current_version = _as_text(payload.get("current_version"))
         target_version = _as_text(payload.get("target_version"))
         return [
@@ -1220,13 +1222,17 @@ def _update_summary_lines(payload: dict[str, object], *, colors: bool) -> list[s
             f"Current: {current_version}",
             f"Target: {target_version}",
         ]
-    if _has_value(payload.get("update_available")) and not _as_bool(payload.get("update_available")):
-        version = _as_text(payload.get("current_version")) or _as_text(payload.get("target_version"))
+    if _has_value(update_available) and not _as_bool(update_available):
+        version = _as_text(payload.get("current_version")) or _as_text(
+            payload.get("target_version")
+        )
         if version:
             return [f"Up to date: {version}"]
         return ["Up to date."]
     if status == "ready":
-        version = _as_text(payload.get("current_version")) or _as_text(payload.get("target_version"))
+        version = _as_text(payload.get("current_version")) or _as_text(
+            payload.get("target_version")
+        )
         if version:
             return [f"Up to date: {version}"]
         return ["Up to date."]
