@@ -24,10 +24,6 @@ class RuntimeAgent:
 
         heartbeat_path = self.settings.state_dir / "heartbeat.json"
         activation_report = self.activation_runner() if self.activation_runner else None
-        if activation_report and not activation_report.can_activate:
-            self._write_heartbeat(heartbeat_path, activation_report)
-            return 1
-
         while not stop_event.is_set():
             self._write_heartbeat(heartbeat_path, activation_report)
             if once:

@@ -8,20 +8,85 @@ UNRENDERED_UPDATE_BASE_URL_TOKEN="__NAGIENT_""UPDATE_BASE_URL__"
 NAGIENT_CHANNEL="${NAGIENT_CHANNEL:-$DEFAULT_CHANNEL}"
 NAGIENT_HOME="${NAGIENT_HOME:-$HOME/.nagient}"
 NAGIENT_UPDATE_BASE_URL="${NAGIENT_UPDATE_BASE_URL:-${UPDATE_BASE_URL:-$DEFAULT_UPDATE_BASE_URL}}"
-NAGIENT_COMPOSE_FILE="${NAGIENT_HOME}/docker-compose.yml"
-NAGIENT_ENV_FILE="${NAGIENT_HOME}/.env"
-NAGIENT_CONFIG_FILE="${NAGIENT_HOME}/config.toml"
-NAGIENT_SECRETS_FILE="${NAGIENT_HOME}/secrets.env"
-NAGIENT_TOOL_SECRETS_FILE="${NAGIENT_HOME}/tool-secrets.env"
-NAGIENT_PLUGINS_DIR="${NAGIENT_HOME}/plugins"
-NAGIENT_TOOLS_DIR="${NAGIENT_HOME}/tools"
-NAGIENT_PROVIDERS_DIR="${NAGIENT_HOME}/providers"
-NAGIENT_CREDENTIALS_DIR="${NAGIENT_HOME}/credentials"
-NAGIENT_STATE_DIR="${NAGIENT_HOME}/state"
-NAGIENT_LOG_DIR="${NAGIENT_HOME}/logs"
-NAGIENT_RELEASES_DIR="${NAGIENT_HOME}/releases"
-NAGIENT_BIN_DIR="${NAGIENT_HOME}/bin"
-NAGIENT_WORKSPACE_DIR="${NAGIENT_HOME}/workspace"
+NAGIENT_WORKSPACE_DIR="${NAGIENT_WORKSPACE_DIR:-}"
+NAGIENT_SKIP_SHELL_SHIMS="false"
+
+refresh_paths() {
+  NAGIENT_COMPOSE_FILE="${NAGIENT_HOME}/docker-compose.yml"
+  NAGIENT_ENV_FILE="${NAGIENT_HOME}/.env"
+  NAGIENT_CONFIG_FILE="${NAGIENT_HOME}/config.toml"
+  NAGIENT_SECRETS_FILE="${NAGIENT_HOME}/secrets.env"
+  NAGIENT_TOOL_SECRETS_FILE="${NAGIENT_HOME}/tool-secrets.env"
+  NAGIENT_PLUGINS_DIR="${NAGIENT_HOME}/plugins"
+  NAGIENT_TOOLS_DIR="${NAGIENT_HOME}/tools"
+  NAGIENT_PROVIDERS_DIR="${NAGIENT_HOME}/providers"
+  NAGIENT_CREDENTIALS_DIR="${NAGIENT_HOME}/credentials"
+  NAGIENT_STATE_DIR="${NAGIENT_HOME}/state"
+  NAGIENT_LOG_DIR="${NAGIENT_HOME}/logs"
+  NAGIENT_RELEASES_DIR="${NAGIENT_HOME}/releases"
+  NAGIENT_BIN_DIR="${NAGIENT_HOME}/bin"
+  if [ -z "${NAGIENT_WORKSPACE_DIR:-}" ]; then
+    NAGIENT_WORKSPACE_DIR="${NAGIENT_HOME}/workspace"
+  fi
+}
+
+install_usage() {
+  cat <<EOF
+Usage: install.sh [options]
+
+Options:
+  --home, --install-dir <path>  Install Nagient into a custom directory
+  --workspace-dir <path>        Use a custom workspace directory
+  --channel <name>              Override the release channel
+  --update-base-url <url>       Override the update center base URL
+  --shell-link-dir <path>       Install command shims into a specific PATH directory
+  --no-shell-shims              Skip automatic shim installation
+  -h, --help                    Show this help
+EOF
+}
+
+refresh_paths
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --home|--install-dir)
+      NAGIENT_HOME="${2:-}"
+      shift
+      refresh_paths
+      ;;
+    --workspace-dir)
+      NAGIENT_WORKSPACE_DIR="${2:-}"
+      shift
+      ;;
+    --channel)
+      NAGIENT_CHANNEL="${2:-}"
+      shift
+      ;;
+    --update-base-url)
+      NAGIENT_UPDATE_BASE_URL="${2:-}"
+      shift
+      ;;
+    --shell-link-dir)
+      NAGIENT_SHELL_LINK_DIR="${2:-}"
+      shift
+      ;;
+    --no-shell-shims)
+      NAGIENT_SKIP_SHELL_SHIMS="true"
+      ;;
+    -h|--help)
+      install_usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown install option: $1" >&2
+      install_usage >&2
+      exit 1
+      ;;
+  esac
+  shift
+done
+
+refresh_paths
 
 update_base_url_is_unrendered() {
   case "$1" in
@@ -238,6 +303,26 @@ download_artifact() {
   mkdir -p "$(dirname "$target")"
   fetch_url "$url" >"$target"
   chmod +x "$target" || true
+}
+
+sync_codex_mountpoint() {
+  local host_codex_dir="$HOME/.codex"
+  local target_path="${NAGIENT_HOME}/.codex-host"
+
+  if [ -d "$host_codex_dir" ]; then
+    if [ -L "$target_path" ] || [ ! -e "$target_path" ]; then
+      ln -sfn "$host_codex_dir" "$target_path"
+      return 0
+    fi
+    if [ -d "$target_path" ] && [ -z "$(ls -A "$target_path" 2>/dev/null)" ]; then
+      rmdir "$target_path" 2>/dev/null || true
+      ln -sfn "$host_codex_dir" "$target_path"
+      return 0
+    fi
+    return 0
+  fi
+
+  mkdir -p "$target_path"
 }
 
 supports_color() {
@@ -540,6 +625,10 @@ resolve_codex_auth_file_default() {
     return 0
   fi
   printf '%s\n' "$HOME/.codex/auth.json"
+}
+
+container_codex_auth_file_default() {
+  printf '%s\n' "/root/.codex/auth.json"
 }
 
 provider_usage() {
@@ -923,9 +1012,6 @@ EOF
   [ -n "$model" ] || model="$default_model"
   [ -n "$base_url" ] || base_url="$default_base_url"
   [ -n "$auth_file" ] || auth_file="$default_auth_file"
-  if [ "$provider_id" = "openai-codex" ] && [ -z "$auth_file" ]; then
-    auth_file="$(resolve_codex_auth_file_default)"
-  fi
 
   update_provider_config \
     "$provider_id" \
@@ -1124,8 +1210,28 @@ EOF
   [ -n "$secret_name" ] || secret_name="$default_secret"
   [ -n "$plugin_id" ] || plugin_id="$default_plugin"
   [ -n "$auth_file" ] || auth_file="$default_auth_file"
-  if [ "$provider_id" = "openai-codex" ] && [ -z "$auth_file" ]; then
-    auth_file="$(resolve_codex_auth_file_default)"
+
+  if [ "$provider_id" = "openai-codex" ] && [ -t 0 ] && [ -z "$api_key" ] && [ -z "$token" ]; then
+    echo "Choose OpenAI Codex authentication:"
+    echo "  1) Browser login"
+    echo "  2) Import existing ~/.codex session"
+    echo "  3) API key"
+    printf 'Auth mode [1-3, default 1]: '
+    read -r answer
+    case "${answer:-1}" in
+      2)
+        auth_mode="codex_auth_file"
+        auth_file="$(container_codex_auth_file_default)"
+        ;;
+      3)
+        auth_mode="api_key"
+        auth_file=""
+        ;;
+      *)
+        auth_mode="oauth_browser"
+        auth_file="${default_auth_file}"
+        ;;
+    esac
   fi
 
   if [ -z "$model" ] && [ -t 0 ] && [ -n "$default_model" ]; then
@@ -1143,27 +1249,16 @@ EOF
   [ -n "$base_url" ] || base_url="$default_base_url"
 
   if [ "$provider_id" = "openai-codex" ] && [ "$auth_mode" = "codex_auth_file" ] && [ -t 0 ]; then
-    if [ -z "$auth_file" ]; then
-      auth_file="$(resolve_codex_auth_file_default)"
+    local host_codex_auth=""
+    host_codex_auth="$(resolve_codex_auth_file_default)"
+    echo "Nagient will reuse the host Codex session from:"
+    echo "  ${host_codex_auth}"
+    if [ ! -f "$host_codex_auth" ]; then
+      echo "No host Codex auth file exists yet."
+      echo "You can switch to browser login or API key, or sign in with Codex first."
+      return 1
     fi
-    printf 'Codex auth file [%s]: ' "$auth_file"
-    read -r answer
-    auth_file="${answer:-$auth_file}"
-
-    echo "Codex browser login URL: https://chatgpt.com/codex"
-    if [ ! -f "$auth_file" ]; then
-      printf 'Open browser now? [Y/n]: '
-      read -r answer
-      case "${answer:-Y}" in
-        n|N|no|NO)
-          ;;
-        *)
-          open_url "https://chatgpt.com/codex" || true
-          ;;
-      esac
-      echo "Headless tip: run \`codex login --device-auth\` and complete device-code auth via browser."
-      echo "Env fallback: set NAGIENT_OPENAI_CODEX_AUTH_FILE, NAGIENT_OPENAI_CODEX_ACCESS_TOKEN, CODEX_API_KEY, or OPENAI_API_KEY."
-    fi
+    auth_file="$(container_codex_auth_file_default)"
   fi
 
   if [ "$auth_mode" = "api_key" ] && [ -z "$api_key" ] && [ -t 0 ]; then
@@ -1338,6 +1433,7 @@ require_cmd docker
 require_docker_runtime
 ensure_release_defaults
 mkdir -p "$NAGIENT_HOME" "$NAGIENT_RELEASES_DIR" "$NAGIENT_BIN_DIR" "$NAGIENT_PLUGINS_DIR" "$NAGIENT_TOOLS_DIR" "$NAGIENT_PROVIDERS_DIR" "$NAGIENT_CREDENTIALS_DIR" "$NAGIENT_STATE_DIR" "$NAGIENT_LOG_DIR" "$NAGIENT_WORKSPACE_DIR"
+sync_codex_mountpoint
 
 channel_payload="$(mktemp)"
 manifest_payload="$(mktemp)"
@@ -1483,7 +1579,9 @@ log_step "Pulling Docker image ${image}"
 run_compose_install_step pull
 log_step "Starting Nagient container"
 run_compose_install_step up -d
-if ! install_shell_shims; then
+if [ "$NAGIENT_SKIP_SHELL_SHIMS" = "true" ]; then
+  log_step "Skipping automatic command shim install by request."
+elif ! install_shell_shims; then
   log_step "Skipping automatic command shim install; use ${NAGIENT_BIN_DIR}/nagient shell-install later"
 fi
 
@@ -1493,6 +1591,7 @@ if [ "$SHELL_SHIMS_IN_PATH" = "true" ]; then
 fi
 
 echo "Nagient ${version} installed into ${NAGIENT_HOME}"
+echo "Config directory: ${NAGIENT_HOME}"
 if [ "$SHELL_SHIMS_IN_PATH" = "true" ]; then
   echo "Commands: nagient, nagientctl"
 else

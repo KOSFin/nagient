@@ -216,6 +216,7 @@ class RenderReleaseAssetsTests(unittest.TestCase):
             self.assertIn("./state:/opt/nagient/state", compose_file)
             self.assertIn("./logs:/opt/nagient/logs", compose_file)
             self.assertIn("./releases:/opt/nagient/releases", compose_file)
+            self.assertIn("./.codex-host:/root/.codex:ro", compose_file)
             self.assertIn("./config.toml:/opt/nagient/config.toml:ro", compose_file)
             self.assertIn(BASE_URL, install_script)
             self.assertNotIn("__NAGIENT_UPDATE_BASE_URL__", install_script)

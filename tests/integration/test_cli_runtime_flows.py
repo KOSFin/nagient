@@ -163,6 +163,47 @@ class CliRuntimeFlowsTests(unittest.TestCase):
             self.assertEqual(heartbeat["runtime_status"], "ready")
             self.assertEqual(heartbeat["transports"][0]["plugin_id"], "builtin.console")
 
+    def test_serve_once_stays_alive_enough_to_write_blocked_heartbeat(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir) / ".nagient"
+            env = {
+                **os.environ,
+                "PYTHONPATH": str(SRC_ROOT),
+                "NAGIENT_HOME": str(home_dir),
+            }
+            subprocess.run(
+                [sys.executable, "-m", "nagient", "init", "--format", "json"],
+                cwd=PROJECT_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            config_file = home_dir / "config.toml"
+            config_file.write_text(
+                config_file.read_text(encoding="utf-8").replace(
+                    'default_provider = ""\nrequire_provider = false',
+                    'default_provider = "openai-codex"\nrequire_provider = true',
+                ),
+                encoding="utf-8",
+            )
+
+            blocked_serve = subprocess.run(
+                [sys.executable, "-m", "nagient", "serve", "--once"],
+                cwd=PROJECT_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertEqual(blocked_serve.returncode, 0)
+
+            heartbeat = json.loads(
+                (home_dir / "state" / "heartbeat.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(heartbeat["runtime_status"], "blocked")
+
     def test_status_text_is_compact_and_host_oriented(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             home_dir = Path(temp_dir) / ".nagient"
