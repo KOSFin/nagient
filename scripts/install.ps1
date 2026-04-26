@@ -82,33 +82,42 @@ function Write-Step {
 
 function Write-NagientCtl {
   $target = Join-Path $BinDir "nagientctl.ps1"
-  @'
+  $launcher = @'
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+$ProgramName = [System.IO.Path]::GetFileNameWithoutExtension($MyInvocation.MyCommand.Name)
 $NagientHome = if ($env:NAGIENT_HOME) { $env:NAGIENT_HOME } else { Join-Path $HOME ".nagient" }
 $ComposeFile = Join-Path $NagientHome "docker-compose.yml"
 $EnvFile = Join-Path $NagientHome ".env"
 $Service = if ($env:NAGIENT_SERVICE) { $env:NAGIENT_SERVICE } else { "nagient" }
+$ConfigFile = Join-Path $NagientHome "config.toml"
+$SecretsFile = Join-Path $NagientHome "secrets.env"
+$ToolSecretsFile = Join-Path $NagientHome "tool-secrets.env"
+$WorkspaceDir = Join-Path $NagientHome "workspace"
+$LogDir = Join-Path $NagientHome "logs"
 
 function Show-Usage {
   @"
-Usage: nagientctl <command>
+Usage: $ProgramName <command>
 
 Commands:
+  status|st          Show compact runtime status
+  doctor|cfg         Show detailed runtime diagnostics
+  paths|config       Show local config and workspace paths
+  ps                 Show raw docker compose status
   up|start           Start runtime container
   down|stop          Stop runtime container
   restart            Restart runtime container
-  status             Show container state and nagient status
-  doctor             Show effective settings
-  preflight          Run config validation
-  reconcile          Run activation cycle
-  logs [service]     Stream logs (default: nagient)
-  shell              Open shell in runtime container
-  exec <cmd...>      Execute command in runtime container
+  preflight|check    Run config validation
+  reconcile|fix      Run activation cycle
+  logs|log [svc]     Stream logs (default: nagient)
+  shell|sh           Open shell in runtime container
+  exec|x <cmd...>    Execute command in runtime container
   update             Run installed updater
   remove|uninstall   Run installed uninstaller
   help               Show this help
+  <other command>    Pass through to the in-container nagient CLI
 "@ | Write-Host
 }
 
@@ -123,10 +132,51 @@ function Compose {
   docker compose -f $ComposeFile --env-file $EnvFile @ComposeArgs
 }
 
+function Compose-ExecNagient {
+  param([Parameter(ValueFromRemainingArguments = $true)][string[]]$CommandArgs)
+  Compose exec `
+    -e "NAGIENT_HOST_HOME=$NagientHome" `
+    -e "NAGIENT_HOST_CONFIG_FILE=$ConfigFile" `
+    -e "NAGIENT_HOST_SECRETS_FILE=$SecretsFile" `
+    -e "NAGIENT_HOST_TOOL_SECRETS_FILE=$ToolSecretsFile" `
+    -e "NAGIENT_HOST_WORKSPACE_DIR=$WorkspaceDir" `
+    $Service @CommandArgs
+}
+
+function Show-Paths {
+  @"
+Nagient home: $NagientHome
+Config: $ConfigFile
+Secrets: $SecretsFile
+Tool secrets: $ToolSecretsFile
+Workspace: $WorkspaceDir
+Logs: $LogDir
+"@ | Write-Host
+}
+
 $Command = if ($args.Count -gt 0) { $args[0].ToLowerInvariant() } else { "help" }
 $Rest = if ($args.Count -gt 1) { $args[1..($args.Count - 1)] } else { @() }
 
 switch ($Command) {
+  { $_ -in @("status", "st") } {
+    Assert-ComposeFiles
+    Compose-ExecNagient nagient status --format text @Rest
+    break
+  }
+  { $_ -in @("doctor", "cfg") } {
+    Assert-ComposeFiles
+    Compose-ExecNagient nagient doctor --format text @Rest
+    break
+  }
+  { $_ -in @("paths", "config") } {
+    Show-Paths
+    break
+  }
+  "ps" {
+    Assert-ComposeFiles
+    Compose ps
+    break
+  }
   { $_ -in @("up", "start") } {
     Assert-ComposeFiles
     Compose up -d
@@ -143,28 +193,17 @@ switch ($Command) {
     Compose up -d
     break
   }
-  "status" {
+  { $_ -in @("preflight", "check") } {
     Assert-ComposeFiles
-    Compose ps
-    Compose exec $Service nagient status --format text
+    Compose-ExecNagient nagient preflight --format text @Rest
     break
   }
-  "doctor" {
+  { $_ -in @("reconcile", "fix") } {
     Assert-ComposeFiles
-    Compose exec $Service nagient doctor --format text
+    Compose-ExecNagient nagient reconcile --format text @Rest
     break
   }
-  "preflight" {
-    Assert-ComposeFiles
-    Compose exec $Service nagient preflight --format text
-    break
-  }
-  "reconcile" {
-    Assert-ComposeFiles
-    Compose exec $Service nagient reconcile --format text
-    break
-  }
-  "logs" {
+  { $_ -in @("logs", "log") } {
     Assert-ComposeFiles
     if ($Rest.Count -eq 0) {
       $Rest = @($Service)
@@ -172,15 +211,15 @@ switch ($Command) {
     Compose logs -f @Rest
     break
   }
-  "shell" {
+  { $_ -in @("shell", "sh") } {
     Assert-ComposeFiles
     Compose exec $Service sh
     break
   }
-  "exec" {
+  { $_ -in @("exec", "x") } {
     Assert-ComposeFiles
     if ($Rest.Count -eq 0) {
-      throw "Usage: nagientctl exec <cmd...>"
+      throw "Usage: $ProgramName exec <cmd...>"
     }
     Compose exec $Service @Rest
     break
@@ -198,10 +237,13 @@ switch ($Command) {
     break
   }
   default {
-    throw "Unknown command: $Command"
+    Assert-ComposeFiles
+    Compose-ExecNagient nagient $Command @Rest
   }
 }
-'@ | Set-Content -Path $target -Encoding utf8
+'@
+  $launcher | Set-Content -Path $target -Encoding utf8
+  $launcher | Set-Content -Path (Join-Path $BinDir "nagient.ps1") -Encoding utf8
 }
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
@@ -375,4 +417,6 @@ Write-Step "Starting Nagient container"
 Invoke-ComposeInstallStep up -d
 
 Write-Host "Nagient $version installed into $NagientHome"
-Write-Host "Shortcut control: $(Join-Path $BinDir 'nagientctl.ps1') help"
+Write-Host "Quick start: $(Join-Path $BinDir 'nagient.ps1') status"
+Write-Host "Config paths: $(Join-Path $BinDir 'nagient.ps1') paths"
+Write-Host "Updater: $(Join-Path $BinDir 'nagient.ps1') update"

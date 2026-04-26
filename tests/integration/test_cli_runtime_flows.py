@@ -163,6 +163,49 @@ class CliRuntimeFlowsTests(unittest.TestCase):
             self.assertEqual(heartbeat["runtime_status"], "ready")
             self.assertEqual(heartbeat["transports"][0]["plugin_id"], "builtin.console")
 
+    def test_status_text_is_compact_and_host_oriented(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir) / ".nagient"
+            env = {
+                **os.environ,
+                "PYTHONPATH": str(SRC_ROOT),
+                "NAGIENT_HOME": str(home_dir),
+                "NAGIENT_HOST_HOME": str(home_dir),
+            }
+            subprocess.run(
+                [sys.executable, "-m", "nagient", "init", "--format", "json"],
+                cwd=PROJECT_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            subprocess.run(
+                [sys.executable, "-m", "nagient", "reconcile", "--format", "json"],
+                cwd=PROJECT_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            status_process = subprocess.run(
+                [sys.executable, "-m", "nagient", "status"],
+                cwd=PROJECT_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            self.assertIn("Nagient Status", status_process.stdout)
+            self.assertIn("Overview", status_process.stdout)
+            self.assertIn(f"Config: {home_dir / 'config.toml'}", status_process.stdout)
+            self.assertIn("Next Steps", status_process.stdout)
+            self.assertNotIn("effective_config.settings.version", status_process.stdout)
+            self.assertNotIn("activation.effective_config", status_process.stdout)
+            self.assertNotIn("Already up to date", status_process.stdout)
+
     def test_auth_login_status_and_provider_models_flow(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             home_dir = Path(temp_dir) / ".nagient"

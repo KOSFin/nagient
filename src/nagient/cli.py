@@ -3,7 +3,9 @@ from __future__ import annotations
 import argparse
 import getpass
 import json
+import os
 from pathlib import Path
+import sys
 
 from nagient.app.container import build_container
 from nagient.domain.entities.agent_runtime import AgentTurnRequest
@@ -24,21 +26,41 @@ def build_parser() -> argparse.ArgumentParser:
 
     status_parser = subparsers.add_parser("status", help="Show runtime and activation status")
     status_parser.add_argument("--format", choices=("text", "json"), default="text")
+    status_parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Show the full diagnostic tree instead of the compact summary",
+    )
 
-    doctor_parser = subparsers.add_parser("doctor", help="Show effective runtime settings")
+    doctor_parser = subparsers.add_parser("doctor", help="Show detailed runtime diagnostics")
     doctor_parser.add_argument("--format", choices=("text", "json"), default="text")
+    doctor_parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Show the full raw diagnostic tree",
+    )
 
     preflight_parser = subparsers.add_parser(
         "preflight",
         help="Validate config and transport plugins",
     )
     preflight_parser.add_argument("--format", choices=("text", "json"), default="text")
+    preflight_parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Show the full raw diagnostic tree",
+    )
 
     reconcile_parser = subparsers.add_parser(
         "reconcile",
         help="Validate and activate runtime config",
     )
     reconcile_parser.add_argument("--format", choices=("text", "json"), default="text")
+    reconcile_parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Show the full raw diagnostic tree",
+    )
 
     serve_parser = subparsers.add_parser("serve", help="Run the placeholder agent loop")
     serve_parser.add_argument("--once", action="store_true", help="Write one heartbeat and exit")
@@ -245,18 +267,22 @@ def main(argv: list[str] | None = None) -> int:
         payload = container.configuration_service.initialize(force=args.force)
         return _emit(payload, args.format)
 
-    if args.command in {"doctor", "status"}:
+    if args.command == "status":
         payload = container.status_service.collect()
-        return _emit(payload, args.format)
+        return _emit(payload, args.format, view="status", verbose=args.verbose)
+
+    if args.command == "doctor":
+        payload = container.status_service.collect()
+        return _emit(payload, args.format, view="doctor", verbose=args.verbose)
 
     if args.command == "preflight":
         payload = container.preflight_service.inspect().to_dict()
-        return _emit(payload, args.format)
+        return _emit(payload, args.format, view="preflight", verbose=args.verbose)
 
     if args.command == "reconcile":
         report = container.reconcile_service.reconcile()
         exit_code = 0 if report.can_activate else 1
-        _emit(report.to_dict(), args.format)
+        _emit(report.to_dict(), args.format, view="reconcile", verbose=args.verbose)
         return exit_code
 
     if args.command == "serve":
@@ -357,7 +383,7 @@ def main(argv: list[str] | None = None) -> int:
             provider_id=args.provider_id,
             verify_remote=args.verify,
         )
-        return _emit(payload, args.format)
+        return _emit(payload, args.format, view="auth_status")
 
     if args.command == "auth" and args.auth_command == "login":
         payload = container.provider_service.login(
@@ -404,7 +430,7 @@ def main(argv: list[str] | None = None) -> int:
             ],
             "manifest": release_to_dict(notice.manifest) if notice.manifest else None,
         }
-        return _emit(payload, args.format)
+        return _emit(payload, args.format, view="update_check")
 
     if args.command == "manifest" and args.manifest_command == "render":
         payload = _build_release_manifest_payload(
@@ -573,12 +599,18 @@ def _build_release_manifest_payload(
     }
 
 
-def _emit(payload: dict[str, object], output_format: str) -> int:
+def _emit(
+    payload: dict[str, object],
+    output_format: str,
+    *,
+    view: str = "generic",
+    verbose: bool = False,
+) -> int:
     if output_format == "json":
         print(json.dumps(payload, indent=2))
         return 0
 
-    print(_render_text(payload))
+    print(_render_text(payload, view=view, verbose=verbose))
     return 0
 
 
@@ -596,7 +628,25 @@ def _read_secret_input(prompt: str) -> str | None:
         return None
 
 
-def _render_text(payload: dict[str, object]) -> str:
+def _render_text(payload: dict[str, object], *, view: str, verbose: bool) -> str:
+    if verbose:
+        lines: list[str] = []
+        _append_lines(lines, payload)
+        return "\n".join(lines)
+
+    if view == "status":
+        return _render_status_summary(payload)
+    if view == "doctor":
+        return _render_doctor_summary(payload)
+    if view == "preflight":
+        return _render_activation_summary(payload, title="Nagient Preflight")
+    if view == "reconcile":
+        return _render_activation_summary(payload, title="Nagient Reconcile")
+    if view == "auth_status":
+        return _render_auth_status(payload)
+    if view == "update_check":
+        return _render_update_check(payload)
+
     lines: list[str] = []
     _append_lines(lines, payload)
     return "\n".join(lines)
@@ -618,3 +668,705 @@ def _append_lines(lines: list[str], payload: dict[str, object], prefix: str = ""
                     lines.append(f"  - {item}")
         else:
             lines.append(f"{label}: {value}")
+
+
+def _render_status_summary(payload: dict[str, object]) -> str:
+    colors = _supports_color()
+    lines = [_heading("Nagient Status", colors)]
+
+    activation = _as_dict(payload.get("activation"))
+    workspace = _as_dict(payload.get("workspace"))
+    pending = _as_dict(payload.get("pending_workflows"))
+    host_paths = _host_paths()
+
+    _append_section(lines, "Overview", colors)
+    _append_key_value(
+        lines,
+        "Runtime",
+        _format_status(activation.get("status"), colors=colors),
+    )
+    _append_key_value(
+        lines,
+        "Version",
+        _join_parts(
+            _as_text(payload.get("version")),
+            _as_text(payload.get("channel")),
+            separator=" ",
+            wrap_right="()",
+        ),
+    )
+    _append_key_value(
+        lines,
+        "Safe mode",
+        "on" if _as_bool(payload.get("safe_mode")) else "off",
+    )
+    if _has_value(activation.get("can_activate")):
+        _append_key_value(
+            lines,
+            "Can activate",
+            "yes" if _as_bool(activation.get("can_activate")) else "no",
+        )
+    if _as_int(pending.get("approvals")) or _as_int(pending.get("interactions")):
+        _append_key_value(
+            lines,
+            "Pending",
+            ", ".join(
+                [
+                    f"approvals {_as_int(pending.get('approvals'))}",
+                    f"interactions {_as_int(pending.get('interactions'))}",
+                ]
+            ),
+        )
+
+    if host_paths:
+        _append_section(lines, "Files", colors)
+        if "config" in host_paths:
+            _append_key_value(lines, "Config", host_paths["config"])
+        if "secrets" in host_paths:
+            _append_key_value(lines, "Secrets", host_paths["secrets"])
+        if "workspace" in host_paths:
+            _append_key_value(lines, "Workspace", host_paths["workspace"])
+
+    _append_section(lines, "Workspace", colors)
+    _append_key_value(
+        lines,
+        "Status",
+        _format_status(workspace.get("status"), colors=colors),
+    )
+    _append_key_value(lines, "Mode", _as_text(workspace.get("mode")))
+    _append_key_value(lines, "Root", _as_text(workspace.get("root")))
+    _append_key_value(
+        lines,
+        "Backups",
+        "on" if _as_bool(workspace.get("backup_enabled")) else "off",
+    )
+    _append_issue_block(
+        lines,
+        _as_list(workspace.get("issues")),
+        colors=colors,
+    )
+
+    _append_component_section(
+        lines,
+        "Providers",
+        _as_list(activation.get("providers")),
+        kind="provider",
+        colors=colors,
+        detailed=False,
+    )
+    _append_component_section(
+        lines,
+        "Transports",
+        _as_list(activation.get("transports")),
+        kind="transport",
+        colors=colors,
+        detailed=False,
+    )
+
+    tools = _as_list(activation.get("tools"))
+    _append_section(lines, "Tools", colors)
+    if tools:
+        ready_count = sum(
+            1 for item in tools if _normalized_status(_as_dict(item).get("status")) == "ready"
+        )
+        issue_count = sum(len(_as_list(_as_dict(item).get("issues"))) for item in tools)
+        _append_key_value(lines, "Ready", f"{ready_count}/{len(tools)}")
+        if issue_count:
+            _append_key_value(lines, "Issues", str(issue_count))
+    else:
+        _append_line(lines, "No tool status is available yet.")
+
+    _append_section(lines, "Secrets", colors)
+    secrets = _as_dict(payload.get("secrets"))
+    _append_key_value(lines, "Core", str(_as_int(secrets.get("core_count"))))
+    _append_key_value(lines, "Tool", str(_as_int(secrets.get("tool_count"))))
+
+    _append_section(lines, "Updates", colors)
+    update = _as_dict(payload.get("update"))
+    for line in _update_summary_lines(update, colors=colors):
+        _append_line(lines, line)
+
+    issues = _as_list(activation.get("issues"))
+    notices = _as_list(activation.get("notices"))
+    if issues:
+        _append_section(lines, "Issues", colors)
+        _append_issue_block(lines, issues, colors=colors)
+    elif notices:
+        _append_section(lines, "Notices", colors)
+        for notice in notices:
+            _append_line(lines, _as_text(notice))
+
+    next_steps = _next_steps(payload)
+    if next_steps:
+        _append_section(lines, "Next Steps", colors)
+        for step in next_steps:
+            _append_line(lines, step)
+
+    return "\n".join(lines)
+
+
+def _render_doctor_summary(payload: dict[str, object]) -> str:
+    colors = _supports_color()
+    lines = [_heading("Nagient Doctor", colors)]
+
+    activation = _as_dict(payload.get("activation"))
+    workspace = _as_dict(payload.get("workspace"))
+    pending = _as_dict(payload.get("pending_workflows"))
+    update = _as_dict(payload.get("update"))
+    effective_config = _as_dict(payload.get("effective_config"))
+    effective_settings = _as_dict(effective_config.get("settings"))
+    runtime_paths = _as_dict(payload.get("paths"))
+    host_paths = _host_paths()
+
+    _append_section(lines, "Overview", colors)
+    _append_key_value(
+        lines,
+        "Runtime",
+        _format_status(activation.get("status"), colors=colors),
+    )
+    _append_key_value(lines, "Version", _as_text(payload.get("version")))
+    _append_key_value(lines, "Channel", _as_text(payload.get("channel")))
+    _append_key_value(
+        lines,
+        "Safe mode",
+        "on" if _as_bool(payload.get("safe_mode")) else "off",
+    )
+    _append_key_value(
+        lines,
+        "Default provider",
+        _as_text(effective_config.get("default_provider")) or "none",
+    )
+    _append_key_value(
+        lines,
+        "Require provider",
+        "yes" if _as_bool(effective_config.get("require_provider")) else "no",
+    )
+    if _has_value(effective_settings.get("heartbeat_interval_seconds")):
+        _append_key_value(
+            lines,
+            "Heartbeat",
+            f"{_as_text(effective_settings.get('heartbeat_interval_seconds'))}s",
+        )
+    _append_key_value(
+        lines,
+        "Pending approvals",
+        str(_as_int(pending.get("approvals"))),
+    )
+    _append_key_value(
+        lines,
+        "Pending interactions",
+        str(_as_int(pending.get("interactions"))),
+    )
+
+    if host_paths:
+        _append_section(lines, "Host Files", colors)
+        for label, key in (
+            ("Home", "home"),
+            ("Config", "config"),
+            ("Secrets", "secrets"),
+            ("Tool secrets", "tool_secrets"),
+            ("Workspace", "workspace"),
+        ):
+            if key in host_paths:
+                _append_key_value(lines, label, host_paths[key])
+
+    _append_section(lines, "Runtime Files", colors)
+    for label, key in (
+        ("Home", "home"),
+        ("Config", "config"),
+        ("Secrets", "secrets"),
+        ("Tool secrets", "tool_secrets"),
+        ("Plugins", "plugins"),
+        ("Tools", "tools"),
+        ("Providers", "providers"),
+        ("Credentials", "credentials"),
+        ("State", "state"),
+        ("Logs", "logs"),
+        ("Releases", "releases"),
+    ):
+        if key in runtime_paths:
+            _append_key_value(lines, label, _as_text(runtime_paths[key]))
+
+    _append_section(lines, "Workspace", colors)
+    for label, key in (
+        ("Status", "status"),
+        ("Mode", "mode"),
+        ("Root", "root"),
+        ("Nagient dir", "nagient_dir"),
+    ):
+        value = workspace.get(key)
+        if key == "status":
+            _append_key_value(lines, label, _format_status(value, colors=colors))
+        else:
+            _append_key_value(lines, label, _as_text(value))
+    _append_key_value(
+        lines,
+        "Backups",
+        "on" if _as_bool(workspace.get("backup_enabled")) else "off",
+    )
+    _append_issue_block(lines, _as_list(workspace.get("issues")), colors=colors)
+
+    _append_component_section(
+        lines,
+        "Providers",
+        _as_list(activation.get("providers")),
+        kind="provider",
+        colors=colors,
+        detailed=True,
+    )
+    _append_component_section(
+        lines,
+        "Transports",
+        _as_list(activation.get("transports")),
+        kind="transport",
+        colors=colors,
+        detailed=True,
+    )
+    _append_component_section(
+        lines,
+        "Tools",
+        _as_list(activation.get("tools")),
+        kind="tool",
+        colors=colors,
+        detailed=True,
+    )
+
+    _append_section(lines, "Updates", colors)
+    _append_key_value(
+        lines,
+        "Center",
+        _as_text(payload.get("update_base_url")) or "not configured",
+    )
+    for line in _update_summary_lines(update, colors=colors):
+        _append_line(lines, line)
+
+    notices = _as_list(activation.get("notices"))
+    if notices:
+        _append_section(lines, "Notices", colors)
+        for notice in notices:
+            _append_line(lines, _as_text(notice))
+
+    issues = _as_list(activation.get("issues"))
+    if issues:
+        _append_section(lines, "Issues", colors)
+        _append_issue_block(lines, issues, colors=colors)
+
+    return "\n".join(lines)
+
+
+def _render_activation_summary(payload: dict[str, object], *, title: str) -> str:
+    colors = _supports_color()
+    lines = [_heading(title, colors)]
+
+    _append_section(lines, "Overview", colors)
+    _append_key_value(lines, "Status", _format_status(payload.get("status"), colors=colors))
+    _append_key_value(
+        lines,
+        "Can activate",
+        "yes" if _as_bool(payload.get("can_activate")) else "no",
+    )
+    _append_key_value(
+        lines,
+        "Safe mode",
+        "on" if _as_bool(payload.get("safe_mode")) else "off",
+    )
+
+    workspace = _as_dict(payload.get("workspace"))
+    if workspace:
+        _append_section(lines, "Workspace", colors)
+        _append_key_value(
+            lines,
+            "Status",
+            _format_status(workspace.get("status"), colors=colors),
+        )
+        _append_key_value(lines, "Mode", _as_text(workspace.get("mode")))
+        _append_key_value(lines, "Root", _as_text(workspace.get("root")))
+        _append_issue_block(lines, _as_list(workspace.get("issues")), colors=colors)
+
+    _append_component_section(
+        lines,
+        "Providers",
+        _as_list(payload.get("providers")),
+        kind="provider",
+        colors=colors,
+        detailed=False,
+    )
+    _append_component_section(
+        lines,
+        "Transports",
+        _as_list(payload.get("transports")),
+        kind="transport",
+        colors=colors,
+        detailed=False,
+    )
+    _append_component_section(
+        lines,
+        "Tools",
+        _as_list(payload.get("tools")),
+        kind="tool",
+        colors=colors,
+        detailed=False,
+    )
+
+    notices = _as_list(payload.get("notices"))
+    if notices:
+        _append_section(lines, "Notices", colors)
+        for notice in notices:
+            _append_line(lines, _as_text(notice))
+
+    issues = _as_list(payload.get("issues"))
+    if issues:
+        _append_section(lines, "Issues", colors)
+        _append_issue_block(lines, issues, colors=colors)
+
+    return "\n".join(lines)
+
+
+def _render_auth_status(payload: dict[str, object]) -> str:
+    colors = _supports_color()
+    lines = [_heading("Provider Auth", colors)]
+
+    provider = _as_dict(payload.get("provider"))
+    providers = _as_list(payload.get("providers"))
+    issues = _as_list(payload.get("issues"))
+
+    if provider:
+        _append_section(lines, "Provider", colors)
+        for line in _component_lines(provider, kind="provider", colors=colors, detailed=True):
+            _append_line(lines, line)
+    else:
+        _append_component_section(
+            lines,
+            "Providers",
+            providers,
+            kind="provider",
+            colors=colors,
+            detailed=True,
+        )
+
+    if issues:
+        _append_section(lines, "Issues", colors)
+        _append_issue_block(lines, issues, colors=colors)
+
+    return "\n".join(lines)
+
+
+def _render_update_check(payload: dict[str, object]) -> str:
+    colors = _supports_color()
+    lines = [_heading("Nagient Update", colors)]
+
+    _append_section(lines, "Summary", colors)
+    for line in _update_summary_lines(payload, colors=colors):
+        _append_line(lines, line)
+
+    planned = _as_list(payload.get("planned_migrations"))
+    if planned:
+        _append_section(lines, "Migrations", colors)
+        for item in planned:
+            migration = _as_dict(item)
+            description = _as_text(migration.get("description"))
+            command = _as_text(migration.get("command"))
+            _append_line(lines, description or _as_text(migration.get("id")))
+            if command:
+                _append_line(lines, f"Command: {command}", indent="    ")
+
+    return "\n".join(lines)
+
+
+def _supports_color() -> bool:
+    if os.environ.get("NO_COLOR"):
+        return False
+    term = os.environ.get("TERM", "")
+    if term.lower() == "dumb":
+        return False
+    return sys.stdout.isatty()
+
+
+def _paint(text: str, code: str, *, colors: bool) -> str:
+    if not colors or not text:
+        return text
+    return f"\033[{code}m{text}\033[0m"
+
+
+def _heading(text: str, colors: bool) -> str:
+    return _paint(text, "1;36", colors=colors)
+
+
+def _append_section(lines: list[str], title: str, colors: bool) -> None:
+    lines.append("")
+    lines.append(_paint(title, "1", colors=colors))
+
+
+def _append_line(lines: list[str], text: str, *, indent: str = "  ") -> None:
+    lines.append(f"{indent}{text}")
+
+
+def _append_key_value(lines: list[str], label: str, value: str) -> None:
+    if value:
+        _append_line(lines, f"{label}: {value}")
+
+
+def _append_issue_block(lines: list[str], issues: list[object], *, colors: bool) -> None:
+    for item in issues:
+        issue = _as_dict(item)
+        message = _as_text(issue.get("message"))
+        if not message:
+            continue
+        severity = _format_status(issue.get("severity"), colors=colors)
+        source = _as_text(issue.get("source"))
+        prefix = _join_parts(severity, source, separator="  ", wrap_right="()")
+        _append_line(lines, _join_parts(prefix, message, separator="  "))
+        hint = _as_text(issue.get("hint"))
+        if hint:
+            _append_line(lines, f"Hint: {hint}", indent="    ")
+
+
+def _append_component_section(
+    lines: list[str],
+    title: str,
+    items: list[object],
+    *,
+    kind: str,
+    colors: bool,
+    detailed: bool,
+) -> None:
+    _append_section(lines, title, colors)
+    if not items:
+        _append_line(lines, "No entries.")
+        return
+    for item in items:
+        for line in _component_lines(_as_dict(item), kind=kind, colors=colors, detailed=detailed):
+            _append_line(lines, line)
+
+
+def _component_lines(
+    item: dict[str, object],
+    *,
+    kind: str,
+    colors: bool,
+    detailed: bool,
+) -> list[str]:
+    identifier_key = {
+        "provider": "provider_id",
+        "transport": "transport_id",
+        "tool": "tool_id",
+    }.get(kind, "id")
+    identifier = _as_text(item.get(identifier_key)) or "unknown"
+    if kind == "provider" and _as_bool(item.get("default")):
+        identifier = f"{identifier} [default]"
+
+    status = _format_status(item.get("status"), colors=colors)
+    details: list[str] = []
+
+    plugin_id = _as_text(item.get("plugin_id"))
+    if detailed and plugin_id:
+        details.append(f"plugin {plugin_id}")
+
+    if kind == "provider":
+        model = _as_text(item.get("configured_model"))
+        if model:
+            details.append(f"model {model}")
+        auth_mode = _as_text(item.get("auth_mode"))
+        if detailed and auth_mode:
+            details.append(f"auth {auth_mode}")
+        if _has_value(item.get("authenticated")) and _as_bool(item.get("enabled")):
+            details.append(
+                "credentials ok" if _as_bool(item.get("authenticated")) else "credentials missing"
+            )
+        auth_message = _as_text(item.get("auth_message"))
+        if detailed and auth_message and _normalized_status(item.get("status")) != "disabled":
+            details.append(auth_message)
+    elif kind == "transport":
+        functions = len(_as_list(item.get("exposed_functions"))) if detailed else 0
+        if functions:
+            details.append(f"functions {functions}")
+    elif kind == "tool":
+        functions = len(_as_list(item.get("exposed_functions"))) if detailed else 0
+        if functions:
+            details.append(f"functions {functions}")
+
+    issue_count = len(_as_list(item.get("issues")))
+    if issue_count:
+        details.append(f"issues {issue_count}")
+
+    head = _join_parts(identifier, status, separator="  ")
+    if details:
+        head = _join_parts(head, ", ".join(details), separator="  ")
+
+    lines = [head]
+    if detailed and issue_count:
+        for issue in _as_list(item.get("issues")):
+            issue_payload = _as_dict(issue)
+            message = _as_text(issue_payload.get("message"))
+            if message:
+                lines.append(f"  - {message}")
+            hint = _as_text(issue_payload.get("hint"))
+            if hint:
+                lines.append(f"    hint: {hint}")
+    return lines
+
+
+def _update_summary_lines(payload: dict[str, object], *, colors: bool) -> list[str]:
+    status = _normalized_status(payload.get("status"))
+    if _has_value(payload.get("update_available")) and _as_bool(payload.get("update_available")):
+        current_version = _as_text(payload.get("current_version"))
+        target_version = _as_text(payload.get("target_version"))
+        return [
+            _join_parts(
+                "Status:",
+                _format_status("update_available", colors=colors),
+                separator=" ",
+            ),
+            f"Current: {current_version}",
+            f"Target: {target_version}",
+        ]
+    if _has_value(payload.get("update_available")) and not _as_bool(payload.get("update_available")):
+        version = _as_text(payload.get("current_version")) or _as_text(payload.get("target_version"))
+        if version:
+            return [f"Up to date: {version}"]
+        return ["Up to date."]
+    if status == "ready":
+        version = _as_text(payload.get("current_version")) or _as_text(payload.get("target_version"))
+        if version:
+            return [f"Up to date: {version}"]
+        return ["Up to date."]
+    if status == "skipped":
+        return ["Not configured."]
+
+    message = _as_text(payload.get("message")) or "Status unavailable."
+    return [
+        _join_parts(
+            "Status:",
+            _format_status(payload.get("status"), colors=colors),
+            separator=" ",
+        ),
+        message,
+    ]
+
+
+def _next_steps(payload: dict[str, object]) -> list[str]:
+    steps: list[str] = []
+    activation = _as_dict(payload.get("activation"))
+    providers = _as_list(activation.get("providers"))
+    enabled_providers = [item for item in providers if _as_bool(_as_dict(item).get("enabled"))]
+    authenticated_providers = [
+        item
+        for item in enabled_providers
+        if _as_bool(_as_dict(item).get("authenticated"))
+        or _as_text(_as_dict(item).get("auth_mode")) == "none"
+    ]
+
+    host_paths = _host_paths()
+    config_path = host_paths.get("config", "config.toml")
+    secrets_path = host_paths.get("secrets", "secrets.env")
+
+    if not activation:
+        steps.append("Run `nagient reconcile` to generate the activation report.")
+
+    if not enabled_providers:
+        steps.append(f"Enable a provider profile in `{config_path}`.")
+        steps.append(f"Add the matching secret to `{secrets_path}`.")
+        steps.append("Run `nagient auth status` to verify the provider setup.")
+    elif not authenticated_providers:
+        steps.append("Run `nagient auth status` to see which provider still needs credentials.")
+        steps.append("Use `nagient auth login <provider_id>` after adding the secret.")
+
+    workspace = _as_dict(payload.get("workspace"))
+    if _normalized_status(workspace.get("status")) not in {"", "ready"}:
+        steps.append("Fix the workspace issue, then run `nagient reconcile` again.")
+
+    if activation and not _as_bool(activation.get("can_activate")):
+        steps.append("Review the issues above and rerun `nagient reconcile`.")
+
+    return steps[:3]
+
+
+def _host_paths() -> dict[str, str]:
+    home = os.environ.get("NAGIENT_HOST_HOME", "").strip()
+    if not home:
+        return {}
+
+    def _env_or_default(name: str, suffix: str) -> str:
+        value = os.environ.get(name, "").strip()
+        if value:
+            return value
+        return str(Path(home) / suffix)
+
+    return {
+        "home": home,
+        "config": _env_or_default("NAGIENT_HOST_CONFIG_FILE", "config.toml"),
+        "secrets": _env_or_default("NAGIENT_HOST_SECRETS_FILE", "secrets.env"),
+        "tool_secrets": _env_or_default(
+            "NAGIENT_HOST_TOOL_SECRETS_FILE",
+            "tool-secrets.env",
+        ),
+        "workspace": _env_or_default("NAGIENT_HOST_WORKSPACE_DIR", "workspace"),
+    }
+
+
+def _format_status(value: object, *, colors: bool) -> str:
+    status = _normalized_status(value).replace("_", " ") or "unknown"
+    color_code = {
+        "ready": "32",
+        "healthy": "32",
+        "update available": "33",
+        "degraded": "33",
+        "warning": "33",
+        "failed": "31",
+        "blocked": "31",
+        "error": "31",
+        "disabled": "90",
+        "skipped": "90",
+        "unavailable": "33",
+        "unauthenticated": "33",
+        "update_available": "33",
+    }.get(status, "36")
+    return _paint(status, color_code, colors=colors)
+
+
+def _normalized_status(value: object) -> str:
+    return _as_text(value).strip().lower()
+
+
+def _as_dict(value: object) -> dict[str, object]:
+    if not isinstance(value, dict):
+        return {}
+    return {str(key): item for key, item in value.items()}
+
+
+def _as_list(value: object) -> list[object]:
+    return list(value) if isinstance(value, list) else []
+
+
+def _as_text(value: object) -> str:
+    if value is None:
+        return ""
+    return str(value)
+
+
+def _as_bool(value: object) -> bool:
+    return bool(value)
+
+
+def _as_int(value: object) -> int:
+    return int(value) if isinstance(value, int) else 0
+
+
+def _has_value(value: object) -> bool:
+    return value is not None and value != ""
+
+
+def _join_parts(
+    left: str,
+    right: str,
+    *,
+    separator: str,
+    wrap_right: str | None = None,
+) -> str:
+    if not left:
+        return right
+    if not right:
+        return left
+    if wrap_right == "()":
+        return f"{left}{separator}({right})"
+    return f"{left}{separator}{right}"

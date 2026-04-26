@@ -172,29 +172,38 @@ write_nagientctl() {
 #!/usr/bin/env bash
 set -euo pipefail
 
+PROGRAM_NAME="$(basename "$0")"
 NAGIENT_HOME="${NAGIENT_HOME:-$HOME/.nagient}"
 NAGIENT_COMPOSE_FILE="${NAGIENT_HOME}/docker-compose.yml"
 NAGIENT_ENV_FILE="${NAGIENT_HOME}/.env"
 NAGIENT_SERVICE="${NAGIENT_SERVICE:-nagient}"
+NAGIENT_CONFIG_FILE="${NAGIENT_HOME}/config.toml"
+NAGIENT_SECRETS_FILE="${NAGIENT_HOME}/secrets.env"
+NAGIENT_TOOL_SECRETS_FILE="${NAGIENT_HOME}/tool-secrets.env"
+NAGIENT_WORKSPACE_DIR="${NAGIENT_HOME}/workspace"
+NAGIENT_LOG_DIR="${NAGIENT_HOME}/logs"
 
 usage() {
-  cat <<'USAGE'
-Usage: nagientctl <command>
+  cat <<USAGE
+Usage: ${PROGRAM_NAME} <command>
 
 Commands:
+  status|st          Show compact runtime status
+  doctor|cfg         Show detailed runtime diagnostics
+  paths|config       Show local config and workspace paths
+  ps                 Show raw docker compose status
   up|start           Start runtime container
   down|stop          Stop runtime container
   restart            Restart runtime container
-  status             Show container state and nagient status
-  doctor             Show effective settings
-  preflight          Run config validation
-  reconcile          Run activation cycle
-  logs [service]     Stream logs (default: nagient)
-  shell              Open shell in runtime container
-  exec <cmd...>      Execute command in runtime container
+  preflight|check    Run config validation
+  reconcile|fix      Run activation cycle
+  logs|log [svc]     Stream logs (default: nagient)
+  shell|sh           Open shell in runtime container
+  exec|x <cmd...>    Execute command in runtime container
   update             Run installed updater
   remove|uninstall   Run installed uninstaller
   help               Show this help
+  <other command>    Pass through to the in-container nagient CLI
 USAGE
 }
 
@@ -210,12 +219,48 @@ compose() {
   docker compose -f "$NAGIENT_COMPOSE_FILE" --env-file "$NAGIENT_ENV_FILE" "$@"
 }
 
+compose_exec() {
+  compose exec \
+    -e "NAGIENT_HOST_HOME=$NAGIENT_HOME" \
+    -e "NAGIENT_HOST_CONFIG_FILE=$NAGIENT_CONFIG_FILE" \
+    -e "NAGIENT_HOST_SECRETS_FILE=$NAGIENT_SECRETS_FILE" \
+    -e "NAGIENT_HOST_TOOL_SECRETS_FILE=$NAGIENT_TOOL_SECRETS_FILE" \
+    -e "NAGIENT_HOST_WORKSPACE_DIR=$NAGIENT_WORKSPACE_DIR" \
+    "$NAGIENT_SERVICE" "$@"
+}
+
+print_paths() {
+  cat <<EOF
+Nagient home: $NAGIENT_HOME
+Config: $NAGIENT_CONFIG_FILE
+Secrets: $NAGIENT_SECRETS_FILE
+Tool secrets: $NAGIENT_TOOL_SECRETS_FILE
+Workspace: $NAGIENT_WORKSPACE_DIR
+Logs: $NAGIENT_LOG_DIR
+EOF
+}
+
 command_name="${1:-help}"
 if [ "$#" -gt 0 ]; then
   shift
 fi
 
 case "$command_name" in
+  status|st)
+    require_compose_files
+    compose_exec nagient status --format text "$@"
+    ;;
+  doctor|cfg)
+    require_compose_files
+    compose_exec nagient doctor --format text "$@"
+    ;;
+  paths|config)
+    print_paths
+    ;;
+  ps)
+    require_compose_files
+    compose ps
+    ;;
   up|start)
     require_compose_files
     compose up -d
@@ -229,38 +274,29 @@ case "$command_name" in
     compose down --remove-orphans
     compose up -d
     ;;
-  status)
+  preflight|check)
     require_compose_files
-    compose ps
-    compose exec "$NAGIENT_SERVICE" nagient status --format text
+    compose_exec nagient preflight --format text "$@"
     ;;
-  doctor)
+  reconcile|fix)
     require_compose_files
-    compose exec "$NAGIENT_SERVICE" nagient doctor --format text
+    compose_exec nagient reconcile --format text "$@"
     ;;
-  preflight)
-    require_compose_files
-    compose exec "$NAGIENT_SERVICE" nagient preflight --format text
-    ;;
-  reconcile)
-    require_compose_files
-    compose exec "$NAGIENT_SERVICE" nagient reconcile --format text
-    ;;
-  logs)
+  logs|log)
     require_compose_files
     if [ "$#" -eq 0 ]; then
       set -- "$NAGIENT_SERVICE"
     fi
     compose logs -f "$@"
     ;;
-  shell)
+  shell|sh)
     require_compose_files
     compose exec "$NAGIENT_SERVICE" sh
     ;;
-  exec)
+  exec|x)
     require_compose_files
     if [ "$#" -eq 0 ]; then
-      echo "Usage: nagientctl exec <cmd...>" >&2
+      echo "Usage: ${PROGRAM_NAME} exec <cmd...>" >&2
       exit 1
     fi
     compose exec "$NAGIENT_SERVICE" "$@"
@@ -275,13 +311,14 @@ case "$command_name" in
     usage
     ;;
   *)
-    echo "Unknown command: $command_name" >&2
-    usage
-    exit 1
+    require_compose_files
+    compose_exec nagient "$command_name" "$@"
     ;;
 esac
 EOF
   chmod +x "${NAGIENT_BIN_DIR}/nagientctl"
+  cp "${NAGIENT_BIN_DIR}/nagientctl" "${NAGIENT_BIN_DIR}/nagient"
+  chmod +x "${NAGIENT_BIN_DIR}/nagient"
 }
 
 require_cmd docker
@@ -426,5 +463,7 @@ log_step "Starting Nagient container"
 run_compose_install_step up -d
 
 echo "Nagient ${version} installed into ${NAGIENT_HOME}"
-echo "Use ${NAGIENT_BIN_DIR}/nagient-update for future upgrades."
-echo "Shortcut control: ${NAGIENT_BIN_DIR}/nagientctl help"
+echo "Quick start: ${NAGIENT_BIN_DIR}/nagient status"
+echo "Config paths: ${NAGIENT_BIN_DIR}/nagient paths"
+echo "Updater: ${NAGIENT_BIN_DIR}/nagient update"
+echo "Optional PATH: export PATH=\"${NAGIENT_BIN_DIR}:\$PATH\""
