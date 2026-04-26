@@ -3,6 +3,7 @@ set -euo pipefail
 
 DEFAULT_CHANNEL="__NAGIENT_DEFAULT_CHANNEL__"
 DEFAULT_UPDATE_BASE_URL="__NAGIENT_UPDATE_BASE_URL__"
+UNRENDERED_UPDATE_BASE_URL_TOKEN="__NAGIENT_""UPDATE_BASE_URL__"
 
 NAGIENT_CHANNEL="${NAGIENT_CHANNEL:-$DEFAULT_CHANNEL}"
 NAGIENT_HOME="${NAGIENT_HOME:-$HOME/.nagient}"
@@ -17,8 +18,18 @@ NAGIENT_CREDENTIALS_DIR="${NAGIENT_HOME}/credentials"
 NAGIENT_RELEASES_DIR="${NAGIENT_HOME}/releases"
 NAGIENT_BIN_DIR="${NAGIENT_HOME}/bin"
 
+update_base_url_is_unrendered() {
+  case "$1" in
+    *"$UNRENDERED_UPDATE_BASE_URL_TOKEN"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 ensure_release_defaults() {
-  if [ "$NAGIENT_UPDATE_BASE_URL" = "__NAGIENT_UPDATE_BASE_URL__" ]; then
+  if [ -z "$NAGIENT_UPDATE_BASE_URL" ] || {
+    update_base_url_is_unrendered "$DEFAULT_UPDATE_BASE_URL" &&
+    update_base_url_is_unrendered "$NAGIENT_UPDATE_BASE_URL"
+  }; then
     echo "NAGIENT_UPDATE_BASE_URL is not configured." >&2
     echo "Use a rendered installer asset or export NAGIENT_UPDATE_BASE_URL/UPDATE_BASE_URL explicitly." >&2
     exit 1

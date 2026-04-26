@@ -3,6 +3,7 @@ $ErrorActionPreference = "Stop"
 
 $DefaultChannel = "__NAGIENT_DEFAULT_CHANNEL__"
 $DefaultUpdateBaseUrl = "__NAGIENT_UPDATE_BASE_URL__"
+$UnrenderedUpdateBaseUrlToken = "__NAGIENT_" + "UPDATE_BASE_URL__"
 
 $NagientHome = if ($env:NAGIENT_HOME) { $env:NAGIENT_HOME } else { Join-Path $HOME ".nagient" }
 $Channel = if ($env:NAGIENT_CHANNEL) { $env:NAGIENT_CHANNEL } else { $DefaultChannel }
@@ -19,7 +20,17 @@ $CurrentManifest = Join-Path $NagientHome "releases/current.json"
 
 New-Item -ItemType Directory -Force -Path (Join-Path $NagientHome "bin"), (Join-Path $NagientHome "releases") | Out-Null
 
-if ($UpdateBaseUrl -eq "__NAGIENT_UPDATE_BASE_URL__") {
+function Test-UnrenderedUpdateBaseUrl {
+  param([string]$Value)
+  return $Value -like "*$UnrenderedUpdateBaseUrlToken*"
+}
+
+if (
+  [string]::IsNullOrWhiteSpace($UpdateBaseUrl) -or (
+    (Test-UnrenderedUpdateBaseUrl $DefaultUpdateBaseUrl) -and
+    (Test-UnrenderedUpdateBaseUrl $UpdateBaseUrl)
+  )
+) {
   throw "NAGIENT_UPDATE_BASE_URL is not configured. Use a rendered updater asset or set NAGIENT_UPDATE_BASE_URL/UPDATE_BASE_URL explicitly."
 }
 
