@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -30,6 +31,8 @@ class ConfigurationService:
     provider_registry: Any | None = None
     tool_registry: Any | None = None
     provider_service: Any | None = None
+
+    _SECRET_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
     def initialize(self, force: bool = False) -> dict[str, object]:
         self.settings.ensure_directories()
@@ -132,6 +135,12 @@ class ConfigurationService:
             | {"plugin", "enabled"},
             updates=config_updates or {},
         )
+        self._validate_secret_reference_updates(
+            kind="provider",
+            component_id=provider_id,
+            secret_keys=set(manifest.secret_config),
+            updates=config_updates or {},
+        )
 
         profile["plugin"] = resolved_plugin_id
         if enabled is not None:
@@ -188,6 +197,12 @@ class ConfigurationService:
             | {"plugin", "enabled"},
             updates=config_updates or {},
         )
+        self._validate_secret_reference_updates(
+            kind="transport",
+            component_id=transport_id,
+            secret_keys=set(manifest.secret_config),
+            updates=config_updates or {},
+        )
 
         profile["plugin"] = resolved_plugin_id
         if enabled is not None:
@@ -232,6 +247,12 @@ class ConfigurationService:
             allowed_keys=set(manifest.required_config)
             | set(manifest.optional_config)
             | {"plugin", "enabled"},
+            updates=config_updates or {},
+        )
+        self._validate_secret_reference_updates(
+            kind="tool",
+            component_id=tool_id,
+            secret_keys=set(manifest.secret_config),
             updates=config_updates or {},
         )
 
@@ -358,3 +379,21 @@ class ConfigurationService:
                 f"{kind.capitalize()} {component_id!r} received unsupported config keys: "
                 + ", ".join(repr(key) for key in unknown_keys)
             )
+
+    def _validate_secret_reference_updates(
+        self,
+        *,
+        kind: str,
+        component_id: str,
+        secret_keys: set[str],
+        updates: dict[str, object],
+    ) -> None:
+        for key in sorted(secret_keys & set(updates)):
+            value = updates[key]
+            if not isinstance(value, str) or not self._SECRET_NAME_PATTERN.fullmatch(
+                value.strip()
+            ):
+                raise ValueError(
+                    f"{kind.capitalize()} {component_id!r} expects {key!r} to be a secret "
+                    "name like MY_SECRET, not a raw secret value."
+                )

@@ -9,9 +9,11 @@ import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import Mock, patch
 
 from nagient import cli
+from nagient.version import __version__ as nagient_version
 
 
 class _Serializable:
@@ -231,8 +233,10 @@ class CliTests(unittest.TestCase):
         ):
             status_text = cli._render_text(payload, view="status", verbose=False)
             doctor_text = cli._render_text(payload, view="doctor", verbose=False)
+            activation_payload = cast(dict[str, Any], payload["activation"])
+            providers = cast(list[dict[str, Any]], activation_payload["providers"])
             auth_text = cli._render_text(
-                {"provider": payload["activation"]["providers"][0], "issues": []},
+                {"provider": providers[0], "issues": []},
                 view="auth_status",
                 verbose=False,
             )
@@ -297,10 +301,12 @@ class CliTests(unittest.TestCase):
             published_at="2026-01-01T00:00:00Z",
             summary="Test release.",
         )
+        docker = cast(dict[str, Any], manifest["docker"])
+        artifacts = cast(list[dict[str, Any]], manifest["artifacts"])
 
         self.assertEqual(manifest["version"], "9.9.9")
-        self.assertEqual(manifest["docker"]["compose_url"], "https://updates.test/9.9.9/docker-compose.yml")
-        self.assertEqual(manifest["artifacts"][0]["name"], "install.sh")
+        self.assertEqual(docker["compose_url"], "https://updates.test/9.9.9/docker-compose.yml")
+        self.assertEqual(artifacts[0]["name"], "install.sh")
 
         self.assertEqual(cli._load_json_argument('{"ok": true}'), {"ok": True})
         with self.assertRaises(ValueError):
@@ -341,11 +347,11 @@ class CliTests(unittest.TestCase):
             releases_dir=Path("/tmp/nagient/releases"),
         )
         self.assertEqual(
-            cli._resolve_path_alias("@home/cache", settings),
+            cli._resolve_path_alias("@home/cache", cast(Any, settings)),
             "/tmp/nagient/cache",
         )
         self.assertEqual(
-            cli._render_path_value("/tmp/nagient/plugins/custom", settings),
+            cli._render_path_value("/tmp/nagient/plugins/custom", cast(Any, settings)),
             "@plugins/custom",
         )
 
@@ -363,6 +369,48 @@ class CliTests(unittest.TestCase):
         with patch("builtins.input", return_value="oops"):
             with self.assertRaises(ValueError):
                 cli._prompt_for_model_selection(models)
+
+    def test_run_generic_field_editor_stores_secret_values_for_secret_fields(self) -> None:
+        container = SimpleNamespace(
+            secret_broker=SimpleNamespace(
+                store_secret=Mock(),
+                bind_secret=Mock(),
+            ),
+            settings=SimpleNamespace(
+                secrets_file=Path("/tmp/nagient/secrets.env"),
+                tool_secrets_file=Path("/tmp/nagient/tool-secrets.env"),
+            ),
+        )
+        save_callback = Mock(return_value={"component": "transport", "transport_id": "telegram"})
+
+        with patch("builtins.input", side_effect=["1", "TELEGRAM_BOT_TOKEN", "0"]):
+            with patch("nagient.cli._read_secret_input", return_value="123:abc"):
+                stdout = io.StringIO()
+                with redirect_stdout(stdout):
+                    cli._run_generic_field_editor(
+                        title="Transport telegram fields:",
+                        current_config={"bot_token_secret": "BOT_TOKEN"},
+                        allowed_keys=["bot_token_secret"],
+                        save_callback=save_callback,
+                        container=container,
+                        secret_fields={"bot_token_secret"},
+                        secret_scope="core",
+                        target_kind="transport",
+                        target_id="telegram",
+                    )
+
+        save_callback.assert_called_once_with({"bot_token_secret": "TELEGRAM_BOT_TOKEN"})
+        container.secret_broker.store_secret.assert_called_once_with(
+            "TELEGRAM_BOT_TOKEN",
+            "123:abc",
+            scope="core",
+        )
+        container.secret_broker.bind_secret.assert_called_once_with(
+            "TELEGRAM_BOT_TOKEN",
+            target_kind="transport",
+            target_id="telegram",
+            scope_hint="core",
+        )
 
     def test_interactive_chat_session_exits_cleanly(self) -> None:
         container = SimpleNamespace(
@@ -613,7 +661,7 @@ class CliTests(unittest.TestCase):
 
         exit_code, output = _run_main(["version"], container=container)
         self.assertEqual(exit_code, 0)
-        self.assertIn(cli.__version__, output)
+        self.assertIn(nagient_version, output)
 
         exit_code, output = _run_main(["init", "--format", "json"], container=container)
         self.assertEqual(exit_code, 0)

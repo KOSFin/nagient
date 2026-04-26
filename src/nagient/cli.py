@@ -5,8 +5,9 @@ import getpass
 import json
 import os
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
+from typing import Any
 
 from nagient.app.configuration import (
     ProviderInstanceConfig,
@@ -747,11 +748,19 @@ def main(argv: list[str] | None = None) -> int:
 
 def _run_setup_wizard(container: AppContainer) -> int:
     while True:
+        colors = _supports_color()
         runtime_config = load_runtime_configuration(container.settings)
         default_provider = runtime_config.default_provider or "none"
         print("")
-        print("Nagient Setup")
-        print(f"Default provider: {default_provider}")
+        print(_heading("Nagient Setup", colors))
+        print(
+            "Default provider: "
+            + (
+                _paint(default_provider, "1;36", colors=colors)
+                if default_provider != "none"
+                else _paint(default_provider, "2", colors=colors)
+            )
+        )
         selection = _prompt_menu_choice(
             "Choose a setup area:",
             [
@@ -796,11 +805,16 @@ def _run_setup_wizard(container: AppContainer) -> int:
 
 def _run_provider_setup_menu(container: AppContainer) -> None:
     while True:
+        colors = _supports_color()
         runtime_config = load_runtime_configuration(container.settings)
         options = [
             (
                 provider.provider_id,
-                _describe_provider_profile(provider, runtime_config.default_provider),
+                _describe_provider_profile(
+                    provider,
+                    runtime_config.default_provider,
+                    colors=colors,
+                ),
             )
             for provider in runtime_config.providers
         ]
@@ -816,6 +830,7 @@ def _run_provider_setup_menu(container: AppContainer) -> None:
 
 def _run_provider_profile_menu(container: AppContainer, provider_id: str) -> None:
     while True:
+        colors = _supports_color()
         runtime_config = load_runtime_configuration(container.settings)
         provider = next(
             item for item in runtime_config.providers if item.provider_id == provider_id
@@ -839,20 +854,27 @@ def _run_provider_profile_menu(container: AppContainer, provider_id: str) -> Non
             (
                 "auth",
                 "Auth mode"
-                + _suffix_value(_as_text(config.get("auth", manifest.default_auth_mode))),
+                + _suffix_value(
+                    _as_text(config.get("auth", manifest.default_auth_mode)),
+                    colors=colors,
+                ),
             ),
-            ("model", "Model" + _suffix_value(_as_text(config.get("model")))),
+            ("model", "Model" + _suffix_value(_as_text(config.get("model")), colors=colors)),
         ]
         if "api_key_secret" in manifest.allowed_config:
             options.append(
                 (
                     "secret",
-                    "API key secret" + _suffix_value(_as_text(config.get("api_key_secret"))),
+                    "API key secret name"
+                    + _suffix_value(_as_text(config.get("api_key_secret")), colors=colors),
                 )
             )
         if "base_url" in manifest.allowed_config:
             options.append(
-                ("base_url", "Base URL" + _suffix_value(_as_text(config.get("base_url"))))
+                (
+                    "base_url",
+                    "Base URL" + _suffix_value(_as_text(config.get("base_url")), colors=colors),
+                )
             )
         options.extend(
             [
@@ -906,8 +928,16 @@ def _run_provider_profile_menu(container: AppContainer, provider_id: str) -> Non
             )
             continue
         if selection == "secret":
+            previous_secret_name = _as_text(config.get("api_key_secret"))
+            print(
+                _paint(
+                    "This field stores the secret name, not the raw API key.",
+                    "33",
+                    colors=colors,
+                )
+            )
             secret_name = _prompt_text(
-                "API key secret",
+                "API key secret name",
                 default=_as_text(config.get("api_key_secret")),
             )
             if secret_name is not None:
@@ -916,6 +946,14 @@ def _run_provider_profile_menu(container: AppContainer, provider_id: str) -> Non
                     config_updates={"api_key_secret": secret_name},
                 )
                 _emit(payload, "text")
+                if secret_name != previous_secret_name:
+                    _maybe_capture_secret_value(
+                        container,
+                        secret_name=secret_name,
+                        scope="core",
+                        target_kind="provider",
+                        target_id=provider_id,
+                    )
             continue
         if selection == "base_url":
             base_url = _prompt_text("Base URL", default=_as_text(config.get("base_url")))
@@ -939,6 +977,15 @@ def _run_provider_profile_menu(container: AppContainer, provider_id: str) -> Non
                     provider_id,
                     config_updates=updates,
                 ),
+                container=container,
+                secret_fields={
+                    key
+                    for key in manifest.secret_config
+                    if key not in {"api_key_secret"}
+                },
+                secret_scope="core",
+                target_kind="provider",
+                target_id=provider_id,
             )
             continue
         if selection == "login":
@@ -955,9 +1002,13 @@ def _run_provider_profile_menu(container: AppContainer, provider_id: str) -> Non
 
 def _run_transport_setup_menu(container: AppContainer) -> None:
     while True:
+        colors = _supports_color()
         runtime_config = load_runtime_configuration(container.settings)
         options = [
-            (transport.transport_id, _describe_transport_profile(transport))
+            (
+                transport.transport_id,
+                _describe_transport_profile(transport, colors=colors),
+            )
             for transport in runtime_config.transports
         ]
         selection = _prompt_menu_choice(
@@ -1007,13 +1058,22 @@ def _run_transport_profile_menu(container: AppContainer, transport_id: str) -> N
                     transport_id,
                     config_updates=updates,
                 ),
+                container=container,
+                secret_fields=set(plugin.manifest.secret_config),
+                secret_scope="core",
+                target_kind="transport",
+                target_id=transport_id,
             )
 
 
 def _run_tool_setup_menu(container: AppContainer) -> None:
     while True:
+        colors = _supports_color()
         runtime_config = load_runtime_configuration(container.settings)
-        options = [(tool.tool_id, _describe_tool_profile(tool)) for tool in runtime_config.tools]
+        options = [
+            (tool.tool_id, _describe_tool_profile(tool, colors=colors))
+            for tool in runtime_config.tools
+        ]
         selection = _prompt_menu_choice(
             "Choose a tool profile:",
             options,
@@ -1059,11 +1119,17 @@ def _run_tool_profile_menu(container: AppContainer, tool_id: str) -> None:
                     tool_id,
                     config_updates=updates,
                 ),
+                container=container,
+                secret_fields=set(),
+                secret_scope="tool",
+                target_kind="tool",
+                target_id=tool_id,
             )
 
 
 def _run_workspace_setup_menu(container: AppContainer) -> None:
     while True:
+        colors = _supports_color()
         runtime_config = load_runtime_configuration(container.settings)
         selection = _prompt_menu_choice(
             "Workspace settings:",
@@ -1075,10 +1141,14 @@ def _run_workspace_setup_menu(container: AppContainer) -> None:
                         _render_path_value(
                             str(runtime_config.workspace.root),
                             container.settings,
-                        )
+                        ),
+                        colors=colors,
                     ),
                 ),
-                ("mode", "Workspace mode" + _suffix_value(runtime_config.workspace.mode)),
+                (
+                    "mode",
+                    "Workspace mode" + _suffix_value(runtime_config.workspace.mode, colors=colors),
+                ),
             ],
             zero_label="Back",
         )
@@ -1141,13 +1211,18 @@ def _run_paths_setup_menu(container: AppContainer) -> None:
 
 def _run_auth_setup_menu(container: AppContainer) -> None:
     while True:
+        colors = _supports_color()
         runtime_config = load_runtime_configuration(container.settings)
         selection = _prompt_menu_choice(
             "Choose a provider for auth actions:",
             [
                 (
                     provider.provider_id,
-                    _describe_provider_profile(provider, runtime_config.default_provider),
+                    _describe_provider_profile(
+                        provider,
+                        runtime_config.default_provider,
+                        colors=colors,
+                    ),
                 )
                 for provider in runtime_config.providers
             ],
@@ -1207,17 +1282,29 @@ def _run_generic_field_editor(
     current_config: dict[str, object],
     allowed_keys: list[str],
     save_callback: Callable[[dict[str, object]], dict[str, object]],
+    container: Any | None = None,
+    secret_fields: set[str] | None = None,
+    secret_scope: str = "core",
+    target_kind: str = "",
+    target_id: str = "",
 ) -> None:
     if not allowed_keys:
         print("No extra config fields are available here.")
         return
+    normalized_secret_fields = set(secret_fields or ())
+    colors = _supports_color()
     while True:
         selection = _prompt_menu_choice(
             title,
             [
                 (
                     field_name,
-                    field_name + _suffix_value(_as_text(current_config.get(field_name))),
+                    (
+                        f"{field_name} (secret name)"
+                        if field_name in normalized_secret_fields
+                        else field_name
+                    )
+                    + _suffix_value(_as_text(current_config.get(field_name)), colors=colors),
                 )
                 for field_name in allowed_keys
             ],
@@ -1225,19 +1312,40 @@ def _run_generic_field_editor(
         )
         if selection is None:
             return
+        if selection in normalized_secret_fields:
+            print(
+                _paint(
+                    "This field stores the secret name, not the raw secret value.",
+                    "33",
+                    colors=colors,
+                )
+            )
+        previous_value = _as_text(current_config.get(selection))
         raw_value = _prompt_text(
-            selection,
-            default=_as_text(current_config.get(selection)),
+            f"{selection} (secret name)" if selection in normalized_secret_fields else selection,
+            default=previous_value,
         )
         if raw_value is None:
             continue
         payload = save_callback({selection: _coerce_cli_value(raw_value)})
         current_config[selection] = _coerce_cli_value(raw_value)
         _emit(payload, "text")
+        if (
+            container is not None
+            and selection in normalized_secret_fields
+            and raw_value != previous_value
+        ):
+            _maybe_capture_secret_value(
+                container,
+                secret_name=raw_value,
+                scope=secret_scope,
+                target_kind=target_kind,
+                target_id=target_id,
+            )
 
 
 def _run_chat_session(
-    container: AppContainer,
+    container: Any,
     *,
     provider_id: str | None,
     system_prompt: str | None,
@@ -1336,13 +1444,14 @@ def _prompt_menu_choice(
     *,
     zero_label: str,
 ) -> str | None:
+    colors = _supports_color()
     print("")
-    print(title)
+    print(_heading(title, colors))
     for index, (_value, label) in enumerate(options, start=1):
-        print(f"{index}) {label}")
-    print(f"0) {zero_label}")
+        print(f"{_paint(str(index), '1;36', colors=colors)}) {label}")
+    print(f"{_paint('0', '1;36', colors=colors)}) {_paint(zero_label, '2', colors=colors)}")
     try:
-        raw_choice = input(f"Choice [0-{len(options)}]: ").strip()
+        raw_choice = input(_paint(f"Choice [0-{len(options)}]: ", "1", colors=colors)).strip()
     except (EOFError, KeyboardInterrupt):
         print("")
         return None
@@ -1357,9 +1466,14 @@ def _prompt_menu_choice(
 
 
 def _prompt_text(prompt: str, *, default: str = "") -> str | None:
+    colors = _supports_color()
     suffix = f" [{default}]" if default else ""
     try:
-        raw_value = input(f"{prompt}{suffix}: ").strip()
+        raw_value = input(
+            _paint(prompt, "1", colors=colors)
+            + _paint(suffix, "2", colors=colors)
+            + ": "
+        ).strip()
     except (EOFError, KeyboardInterrupt):
         print("")
         return None
@@ -1371,32 +1485,44 @@ def _prompt_text(prompt: str, *, default: str = "") -> str | None:
 def _describe_provider_profile(
     provider: ProviderInstanceConfig,
     default_provider: str | None,
+    *,
+    colors: bool = False,
 ) -> str:
     label = provider.provider_id
     if default_provider == provider.provider_id:
-        label += " [default]"
+        label += " " + _paint("[default]", "1;36", colors=colors)
     label += " - "
-    label += "enabled" if provider.enabled else "disabled"
+    label += _format_status("enabled" if provider.enabled else "disabled", colors=colors)
     model = _as_text(provider.config.get("model"))
     if model:
-        label += f", model {model}"
+        label += f", model {_paint(model, '1', colors=colors)}"
     return label
 
 
-def _describe_transport_profile(transport: TransportInstanceConfig) -> str:
+def _describe_transport_profile(
+    transport: TransportInstanceConfig,
+    *,
+    colors: bool = False,
+) -> str:
     label = transport.transport_id + " - "
-    label += "enabled" if transport.enabled else "disabled"
+    label += _format_status("enabled" if transport.enabled else "disabled", colors=colors)
     return label
 
 
-def _describe_tool_profile(tool: ToolInstanceConfig) -> str:
+def _describe_tool_profile(
+    tool: ToolInstanceConfig,
+    *,
+    colors: bool = False,
+) -> str:
     label = tool.tool_id + " - "
-    label += "enabled" if tool.enabled else "disabled"
+    label += _format_status("enabled" if tool.enabled else "disabled", colors=colors)
     return label
 
 
-def _suffix_value(value: str) -> str:
-    return f" [{value}]" if value else ""
+def _suffix_value(value: str, *, colors: bool = False) -> str:
+    if not value:
+        return ""
+    return f" [{_paint(value, '1', colors=colors)}]"
 
 
 def _parse_assignment_pairs(raw_pairs: list[str]) -> dict[str, object]:
@@ -1448,23 +1574,29 @@ def _resolve_default_flag(default: bool, not_default: bool) -> bool | None:
     return None
 
 
-def _prompt_for_model_selection(models: list[object]) -> str | None:
+def _prompt_for_model_selection(models: Sequence[object]) -> str | None:
+    colors = _supports_color()
     normalized_models = [
         item for item in models if isinstance(item, dict) and item.get("model_id")
     ]
     if not normalized_models:
         return None
 
-    print("Available models:")
+    print(_heading("Available models", colors))
     for index, model in enumerate(normalized_models, start=1):
         model_id = str(model.get("model_id", "")).strip()
         display_name = str(model.get("display_name", model_id)).strip()
         label = display_name if display_name else model_id
-        print(f"{index}) {label} [{model_id}]")
-    print("0) Back")
+        print(
+            f"{_paint(str(index), '1;36', colors=colors)}) "
+            f"{label} {_paint(f'[{model_id}]', '2', colors=colors)}"
+        )
+    print(f"{_paint('0', '1;36', colors=colors)}) {_paint('Back', '2', colors=colors)}")
 
     try:
-        selection = input(f"Model [0-{len(normalized_models)}]: ").strip()
+        selection = input(
+            _paint(f"Model [0-{len(normalized_models)}]: ", "1", colors=colors)
+        ).strip()
     except EOFError:
         return None
     if not selection or selection == "0":
@@ -1587,31 +1719,83 @@ def _read_secret_input(prompt: str) -> str | None:
         return None
 
 
-def _render_text(payload: dict[str, object], *, view: str, verbose: bool) -> str:
+def _maybe_capture_secret_value(
+    container: Any,
+    *,
+    secret_name: str,
+    scope: str,
+    target_kind: str,
+    target_id: str,
+) -> None:
+    secret_broker = getattr(container, "secret_broker", None)
+    if secret_broker is None or not secret_name:
+        return
+
+    colors = _supports_color()
+    value = _read_secret_input(
+        f"Secret value for {secret_name} (leave empty to skip for now): "
+    )
+    if value is None:
+        return
+
+    if value:
+        secret_broker.store_secret(secret_name, value, scope=scope)
+    secret_broker.bind_secret(
+        secret_name,
+        target_kind=target_kind,
+        target_id=target_id,
+        scope_hint=scope,
+    )
+
+    secret_file = (
+        container.settings.secrets_file
+        if scope == "core"
+        else container.settings.tool_secrets_file
+    )
+    if value:
+        print(
+            _paint(
+                f"Stored secret {secret_name} in {secret_file}.",
+                "32",
+                colors=colors,
+            )
+        )
+    else:
+        print(
+            _paint(
+                f"Configured secret name {secret_name}. Add its value in {secret_file} later.",
+                "2",
+                colors=colors,
+            )
+        )
+
+
+def _render_text(payload: Mapping[str, object], *, view: str, verbose: bool) -> str:
+    payload_dict = dict(payload)
     if verbose:
         verbose_lines: list[str] = []
-        _append_lines(verbose_lines, payload)
+        _append_lines(verbose_lines, payload_dict)
         return "\n".join(verbose_lines)
 
     if view == "status":
-        return _render_status_summary(payload)
+        return _render_status_summary(payload_dict)
     if view == "doctor":
-        return _render_doctor_summary(payload)
+        return _render_doctor_summary(payload_dict)
     if view == "preflight":
-        return _render_activation_summary(payload, title="Nagient Preflight")
+        return _render_activation_summary(payload_dict, title="Nagient Preflight")
     if view == "reconcile":
-        return _render_activation_summary(payload, title="Nagient Reconcile")
+        return _render_activation_summary(payload_dict, title="Nagient Reconcile")
     if view == "auth_status":
-        return _render_auth_status(payload)
+        return _render_auth_status(payload_dict)
     if view == "update_check":
-        return _render_update_check(payload)
+        return _render_update_check(payload_dict)
     if view == "paths":
-        return _render_paths_summary(payload)
+        return _render_paths_summary(payload_dict)
     if view == "chat":
-        return _render_chat_summary(payload)
+        return _render_chat_summary(payload_dict)
 
     default_lines: list[str] = []
-    _append_lines(default_lines, payload)
+    _append_lines(default_lines, payload_dict)
     return "\n".join(default_lines)
 
 

@@ -4,18 +4,18 @@ Language: English | [Русский](commands.ru.md)
 
 ## 1. Shortcut commands (recommended)
 
-After installation, use `nagientctl` for day-to-day operations.
+After installation, use `nagient` for day-to-day operations.
 
 Linux/macOS:
 
 ```bash
-~/.nagient/bin/nagientctl help
+~/.nagient/bin/nagient help
 ```
 
 Windows:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagientctl.ps1" help
+powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagient.ps1" help
 ```
 
 ### 1.1 Runtime control commands

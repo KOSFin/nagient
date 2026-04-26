@@ -81,25 +81,25 @@ irm https://ngnt-in.ruka.me/install.ps1 | iex
 Команды:
 
 ```bash
-~/.nagient/bin/nagientctl preflight
-~/.nagient/bin/nagientctl reconcile
-~/.nagient/bin/nagientctl status
+~/.nagient/bin/nagient preflight
+~/.nagient/bin/nagient reconcile
+~/.nagient/bin/nagient status
 ```
 
-## Слишком длинный путь до `nagientctl`
+## Слишком длинный путь до `nagient`
 
 Создайте alias.
 
 Linux/macOS:
 
 ```bash
-alias ng='~/.nagient/bin/nagientctl'
+alias ng='~/.nagient/bin/nagient'
 ng status
 ```
 
 PowerShell:
 
 ```powershell
-Set-Alias ng "$HOME/.nagient/bin/nagientctl.ps1"
+Set-Alias ng "$HOME/.nagient/bin/nagient.ps1"
 ng status
 ```

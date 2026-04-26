@@ -33,9 +33,9 @@ Layout:
 5. Run:
 
 ```bash
-~/.nagient/bin/nagientctl preflight
-~/.nagient/bin/nagientctl reconcile
-~/.nagient/bin/nagientctl status
+~/.nagient/bin/nagient preflight
+~/.nagient/bin/nagient reconcile
+~/.nagient/bin/nagient status
 ```
 
 ## 3. Example `config.toml`

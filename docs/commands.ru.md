@@ -4,18 +4,18 @@
 
 ## 1. Короткие команды (рекомендуется)
 
-После установки используйте `nagientctl` для ежедневной эксплуатации.
+После установки используйте `nagient` для ежедневной эксплуатации.
 
 Linux/macOS:
 
 ```bash
-~/.nagient/bin/nagientctl help
+~/.nagient/bin/nagient help
 ```
 
 Windows:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagientctl.ps1" help
+powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagient.ps1" help
 ```
 
 ### 1.1 Команды управления runtime

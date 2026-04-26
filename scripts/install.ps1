@@ -81,7 +81,7 @@ function Write-Step {
 }
 
 function Write-NagientCtl {
-  $target = Join-Path $BinDir "nagientctl.ps1"
+  $target = Join-Path $BinDir "nagient.ps1"
   $launcher = @'
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
@@ -268,12 +268,12 @@ function Invoke-CliCommand {
       break
     }
     { $_ -in @("ps", "up", "start", "down", "stop", "restart", "logs", "log", "shell", "sh", "exec", "x", "remove", "uninstall", "config", "st", "cfg", "check", "fix") } {
-      & (Join-Path $NagientHome "bin/nagientctl.ps1") $Command @Rest
+      Invoke-ControlCommand -Command $Command -Rest $Rest
       break
     }
     "update" {
       if ($Rest.Count -eq 0) {
-        & (Join-Path $NagientHome "bin/nagientctl.ps1") update
+        Invoke-ControlCommand -Command "update" -Rest @()
         break
       }
       Assert-ComposeFiles
@@ -290,14 +290,12 @@ function Invoke-CliCommand {
 $Command = if ($args.Count -gt 0) { $args[0].ToLowerInvariant() } else { "help" }
 $Rest = if ($args.Count -gt 1) { $args[1..($args.Count - 1)] } else { @() }
 
-if ($ProgramName.ToLowerInvariant() -eq "nagient") {
-  Invoke-CliCommand -Command $Command -Rest $Rest
-} else {
-  Invoke-ControlCommand -Command $Command -Rest $Rest
-}
+Invoke-CliCommand -Command $Command -Rest $Rest
 '@
   $launcher | Set-Content -Path $target -Encoding utf8
-  $launcher | Set-Content -Path (Join-Path $BinDir "nagient.ps1") -Encoding utf8
+  if (Test-Path (Join-Path $BinDir "nagientctl.ps1")) {
+    Remove-Item -Force -Path (Join-Path $BinDir "nagientctl.ps1")
+  }
 }
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {

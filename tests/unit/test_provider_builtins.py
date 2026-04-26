@@ -6,7 +6,8 @@ import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from types import TracebackType
+from typing import Any, cast
 from unittest.mock import patch
 
 from nagient.providers.builtin import builtin_providers
@@ -23,7 +24,12 @@ class _FakeResponse:
     def __enter__(self) -> _FakeResponse:
         return self
 
-    def __exit__(self, exc_type, exc, tb) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
         del exc_type, exc, tb
         return None
 
@@ -34,10 +40,13 @@ def _response(payload: dict[str, Any]) -> _FakeResponse:
 
 class ProviderBuiltinsTests(unittest.TestCase):
     def test_openai_builtin_parses_model_listing(self) -> None:
-        plugin = next(
+        plugin = cast(
+            Any,
+            next(
             provider.implementation
             for provider in builtin_providers()
             if provider.manifest.plugin_id == "builtin.openai"
+            ),
         )
         plugin = replace(
             plugin,
@@ -58,10 +67,13 @@ class ProviderBuiltinsTests(unittest.TestCase):
         self.assertEqual(models[0].model_id, "gpt-4.1-mini")
 
     def test_gemini_builtin_parses_model_listing(self) -> None:
-        plugin = next(
+        plugin = cast(
+            Any,
+            next(
             provider.implementation
             for provider in builtin_providers()
             if provider.manifest.plugin_id == "builtin.gemini"
+            ),
         )
         plugin = replace(
             plugin,
@@ -82,10 +94,13 @@ class ProviderBuiltinsTests(unittest.TestCase):
         self.assertEqual(models[0].display_name, "Gemini 2.5 Pro")
 
     def test_openai_codex_builtin_reads_api_key_from_auth_cache(self) -> None:
-        plugin = next(
+        plugin = cast(
+            Any,
+            next(
             provider.implementation
             for provider in builtin_providers()
             if provider.manifest.plugin_id == "builtin.openai_codex"
+            ),
         )
         plugin = replace(
             plugin,
@@ -110,10 +125,13 @@ class ProviderBuiltinsTests(unittest.TestCase):
         self.assertEqual(models[0].model_id, "gpt-5-codex")
 
     def test_openai_codex_auth_status_accepts_env_auth_file_override(self) -> None:
-        plugin = next(
+        plugin = cast(
+            Any,
+            next(
             provider.implementation
             for provider in builtin_providers()
             if provider.manifest.plugin_id == "builtin.openai_codex"
+            ),
         )
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -135,10 +153,13 @@ class ProviderBuiltinsTests(unittest.TestCase):
         self.assertEqual(status.status, "ready")
 
     def test_openai_codex_begin_login_returns_oauth_authorization_url(self) -> None:
-        plugin = next(
+        plugin = cast(
+            Any,
+            next(
             provider.implementation
             for provider in builtin_providers()
             if provider.manifest.plugin_id == "builtin.openai_codex"
+            ),
         )
 
         session = plugin.begin_login(
@@ -157,13 +178,16 @@ class ProviderBuiltinsTests(unittest.TestCase):
         )
 
     def test_openai_codex_complete_login_exchanges_callback_url_for_tokens(self) -> None:
-        plugin = next(
+        plugin = cast(
+            Any,
+            next(
             provider.implementation
             for provider in builtin_providers()
             if provider.manifest.plugin_id == "builtin.openai_codex"
+            ),
         )
 
-        def opener(request, timeout=15):
+        def opener(request: Any, timeout: int = 15) -> _FakeResponse:
             del timeout
             self.assertEqual(request.method, "POST")
             self.assertIn("https://auth.openai.com/oauth/token", request.full_url)
@@ -176,7 +200,7 @@ class ProviderBuiltinsTests(unittest.TestCase):
                 }
             )
 
-        plugin = replace(plugin, http_client=JsonHttpClient(opener=opener))
+        plugin = replace(plugin, http_client=JsonHttpClient(opener=cast(Any, opener)))
         session = plugin.begin_login("openai-codex", {"auth": "oauth_browser"}, {}, None)
         state = session.metadata["state"]
 

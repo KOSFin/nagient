@@ -46,13 +46,13 @@ Invoke-Expression ((Invoke-WebRequest -UseBasicParsing -Uri "https://ngnt-in.ruk
 Linux/macOS:
 
 ```bash
-~/.nagient/bin/nagientctl update
+~/.nagient/bin/nagient update
 ```
 
 Windows:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagientctl.ps1" update
+powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagient.ps1" update
 ```
 
 ## 4. Remove
@@ -60,13 +60,13 @@ powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagientctl.ps1" upd
 Linux/macOS:
 
 ```bash
-~/.nagient/bin/nagientctl remove
+~/.nagient/bin/nagient remove
 ```
 
 Windows:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagientctl.ps1" remove
+powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagient.ps1" remove
 ```
 
 Full data cleanup:
@@ -74,14 +74,14 @@ Full data cleanup:
 Linux/macOS:
 
 ```bash
-NAGIENT_PURGE=true ~/.nagient/bin/nagientctl remove
+NAGIENT_PURGE=true ~/.nagient/bin/nagient remove
 ```
 
 Windows:
 
 ```powershell
 $env:NAGIENT_PURGE = "true"
-powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagientctl.ps1" remove
+powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagient.ps1" remove
 ```
 
 ## 5. Requirements

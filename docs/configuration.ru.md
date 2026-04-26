@@ -33,9 +33,9 @@
 5. Выполнить:
 
 ```bash
-~/.nagient/bin/nagientctl preflight
-~/.nagient/bin/nagientctl reconcile
-~/.nagient/bin/nagientctl status
+~/.nagient/bin/nagient preflight
+~/.nagient/bin/nagient reconcile
+~/.nagient/bin/nagient status
 ```
 
 ## 3. Пример `config.toml`

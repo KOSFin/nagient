@@ -167,7 +167,7 @@ install_shell_shims() {
 
   if [ "$SHELL_LINK_DIR" != "$NAGIENT_BIN_DIR" ]; then
     ln -sf "${NAGIENT_BIN_DIR}/nagient" "${SHELL_LINK_DIR}/nagient" || return 1
-    ln -sf "${NAGIENT_BIN_DIR}/nagientctl" "${SHELL_LINK_DIR}/nagientctl" || return 1
+    rm -f "${SHELL_LINK_DIR}/nagientctl" 2>/dev/null || true
   fi
 
   if path_has_dir "$SHELL_LINK_DIR"; then
@@ -240,7 +240,7 @@ PY
 }
 
 write_nagientctl() {
-  local target="${NAGIENT_HOME}/bin/nagientctl"
+  local target="${NAGIENT_HOME}/bin/nagient"
   cat >"$target" <<'NAGIENTCTL'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -268,7 +268,7 @@ Commands:
   status|st          Show compact runtime status
   doctor|cfg         Show detailed runtime diagnostics
   paths|config       Show local config and workspace paths
-  shell-install      Install nagient/nagientctl shims into a PATH directory
+  shell-install      Install the nagient shim into a PATH directory
   shellenv           Print PATH export for Nagient commands
   provider ...       Configure provider profiles without editing TOML manually
   ps                 Show raw docker compose status
@@ -378,12 +378,12 @@ shell_install() {
     echo "Nagient commands already live in ${link_dir}"
   else
     ln -sf "${NAGIENT_HOME}/bin/nagient" "${link_dir}/nagient"
-    ln -sf "${NAGIENT_HOME}/bin/nagientctl" "${link_dir}/nagientctl"
+    rm -f "${link_dir}/nagientctl" 2>/dev/null || true
     echo "Installed Nagient commands into ${link_dir}"
   fi
 
   if path_has_dir "$link_dir"; then
-    echo "Commands available: nagient, nagientctl"
+    echo "Command available: nagient"
   else
     echo "Add to PATH: export PATH=\"${link_dir}:\$PATH\""
   fi
@@ -1249,11 +1249,12 @@ run_cli_command() {
       fi
       ;;
     shell-install|link|shellenv|ps|up|start|down|stop|restart|logs|log|shell|sh|exec|x|remove|uninstall|config|st|cfg|check|fix)
-      exec "${NAGIENT_HOME}/bin/nagientctl" "$command_name" "$@"
+      run_control_command "$command_name" "$@"
       ;;
     update)
       if [ "$#" -eq 0 ]; then
-        exec "${NAGIENT_HOME}/bin/nagientctl" update
+        run_control_command update
+        return
       fi
       require_compose_files
       compose_exec nagient update "$@"
@@ -1265,15 +1266,10 @@ run_cli_command() {
   esac
 }
 
-if [ "$PROGRAM_NAME" = "nagient" ]; then
-  run_cli_command "$@"
-else
-  run_control_command "$@"
-fi
+run_cli_command "$@"
 NAGIENTCTL
   chmod +x "$target"
-  cp "$target" "${NAGIENT_HOME}/bin/nagient"
-  chmod +x "${NAGIENT_HOME}/bin/nagient"
+  rm -f "${NAGIENT_HOME}/bin/nagientctl" 2>/dev/null || true
 }
 
 run_compose_update_step() {

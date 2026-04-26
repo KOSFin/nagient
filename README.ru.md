@@ -40,7 +40,7 @@ docker pull docker.io/parampo/nagient:latest
 После установки используйте одну короткую команду управления:
 
 ```bash
-~/.nagient/bin/nagientctl help
+~/.nagient/bin/nagient help
 ```
 
 Подробная документация:
@@ -53,21 +53,21 @@ docker pull docker.io/parampo/nagient:latest
 Через короткую команду:
 
 ```bash
-~/.nagient/bin/nagientctl update
+~/.nagient/bin/nagient update
 ```
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagientctl.ps1" update
+powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagient.ps1" update
 ```
 
 Удаление:
 
 ```bash
-~/.nagient/bin/nagientctl remove
+~/.nagient/bin/nagient remove
 ```
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagientctl.ps1" remove
+powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagient.ps1" remove
 ```
 
 Чтобы удалить и контейнеры, и локальные файлы, перед удалением задайте `NAGIENT_PURGE=true`.
@@ -81,17 +81,17 @@ powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagientctl.ps1" rem
 5. Используйте короткие команды.
 
 ```bash
-~/.nagient/bin/nagientctl up
-~/.nagient/bin/nagientctl status
-~/.nagient/bin/nagientctl logs
+~/.nagient/bin/nagient up
+~/.nagient/bin/nagient status
+~/.nagient/bin/nagient logs
 ```
 
 ## Короткий набор команд
 
-- `nagientctl up|down|restart`
-- `nagientctl status|doctor|preflight|reconcile`
-- `nagientctl logs [service]`
-- `nagientctl update|remove`
+- `nagient up|down|restart`
+- `nagient status|doctor|preflight|reconcile`
+- `nagient logs [service]`
+- `nagient update|remove`
 
 ## Полный CLI-набор
 

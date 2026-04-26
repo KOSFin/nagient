@@ -217,7 +217,10 @@ class RenderReleaseAssetsTests(unittest.TestCase):
             self.assertIn("./logs:/opt/nagient/logs", compose_file)
             self.assertIn("./releases:/opt/nagient/releases", compose_file)
             self.assertIn("./.codex-host:/root/.codex:ro", compose_file)
-            self.assertIn("./config.toml:/opt/nagient/config.toml:ro", compose_file)
+            self.assertIn("./config.toml:/opt/nagient/config.toml", compose_file)
+            self.assertNotIn("./config.toml:/opt/nagient/config.toml:ro", compose_file)
+            self.assertIn("./secrets.env:/opt/nagient/secrets.env", compose_file)
+            self.assertNotIn("./secrets.env:/opt/nagient/secrets.env:ro", compose_file)
             self.assertIn(BASE_URL, install_script)
             self.assertNotIn("__NAGIENT_UPDATE_BASE_URL__", install_script)
             self.assertIn(DOCKER_IMAGE, compose_file)
@@ -257,8 +260,11 @@ class RenderReleaseAssetsTests(unittest.TestCase):
             self.assertIn("Nagient 9.9.9 installed", process.stdout)
             self.assertIn("[nagient] Resolving release channel metadata", process.stdout)
             self.assertIn("[nagient] Pulling Docker image", process.stdout)
+            self.assertNotIn("nagientctl", process.stdout)
             self.assertTrue((runtime_root / ".env").exists())
             self.assertTrue((runtime_root / "tool-secrets.env").exists())
+            self.assertTrue((runtime_root / "bin" / "nagient").exists())
+            self.assertFalse((runtime_root / "bin" / "nagientctl").exists())
             self.assertIn(
                 f"NAGIENT_UPDATE_BASE_URL={BASE_URL}",
                 (runtime_root / ".env").read_text(encoding="utf-8"),
@@ -272,13 +278,16 @@ class RenderReleaseAssetsTests(unittest.TestCase):
             fake_bin = Path(temp_dir) / "bin"
             home_dir = Path(temp_dir) / "home"
             runtime_root = home_dir / ".nagient"
+            bin_dir = runtime_root / "bin"
             releases_dir = runtime_root / "releases"
             _render_release_assets(output_dir)
             fixtures_dir.mkdir()
             fake_bin.mkdir()
+            bin_dir.mkdir(parents=True)
             releases_dir.mkdir(parents=True)
 
             (releases_dir / "current.json").write_text('{"version":"9.9.8"}\n', encoding="utf-8")
+            (bin_dir / "nagientctl").write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
 
             mapping_path = _write_release_fixture_map(output_dir, fixtures_dir)
             _write_mock_curl(fake_bin)
@@ -308,6 +317,8 @@ class RenderReleaseAssetsTests(unittest.TestCase):
                 '"version": "9.9.9"',
                 (releases_dir / "current.json").read_text(encoding="utf-8"),
             )
+            self.assertTrue((bin_dir / "nagient").exists())
+            self.assertFalse((bin_dir / "nagientctl").exists())
 
     def test_rendered_release_installer_reports_unavailable_docker_daemon(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

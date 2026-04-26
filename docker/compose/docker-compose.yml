@@ -32,9 +32,9 @@ services:
       - ./logs:/opt/nagient/logs
       - ./releases:/opt/nagient/releases
       - ./.codex-host:/root/.codex:ro
-      - ./config.toml:/opt/nagient/config.toml:ro
-      - ./secrets.env:/opt/nagient/secrets.env:ro
-      - ./tool-secrets.env:/opt/nagient/tool-secrets.env:ro
+      - ./config.toml:/opt/nagient/config.toml
+      - ./secrets.env:/opt/nagient/secrets.env
+      - ./tool-secrets.env:/opt/nagient/tool-secrets.env
       - ./plugins:/opt/nagient/plugins
       - ./tools:/opt/nagient/tools
       - ./providers:/opt/nagient/providers

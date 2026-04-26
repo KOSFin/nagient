@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any, cast
 
 from nagient.app.settings import Settings
 from nagient.application.services.provider_service import ProviderService
@@ -44,14 +45,16 @@ class ProviderServiceTests(unittest.TestCase):
             )
 
             payload = service.login("openai", api_key="sk-test")
+            provider_payload = cast(dict[str, Any], payload["provider"])
 
             self.assertEqual(payload["secret_name"], "OPENAI_API_KEY")
-            self.assertTrue(payload["provider"]["authenticated"])
+            self.assertTrue(provider_payload["authenticated"])
             secrets_text = settings.secrets_file.read_text(encoding="utf-8")
             self.assertIn("OPENAI_API_KEY=sk-test", secrets_text)
 
             logout_payload = service.logout("openai")
-            self.assertFalse(logout_payload["provider"]["authenticated"])
+            logout_provider = cast(dict[str, Any], logout_payload["provider"])
+            self.assertFalse(logout_provider["authenticated"])
             self.assertTrue(logout_payload["deleted_secret"])
 
     def test_stored_token_login_persists_credential_for_custom_provider(self) -> None:
@@ -96,9 +99,11 @@ class ProviderServiceTests(unittest.TestCase):
 
             payload = service.login("demo", token="demo-token")
             models_payload = service.list_models("demo")
+            provider_payload = cast(dict[str, Any], payload["provider"])
+            models = cast(list[dict[str, Any]], models_payload["models"])
 
-            self.assertTrue(payload["provider"]["authenticated"])
-            self.assertEqual(models_payload["models"][0]["model_id"], "custom-model")
+            self.assertTrue(provider_payload["authenticated"])
+            self.assertEqual(models[0]["model_id"], "custom-model")
 
     def test_chat_uses_default_provider_with_custom_plugin(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

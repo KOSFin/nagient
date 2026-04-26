@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from typing import cast
 
 from nagient.app.container import build_container
 from nagient.app.settings import Settings
@@ -51,9 +52,10 @@ class ToolServiceTests(unittest.TestCase):
             )
             self.assertEqual(delete_result.status, "approval_required")
             self.assertIsNotNone(delete_result.approval_request_id)
+            approval_request_id = cast(str, delete_result.approval_request_id)
 
             approval_result = container.workflow_service.resolve_approval(
-                delete_result.approval_request_id,
+                approval_request_id,
                 "approve",
             )
             self.assertEqual(approval_result.status, "approved")

@@ -10,16 +10,16 @@ Linux/macOS:
 curl -fsSL https://ngnt-in.ruka.me/install.sh | bash
 ~/.nagient/bin/nagient setup
 ~/.nagient/bin/nagient chat
-~/.nagient/bin/nagientctl up
-~/.nagient/bin/nagientctl status
+~/.nagient/bin/nagient up
+~/.nagient/bin/nagient status
 ```
 
 Windows PowerShell:
 
 ```powershell
 irm https://ngnt-in.ruka.me/install.ps1 | iex
-powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagientctl.ps1" up
-powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagientctl.ps1" status
+powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagient.ps1" up
+powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagient.ps1" status
 ```
 
 ## Навигация

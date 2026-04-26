@@ -81,25 +81,25 @@ Check:
 Commands:
 
 ```bash
-~/.nagient/bin/nagientctl preflight
-~/.nagient/bin/nagientctl reconcile
-~/.nagient/bin/nagientctl status
+~/.nagient/bin/nagient preflight
+~/.nagient/bin/nagient reconcile
+~/.nagient/bin/nagient status
 ```
 
-## Shortcut for long `nagientctl` path
+## Shortcut for long `nagient` path
 
 Define an alias.
 
 Linux/macOS:
 
 ```bash
-alias ng='~/.nagient/bin/nagientctl'
+alias ng='~/.nagient/bin/nagient'
 ng status
 ```
 
 PowerShell:
 
 ```powershell
-Set-Alias ng "$HOME/.nagient/bin/nagientctl.ps1"
+Set-Alias ng "$HOME/.nagient/bin/nagient.ps1"
 ng status
 ```

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import unittest
+from typing import Any, cast
 
 from nagient.infrastructure.manifests import (
     channel_to_dict,
@@ -32,10 +33,13 @@ class ManifestParsingTests(unittest.TestCase):
         )
         manifest = parse_release_manifest(payload)
         serialized = release_to_dict(manifest)
+        docker = cast(dict[str, Any], serialized["docker"])
+        artifacts = cast(list[dict[str, Any]], serialized["artifacts"])
+        migrations = cast(list[dict[str, Any]], serialized["migrations"])
         self.assertEqual(serialized["version"], "0.2.0")
-        self.assertEqual(serialized["docker"]["image"], "nagient:0.2.0")
-        self.assertEqual(len(serialized["artifacts"]), 7)
-        self.assertEqual(len(serialized["migrations"]), 2)
+        self.assertEqual(docker["image"], "nagient:0.2.0")
+        self.assertEqual(len(artifacts), 7)
+        self.assertEqual(len(migrations), 2)
 
 
 if __name__ == "__main__":

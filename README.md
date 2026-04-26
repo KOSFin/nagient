@@ -40,7 +40,7 @@ The installer creates a local runtime in `~/.nagient` and starts Nagient via Doc
 After installation, use one short control command instead of long Docker Compose commands:
 
 ```bash
-~/.nagient/bin/nagientctl help
+~/.nagient/bin/nagient help
 ```
 
 Detailed documentation:
@@ -53,21 +53,21 @@ Detailed documentation:
 Use the shortcut command:
 
 ```bash
-~/.nagient/bin/nagientctl update
+~/.nagient/bin/nagient update
 ```
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagientctl.ps1" update
+powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagient.ps1" update
 ```
 
 Remove installation:
 
 ```bash
-~/.nagient/bin/nagientctl remove
+~/.nagient/bin/nagient remove
 ```
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagientctl.ps1" remove
+powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagient.ps1" remove
 ```
 
 To remove all local runtime data, set `NAGIENT_PURGE=true` before running uninstall.
@@ -81,17 +81,17 @@ To remove all local runtime data, set `NAGIENT_PURGE=true` before running uninst
 5. Run short commands:
 
 ```bash
-~/.nagient/bin/nagientctl up
-~/.nagient/bin/nagientctl status
-~/.nagient/bin/nagientctl logs
+~/.nagient/bin/nagient up
+~/.nagient/bin/nagient status
+~/.nagient/bin/nagient logs
 ```
 
 ## Short Command Surface
 
-- `nagientctl up|down|restart`
-- `nagientctl status|doctor|preflight|reconcile`
-- `nagientctl logs [service]`
-- `nagientctl update|remove`
+- `nagient up|down|restart`
+- `nagient status|doctor|preflight|reconcile`
+- `nagient logs [service]`
+- `nagient update|remove`
 
 ## Full CLI Surface
 
