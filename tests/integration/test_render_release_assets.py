@@ -66,6 +66,29 @@ def _write_mock_docker(fake_bin: Path) -> None:
     mock_docker.chmod(0o755)
 
 
+def _isolated_script_env(
+    *,
+    home_dir: Path,
+    path_prefix: Path,
+    mapping_path: Path,
+) -> dict[str, str]:
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if key
+        not in {
+            "NAGIENT_CHANNEL",
+            "NAGIENT_HOME",
+            "NAGIENT_UPDATE_BASE_URL",
+            "UPDATE_BASE_URL",
+        }
+    }
+    env["HOME"] = str(home_dir)
+    env["NAGIENT_TEST_URL_MAP"] = str(mapping_path)
+    env["PATH"] = f"{path_prefix}{os.pathsep}{env['PATH']}"
+    return env
+
+
 def _write_release_fixture_map(output_dir: Path, fixtures_dir: Path) -> Path:
     channel_payload = fixtures_dir / "channel.json"
     manifest_payload = fixtures_dir / "manifest.json"
@@ -159,10 +182,11 @@ class RenderReleaseAssetsTests(unittest.TestCase):
             _write_mock_curl(fake_bin)
             _write_mock_docker(fake_bin)
 
-            env = os.environ.copy()
-            env["HOME"] = str(home_dir)
-            env["NAGIENT_TEST_URL_MAP"] = str(mapping_path)
-            env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+            env = _isolated_script_env(
+                home_dir=home_dir,
+                path_prefix=fake_bin,
+                mapping_path=mapping_path,
+            )
 
             process = subprocess.run(
                 ["bash", str(output_dir / "install.sh")],
@@ -201,10 +225,11 @@ class RenderReleaseAssetsTests(unittest.TestCase):
             _write_mock_curl(fake_bin)
             _write_mock_docker(fake_bin)
 
-            env = os.environ.copy()
-            env["HOME"] = str(home_dir)
-            env["NAGIENT_TEST_URL_MAP"] = str(mapping_path)
-            env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+            env = _isolated_script_env(
+                home_dir=home_dir,
+                path_prefix=fake_bin,
+                mapping_path=mapping_path,
+            )
 
             process = subprocess.run(
                 ["bash", str(output_dir / "update.sh")],

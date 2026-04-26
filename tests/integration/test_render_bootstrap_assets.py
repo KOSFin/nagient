@@ -31,6 +31,23 @@ def _write_mock_curl(fake_bin: Path) -> None:
     mock_curl.chmod(0o755)
 
 
+def _isolated_script_env(*, path_prefix: Path, mapping_path: Path) -> dict[str, str]:
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if key
+        not in {
+            "NAGIENT_CHANNEL",
+            "NAGIENT_HOME",
+            "NAGIENT_UPDATE_BASE_URL",
+            "UPDATE_BASE_URL",
+        }
+    }
+    env["NAGIENT_TEST_URL_MAP"] = str(mapping_path)
+    env["PATH"] = f"{path_prefix}{os.pathsep}{env['PATH']}"
+    return env
+
+
 class RenderBootstrapAssetsTests(unittest.TestCase):
     def test_renderer_replaces_bootstrap_tokens(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -94,9 +111,7 @@ class RenderBootstrapAssetsTests(unittest.TestCase):
             mapping_path.write_text(json.dumps(url_map), encoding="utf-8")
             _write_mock_curl(fake_bin)
 
-            env = os.environ.copy()
-            env["NAGIENT_TEST_URL_MAP"] = str(mapping_path)
-            env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+            env = _isolated_script_env(path_prefix=fake_bin, mapping_path=mapping_path)
 
             process = subprocess.run(
                 ["bash", str(output_dir / "install.sh")],
