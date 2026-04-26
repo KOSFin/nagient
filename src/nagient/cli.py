@@ -1184,7 +1184,10 @@ def _interactive_select_provider_model(
 ) -> None:
     try:
         models_payload = container.configuration_service.select_provider_model(provider_id)
-        selected_model = _prompt_for_model_selection(models_payload.get("models", []))
+        models = models_payload.get("models", [])
+        if not isinstance(models, list):
+            models = []
+        selected_model = _prompt_for_model_selection(models)
     except Exception:
         selected_model = None
     if selected_model is None:
