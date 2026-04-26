@@ -81,6 +81,21 @@ def _status_payload(update: dict[str, object]) -> dict[str, object]:
         "channel": "stable",
         "update_base_url": "https://updates.test",
         "safe_mode": True,
+        "runtime": {
+            "status": "running",
+            "heartbeat_updated_at": "2026-01-01T00:00:00Z",
+            "runtime_started_at": "2026-01-01T00:00:00Z",
+            "reported_activation_status": "degraded",
+            "activation_report_updated_at": "2026-01-01T00:00:00Z",
+            "latest_change_at": "2026-01-01T00:00:05Z",
+            "latest_change_path": "/opt/nagient/config.toml",
+            "needs_reconcile": True,
+            "needs_restart": True,
+            "notes": [
+                "Config changed after the last activation report. Run `nagient reconcile`.",
+                "Runtime is still using an older config snapshot. Restart it to apply changes.",
+            ],
+        },
         "paths": {
             "home": "/opt/nagient",
             "config": "/opt/nagient/config.toml",
@@ -261,12 +276,15 @@ class CliTests(unittest.TestCase):
         self.assertIn("Nagient Status", status_text)
         self.assertIn("Overview", status_text)
         self.assertIn("@config: /host/.nagient/config.toml", status_text)
+        self.assertIn("Runtime Apply", status_text)
+        self.assertIn("Restart required: yes", status_text)
         self.assertIn("Status: update available", status_text)
         self.assertIn("Next Steps", status_text)
-        self.assertIn("nagient auth login <provider_id>", status_text)
+        self.assertIn("nagient restart", status_text)
 
         self.assertIn("Nagient Doctor", doctor_text)
         self.assertIn("Runtime Files", doctor_text)
+        self.assertIn("Runtime Apply", doctor_text)
         self.assertIn("Default provider: openai", doctor_text)
         self.assertIn("Provider missing credentials.", doctor_text)
 
@@ -617,7 +635,10 @@ class CliTests(unittest.TestCase):
                     }
                 ),
             ),
-            status_service=SimpleNamespace(collect=Mock(return_value=status_payload)),
+            status_service=SimpleNamespace(
+                collect=Mock(return_value=status_payload),
+                runtime_state=Mock(return_value=cast(dict[str, Any], status_payload["runtime"])),
+            ),
             preflight_service=SimpleNamespace(
                 inspect=Mock(return_value=_Serializable(preflight_payload))
             ),

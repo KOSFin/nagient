@@ -1129,17 +1129,32 @@ class OpenAICodexProviderPlugin(BaseProviderPlugin):
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": message})
+        try:
+            payload = self.http_client.post_json(
+                self._chat_url(config),
+                {
+                    "model": model,
+                    "messages": messages,
+                    "stream": False,
+                },
+                headers={"Authorization": f"Bearer {bearer_token}"},
+                timeout=_timeout_seconds(config),
+            )
+            return _parse_openai_chat_message(payload, provider_id)
+        except ProviderHttpError as exc:
+            if not _should_retry_with_responses_api(exc):
+                raise
+
         payload = self.http_client.post_json(
-            self._chat_url(config),
+            self._responses_url(config),
             {
                 "model": model,
-                "messages": messages,
-                "stream": False,
+                "input": _responses_input(message, system_prompt),
             },
             headers={"Authorization": f"Bearer {bearer_token}"},
             timeout=_timeout_seconds(config),
         )
-        return _parse_openai_chat_message(payload, provider_id)
+        return _parse_openai_response_text(payload, provider_id)
 
     def refresh_credential(
         self,
@@ -1571,6 +1586,10 @@ class OpenAICodexProviderPlugin(BaseProviderPlugin):
         base_url = _string_config(config, "base_url") or self.default_base_url
         chat_path = _string_config(config, "chat_path") or "/chat/completions"
         return f"{base_url.rstrip('/')}{chat_path}"
+
+    def _responses_url(self, config: Mapping[str, object]) -> str:
+        base_url = _string_config(config, "base_url") or self.default_base_url
+        return f"{base_url.rstrip('/')}/responses"
 
     def _auth_file_path(self, config: Mapping[str, object]) -> Path:
         configured_auth_file = _string_config(config, "auth_file")
@@ -2318,6 +2337,68 @@ def _parse_openai_chat_message(payload: object, provider_id: str) -> str:
     raise ProviderHttpError(
         f"Provider {provider_id!r} returned a chat response without text."
     )
+
+
+def _parse_openai_response_text(payload: object, provider_id: str) -> str:
+    if not isinstance(payload, dict):
+        raise ProviderHttpError(
+            f"Provider {provider_id!r} returned an unexpected responses payload."
+        )
+    output_text = payload.get("output_text")
+    if isinstance(output_text, str) and output_text.strip():
+        return output_text.strip()
+
+    output = payload.get("output", [])
+    if not isinstance(output, list):
+        raise ProviderHttpError(
+            f"Provider {provider_id!r} returned an invalid responses payload."
+        )
+
+    text_parts: list[str] = []
+    for item in output:
+        if not isinstance(item, dict):
+            continue
+        content = item.get("content", [])
+        if not isinstance(content, list):
+            continue
+        for part in content:
+            if not isinstance(part, dict):
+                continue
+            if str(part.get("type", "")).strip() not in {"output_text", "text"}:
+                continue
+            text = str(part.get("text", "")).strip()
+            if text:
+                text_parts.append(text)
+
+    if text_parts:
+        return "\n".join(text_parts)
+
+    raise ProviderHttpError(
+        f"Provider {provider_id!r} returned a responses payload without text."
+    )
+
+
+def _responses_input(message: str, system_prompt: str | None) -> list[dict[str, object]]:
+    input_items: list[dict[str, object]] = []
+    if system_prompt:
+        input_items.append(
+            {
+                "role": "system",
+                "content": [{"type": "input_text", "text": system_prompt}],
+            }
+        )
+    input_items.append(
+        {
+            "role": "user",
+            "content": [{"type": "input_text", "text": message}],
+        }
+    )
+    return input_items
+
+
+def _should_retry_with_responses_api(exc: ProviderHttpError) -> bool:
+    message = str(exc).lower()
+    return "http 500" in message or "internal_error" in message
 
 
 def _parse_anthropic_message(payload: object, provider_id: str) -> str:

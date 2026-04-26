@@ -228,6 +228,13 @@ class PreflightService:
                 providers,
             )
         )
+        issues.extend(
+            self._evaluate_transport_provider_link(
+                runtime_config.default_provider,
+                transports,
+                providers,
+            )
+        )
 
         errors = [issue for issue in issues if issue.severity == "error"]
         warnings = [issue for issue in issues if issue.severity == "warning"]
@@ -258,6 +265,67 @@ class PreflightService:
             if issue.severity == "error":
                 notices.append(f"{issue.source}: {issue.message}")
         return notices
+
+    def _evaluate_transport_provider_link(
+        self,
+        default_provider: str | None,
+        transports: list[TransportState],
+        providers: list[ProviderState],
+    ) -> list[CheckIssue]:
+        enabled_transports = [transport for transport in transports if transport.enabled]
+        interactive_transports = [
+            transport for transport in enabled_transports if transport.transport_id != "console"
+        ]
+        if not interactive_transports:
+            return []
+
+        ready_providers = [
+            provider
+            for provider in providers
+            if provider.enabled
+            and provider.authenticated
+            and provider.status in {"ready", "degraded"}
+        ]
+        if ready_providers and default_provider:
+            default_state = next(
+                (provider for provider in providers if provider.provider_id == default_provider),
+                None,
+            )
+            if default_state is not None and default_state in ready_providers:
+                return []
+        elif ready_providers:
+            return [
+                CheckIssue(
+                    severity="warning",
+                    code="runtime.transport_provider_default_missing",
+                    message=(
+                        "Event transports are enabled, but the agent has no default provider "
+                        "selected yet."
+                    ),
+                    source="runtime",
+                    hint=(
+                        "Set [agent].default_provider before relying on Telegram, webhook, "
+                        "or other event-driven transports."
+                    ),
+                )
+            ]
+
+        transport_names = ", ".join(sorted(transport.transport_id for transport in interactive_transports))
+        return [
+            CheckIssue(
+                severity="error",
+                code="runtime.transport_provider_not_ready",
+                message=(
+                    f"Enabled transports ({transport_names}) can receive or deliver events, "
+                    "but no ready provider is available to generate replies."
+                ),
+                source="runtime",
+                hint=(
+                    "Authenticate a provider, set it as default if needed, then rerun "
+                    "`nagient reconcile`."
+                ),
+            )
+        ]
 
     def _evaluate_provider_runtime(
         self,

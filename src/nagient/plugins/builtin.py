@@ -282,6 +282,22 @@ class TelegramTransportPlugin(BaseTransportPlugin):
                     source=transport_id,
                 )
             )
+        if not default_chat_id:
+            issues.append(
+                CheckIssue(
+                    severity="warning",
+                    code="transport.telegram.default_chat_id_not_set",
+                    message=(
+                        f"Transport {transport_id!r} has no default_chat_id for proactive "
+                        "outbound notices."
+                    ),
+                    source=transport_id,
+                    hint=(
+                        "This is optional. Set default_chat_id only if Nagient must send "
+                        "Telegram messages without an inbound event that already carries chat_id."
+                    ),
+                )
+            )
         return issues
 
     def send_message(self, chat_id: str, text: str) -> dict[str, str]:

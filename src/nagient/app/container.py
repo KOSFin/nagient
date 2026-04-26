@@ -167,6 +167,7 @@ def build_container(settings: Settings | None = None) -> AppContainer:
         runtime_agent=RuntimeAgent(
             settings=resolved_settings,
             activation_runner=reconcile_service.reconcile,
+            plugin_registry=plugin_registry,
         ),
     )
 

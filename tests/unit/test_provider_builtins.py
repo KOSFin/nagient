@@ -11,7 +11,7 @@ from typing import Any, cast
 from unittest.mock import patch
 
 from nagient.providers.builtin import builtin_providers
-from nagient.providers.http import JsonHttpClient
+from nagient.providers.http import JsonHttpClient, ProviderHttpError
 
 
 class _FakeResponse:
@@ -339,6 +339,58 @@ class ProviderBuiltinsTests(unittest.TestCase):
         self.assertEqual(record.auth_mode, "device_code")
         self.assertEqual(record.data["access_token"], "device-access-token")
         self.assertEqual(record.data["refresh_token"], "device-refresh-token")
+
+    def test_openai_codex_chat_falls_back_to_responses_api(self) -> None:
+        plugin = cast(
+            Any,
+            next(
+                provider.implementation
+                for provider in builtin_providers()
+                if provider.manifest.plugin_id == "builtin.openai_codex"
+            ),
+        )
+
+        class _RetryingClient:
+            def __init__(self) -> None:
+                self.calls: list[str] = []
+
+            def post_json(
+                self,
+                url: str,
+                payload: dict[str, Any],
+                *,
+                headers: dict[str, str] | None = None,
+                timeout: float | None = None,
+            ) -> dict[str, Any]:
+                del headers, timeout
+                self.calls.append(url)
+                if url.endswith("/chat/completions"):
+                    raise ProviderHttpError(
+                        "HTTP 500 from https://api.openai.com/v1/chat/completions: internal_error"
+                    )
+                self.assertEqual(url, "https://api.openai.com/v1/responses")
+                self.assertEqual(payload["model"], "gpt-5-codex")
+                return {"output_text": "hello from responses"}
+
+            def assertEqual(self, left: object, right: object) -> None:
+                self_case.assertEqual(left, right)
+
+        self_case = self
+        plugin = replace(plugin, http_client=cast(Any, _RetryingClient()))
+
+        response = plugin.generate_message(
+            "openai-codex",
+            {
+                "auth": "api_key",
+                "api_key_secret": "CODEX_API_KEY",
+                "model": "gpt-5-codex",
+            },
+            {"CODEX_API_KEY": "sk-codex"},
+            None,
+            message="hello",
+        )
+
+        self.assertEqual(response, "hello from responses")
 
 
 if __name__ == "__main__":
