@@ -12,11 +12,16 @@ NAGIENT_COMPOSE_FILE="${NAGIENT_HOME}/docker-compose.yml"
 NAGIENT_ENV_FILE="${NAGIENT_HOME}/.env"
 NAGIENT_CONFIG_FILE="${NAGIENT_HOME}/config.toml"
 NAGIENT_SECRETS_FILE="${NAGIENT_HOME}/secrets.env"
+NAGIENT_TOOL_SECRETS_FILE="${NAGIENT_HOME}/tool-secrets.env"
 NAGIENT_PLUGINS_DIR="${NAGIENT_HOME}/plugins"
+NAGIENT_TOOLS_DIR="${NAGIENT_HOME}/tools"
 NAGIENT_PROVIDERS_DIR="${NAGIENT_HOME}/providers"
 NAGIENT_CREDENTIALS_DIR="${NAGIENT_HOME}/credentials"
+NAGIENT_STATE_DIR="${NAGIENT_HOME}/state"
+NAGIENT_LOG_DIR="${NAGIENT_HOME}/logs"
 NAGIENT_RELEASES_DIR="${NAGIENT_HOME}/releases"
 NAGIENT_BIN_DIR="${NAGIENT_HOME}/bin"
+NAGIENT_WORKSPACE_DIR="${NAGIENT_HOME}/workspace"
 
 update_base_url_is_unrendered() {
   case "$1" in
@@ -47,6 +52,10 @@ require_cmd() {
   fi
 }
 
+log_step() {
+  printf '[nagient] %s\n' "$1"
+}
+
 require_docker_runtime() {
   local compose_error=""
   local docker_error=""
@@ -72,11 +81,12 @@ require_docker_runtime() {
 }
 
 run_compose_install_step() {
+  local log_file
   local output=""
-  if ! output="$(docker compose -f "$NAGIENT_COMPOSE_FILE" --env-file "$NAGIENT_ENV_FILE" "$@" 2>&1)"; then
-    if [ -n "$output" ]; then
-      printf '%s\n' "$output" >&2
-    fi
+  log_file="$(mktemp)"
+  if ! docker compose -f "$NAGIENT_COMPOSE_FILE" --env-file "$NAGIENT_ENV_FILE" "$@" 2>&1 | tee "$log_file"; then
+    output="$(cat "$log_file")"
+    rm -f "$log_file"
     case "$output" in
       *"no matching manifest"*arm64*|*"no matching manifest"*linux/arm64*)
         echo "The published Docker image does not include an arm64 variant yet." >&2
@@ -86,10 +96,7 @@ run_compose_install_step() {
     esac
     exit 1
   fi
-
-  if [ -n "$output" ]; then
-    printf '%s\n' "$output"
-  fi
+  rm -f "$log_file"
 }
 
 python_cmd() {
@@ -280,14 +287,16 @@ EOF
 require_cmd docker
 require_docker_runtime
 ensure_release_defaults
-mkdir -p "$NAGIENT_HOME" "$NAGIENT_RELEASES_DIR" "$NAGIENT_BIN_DIR" "$NAGIENT_HOME/runtime" "$NAGIENT_PLUGINS_DIR" "$NAGIENT_PROVIDERS_DIR" "$NAGIENT_CREDENTIALS_DIR"
+mkdir -p "$NAGIENT_HOME" "$NAGIENT_RELEASES_DIR" "$NAGIENT_BIN_DIR" "$NAGIENT_PLUGINS_DIR" "$NAGIENT_TOOLS_DIR" "$NAGIENT_PROVIDERS_DIR" "$NAGIENT_CREDENTIALS_DIR" "$NAGIENT_STATE_DIR" "$NAGIENT_LOG_DIR" "$NAGIENT_WORKSPACE_DIR"
 
 channel_payload="$(mktemp)"
 manifest_payload="$(mktemp)"
 trap 'rm -f "$channel_payload" "$manifest_payload"' EXIT
 
+log_step "Resolving release channel metadata"
 fetch_url "${NAGIENT_UPDATE_BASE_URL%/}/channels/${NAGIENT_CHANNEL}.json" >"$channel_payload"
 manifest_url="$(json_field manifest_url "$channel_payload")"
+log_step "Downloading release manifest"
 fetch_url "$manifest_url" >"$manifest_payload"
 
 compose_url="$(json_field docker.compose_url "$manifest_payload")"
@@ -296,6 +305,7 @@ version="$(json_field version "$manifest_payload")"
 update_url="$(artifact_url update.sh "$manifest_payload")"
 uninstall_url="$(artifact_url uninstall.sh "$manifest_payload")"
 
+log_step "Writing runtime assets into ${NAGIENT_HOME}"
 download_artifact "$compose_url" "$NAGIENT_COMPOSE_FILE"
 download_artifact "$update_url" "${NAGIENT_BIN_DIR}/nagient-update"
 download_artifact "$uninstall_url" "${NAGIENT_BIN_DIR}/nagient-uninstall"
@@ -318,7 +328,9 @@ project_name = "nagient"
 
 [paths]
 secrets_file = "${NAGIENT_SECRETS_FILE}"
+tool_secrets_file = "${NAGIENT_TOOL_SECRETS_FILE}"
 plugins_dir = "${NAGIENT_PLUGINS_DIR}"
+tools_dir = "${NAGIENT_TOOLS_DIR}"
 providers_dir = "${NAGIENT_PROVIDERS_DIR}"
 credentials_dir = "${NAGIENT_CREDENTIALS_DIR}"
 
@@ -393,6 +405,12 @@ if [ ! -f "$NAGIENT_SECRETS_FILE" ]; then
 EOF
 fi
 
+if [ ! -f "$NAGIENT_TOOL_SECRETS_FILE" ]; then
+  cat >"$NAGIENT_TOOL_SECRETS_FILE" <<'EOF'
+# Add tool-scoped secrets here when needed.
+EOF
+fi
+
 cat >"$NAGIENT_ENV_FILE" <<EOF
 NAGIENT_IMAGE=${image}
 NAGIENT_CHANNEL=${NAGIENT_CHANNEL}
@@ -402,7 +420,9 @@ NAGIENT_DOCKER_PROJECT_NAME=nagient
 NAGIENT_SAFE_MODE=true
 EOF
 
+log_step "Pulling Docker image ${image}"
 run_compose_install_step pull
+log_step "Starting Nagient container"
 run_compose_install_step up -d
 
 echo "Nagient ${version} installed into ${NAGIENT_HOME}"

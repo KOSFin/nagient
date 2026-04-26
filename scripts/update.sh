@@ -15,6 +15,10 @@ CURRENT_MANIFEST="${NAGIENT_RELEASES_DIR}/current.json"
 
 mkdir -p "${NAGIENT_HOME}/bin" "${NAGIENT_RELEASES_DIR}"
 
+log_step() {
+  printf '[nagient] %s\n' "$1"
+}
+
 update_base_url_is_unrendered() {
   case "$1" in
     *"$UNRENDERED_UPDATE_BASE_URL_TOKEN"*) return 0 ;;
@@ -208,13 +212,34 @@ EOF
   chmod +x "$target"
 }
 
+run_compose_update_step() {
+  local log_file
+  local output=""
+  log_file="$(mktemp)"
+  if ! docker compose -f "$NAGIENT_COMPOSE_FILE" --env-file "$NAGIENT_ENV_FILE" "$@" 2>&1 | tee "$log_file"; then
+    output="$(cat "$log_file")"
+    rm -f "$log_file"
+    case "$output" in
+      *"no matching manifest"*arm64*|*"no matching manifest"*linux/arm64*)
+        echo "The published Docker image does not include an arm64 variant yet." >&2
+        echo "Temporary workaround on Apple Silicon:" >&2
+        echo "DOCKER_DEFAULT_PLATFORM=linux/amd64 ~/.nagient/bin/nagient-update" >&2
+        ;;
+    esac
+    exit 1
+  fi
+  rm -f "$log_file"
+}
+
 channel_payload="$(mktemp)"
 manifest_payload="$(mktemp)"
 trap 'rm -f "$channel_payload" "$manifest_payload"' EXIT
 
 current_version="$(json_field version "$CURRENT_MANIFEST")"
+log_step "Resolving update channel metadata"
 fetch_url "${NAGIENT_UPDATE_BASE_URL%/}/channels/${NAGIENT_CHANNEL}.json" >"$channel_payload"
 manifest_url="$(json_field manifest_url "$channel_payload")"
+log_step "Downloading target release manifest"
 fetch_url "$manifest_url" >"$manifest_payload"
 target_version="$(json_field version "$manifest_payload")"
 
@@ -227,6 +252,7 @@ compose_url="$(json_field docker.compose_url "$manifest_payload")"
 image="$(json_field docker.image "$manifest_payload")"
 update_url="$(artifact_url update.sh "$manifest_payload")"
 uninstall_url="$(artifact_url uninstall.sh "$manifest_payload")"
+log_step "Refreshing local runtime assets"
 fetch_url "$compose_url" >"$NAGIENT_COMPOSE_FILE"
 cp "$manifest_payload" "$CURRENT_MANIFEST"
 cp "$manifest_payload" "${NAGIENT_RELEASES_DIR}/${target_version}.json"
@@ -243,7 +269,9 @@ NAGIENT_CONTAINER_NAME=nagient
 NAGIENT_DOCKER_PROJECT_NAME=nagient
 EOF
 
-docker compose -f "$NAGIENT_COMPOSE_FILE" --env-file "$NAGIENT_ENV_FILE" pull
-docker compose -f "$NAGIENT_COMPOSE_FILE" --env-file "$NAGIENT_ENV_FILE" up -d
+log_step "Pulling Docker image ${image}"
+run_compose_update_step pull
+log_step "Restarting Nagient container"
+run_compose_update_step up -d
 
 echo "Nagient upgraded: ${current_version} -> ${target_version}"

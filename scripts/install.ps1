@@ -18,11 +18,16 @@ $ComposeFile = Join-Path $NagientHome "docker-compose.yml"
 $EnvFile = Join-Path $NagientHome ".env"
 $ConfigFile = Join-Path $NagientHome "config.toml"
 $SecretsFile = Join-Path $NagientHome "secrets.env"
+$ToolSecretsFile = Join-Path $NagientHome "tool-secrets.env"
 $PluginsDir = Join-Path $NagientHome "plugins"
+$ToolsDir = Join-Path $NagientHome "tools"
 $ProvidersDir = Join-Path $NagientHome "providers"
 $CredentialsDir = Join-Path $NagientHome "credentials"
+$StateDir = Join-Path $NagientHome "state"
+$LogDir = Join-Path $NagientHome "logs"
 $ReleasesDir = Join-Path $NagientHome "releases"
 $BinDir = Join-Path $NagientHome "bin"
+$WorkspaceDir = Join-Path $NagientHome "workspace"
 
 function Test-UnrenderedUpdateBaseUrl {
   param([string]$Value)
@@ -68,6 +73,11 @@ function Get-ArtifactUrl {
     throw "Artifact not found: $Name"
   }
   return $artifact.url
+}
+
+function Write-Step {
+  param([Parameter(Mandatory = $true)][string]$Message)
+  Write-Host "[nagient] $Message"
 }
 
 function Write-NagientCtl {
@@ -211,8 +221,12 @@ if ($LASTEXITCODE -ne 0) {
 function Invoke-ComposeInstallStep {
   param([Parameter(ValueFromRemainingArguments = $true)][string[]]$ComposeArgs)
 
-  $output = (& docker compose -f $ComposeFile --env-file $EnvFile @ComposeArgs 2>&1 | Out-String).Trim()
-  if ($LASTEXITCODE -ne 0) {
+  $logPath = New-TemporaryFile
+  & docker compose -f $ComposeFile --env-file $EnvFile @ComposeArgs 2>&1 | Tee-Object -FilePath $logPath | Out-Host
+  $exitCode = $LASTEXITCODE
+  $output = (Get-Content -Raw -Path $logPath).Trim()
+  Remove-Item -Force -Path $logPath
+  if ($exitCode -ne 0) {
     if (-not [string]::IsNullOrWhiteSpace($output)) {
       Write-Error $output
     }
@@ -221,18 +235,17 @@ function Invoke-ComposeInstallStep {
     }
     throw "Docker Compose failed."
   }
-  if (-not [string]::IsNullOrWhiteSpace($output)) {
-    Write-Host $output
-  }
 }
 
-New-Item -ItemType Directory -Force -Path $NagientHome, $ReleasesDir, $BinDir, $PluginsDir, $ProvidersDir, $CredentialsDir, (Join-Path $NagientHome "runtime") | Out-Null
+New-Item -ItemType Directory -Force -Path $NagientHome, $ReleasesDir, $BinDir, $PluginsDir, $ToolsDir, $ProvidersDir, $CredentialsDir, $StateDir, $LogDir, $WorkspaceDir | Out-Null
 
 $channelPayload = Join-Path ([System.IO.Path]::GetTempPath()) "nagient-channel.json"
 $manifestPayload = Join-Path ([System.IO.Path]::GetTempPath()) "nagient-manifest.json"
 
+Write-Step "Resolving release channel metadata"
 Invoke-WebRequest -UseBasicParsing -Uri "$($UpdateBaseUrl.TrimEnd('/'))/channels/$Channel.json" -OutFile $channelPayload
 $manifestUrl = Get-JsonField -Path $channelPayload -Field "manifest_url"
+Write-Step "Downloading release manifest"
 Invoke-WebRequest -UseBasicParsing -Uri $manifestUrl -OutFile $manifestPayload
 
 $composeUrl = Get-JsonField -Path $manifestPayload -Field "docker.compose_url"
@@ -241,6 +254,7 @@ $version = Get-JsonField -Path $manifestPayload -Field "version"
 $updateUrl = Get-ArtifactUrl -Path $manifestPayload -Name "update.ps1"
 $uninstallUrl = Get-ArtifactUrl -Path $manifestPayload -Name "uninstall.ps1"
 
+Write-Step "Writing runtime assets into $NagientHome"
 Invoke-WebRequest -UseBasicParsing -Uri $composeUrl -OutFile $ComposeFile
 Invoke-WebRequest -UseBasicParsing -Uri $updateUrl -OutFile (Join-Path $BinDir "nagient-update.ps1")
 Invoke-WebRequest -UseBasicParsing -Uri $uninstallUrl -OutFile (Join-Path $BinDir "nagient-uninstall.ps1")
@@ -263,7 +277,9 @@ project_name = "nagient"
 
 [paths]
 secrets_file = "$SecretsFile"
+tool_secrets_file = "$ToolSecretsFile"
 plugins_dir = "$PluginsDir"
+tools_dir = "$ToolsDir"
 providers_dir = "$ProvidersDir"
 credentials_dir = "$CredentialsDir"
 
@@ -338,6 +354,12 @@ if (-not (Test-Path $SecretsFile)) {
 "@ | Set-Content -Path $SecretsFile -Encoding utf8
 }
 
+if (-not (Test-Path $ToolSecretsFile)) {
+  @"
+# Add tool-scoped secrets here when needed.
+"@ | Set-Content -Path $ToolSecretsFile -Encoding utf8
+}
+
 @"
 NAGIENT_IMAGE=$image
 NAGIENT_CHANNEL=$Channel
@@ -347,7 +369,9 @@ NAGIENT_DOCKER_PROJECT_NAME=nagient
 NAGIENT_SAFE_MODE=true
 "@ | Set-Content -Path $EnvFile -Encoding utf8
 
+Write-Step "Pulling Docker image $image"
 Invoke-ComposeInstallStep pull
+Write-Step "Starting Nagient container"
 Invoke-ComposeInstallStep up -d
 
 Write-Host "Nagient $version installed into $NagientHome"

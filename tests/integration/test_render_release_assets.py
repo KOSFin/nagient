@@ -212,6 +212,11 @@ class RenderReleaseAssetsTests(unittest.TestCase):
             install_script = (output_dir / "install.sh").read_text(encoding="utf-8")
             compose_file = (output_dir / "docker-compose.yml").read_text(encoding="utf-8")
 
+            self.assertNotIn("./runtime:/var/lib/nagient", compose_file)
+            self.assertIn("./state:/opt/nagient/state", compose_file)
+            self.assertIn("./logs:/opt/nagient/logs", compose_file)
+            self.assertIn("./releases:/opt/nagient/releases", compose_file)
+            self.assertIn("./config.toml:/opt/nagient/config.toml:ro", compose_file)
             self.assertIn(BASE_URL, install_script)
             self.assertNotIn("__NAGIENT_UPDATE_BASE_URL__", install_script)
             self.assertIn(DOCKER_IMAGE, compose_file)
@@ -249,7 +254,10 @@ class RenderReleaseAssetsTests(unittest.TestCase):
 
             runtime_root = home_dir / ".nagient"
             self.assertIn("Nagient 9.9.9 installed", process.stdout)
+            self.assertIn("[nagient] Resolving release channel metadata", process.stdout)
+            self.assertIn("[nagient] Pulling Docker image", process.stdout)
             self.assertTrue((runtime_root / ".env").exists())
+            self.assertTrue((runtime_root / "tool-secrets.env").exists())
             self.assertIn(
                 f"NAGIENT_UPDATE_BASE_URL={BASE_URL}",
                 (runtime_root / ".env").read_text(encoding="utf-8"),

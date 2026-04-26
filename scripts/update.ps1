@@ -66,6 +66,11 @@ function Get-ArtifactUrl {
   return $artifact.url
 }
 
+function Write-Step {
+  param([Parameter(Mandatory = $true)][string]$Message)
+  Write-Host "[nagient] $Message"
+}
+
 function Write-NagientCtl {
   $target = Join-Path $NagientHome "bin/nagientctl.ps1"
   @'
@@ -190,6 +195,25 @@ switch ($Command) {
 '@ | Set-Content -Path $target -Encoding utf8
 }
 
+function Invoke-ComposeUpdateStep {
+  param([Parameter(ValueFromRemainingArguments = $true)][string[]]$ComposeArgs)
+
+  $logPath = New-TemporaryFile
+  & docker compose -f $ComposeFile --env-file $EnvFile @ComposeArgs 2>&1 | Tee-Object -FilePath $logPath | Out-Host
+  $exitCode = $LASTEXITCODE
+  $output = (Get-Content -Raw -Path $logPath).Trim()
+  Remove-Item -Force -Path $logPath
+  if ($exitCode -ne 0) {
+    if (-not [string]::IsNullOrWhiteSpace($output)) {
+      Write-Error $output
+    }
+    if ($output -like "*no matching manifest*" -and $output -like "*arm64*") {
+      throw "The published Docker image does not include an arm64 variant yet. Temporary workaround on Apple Silicon:`nDOCKER_DEFAULT_PLATFORM=linux/amd64 ~/.nagient/bin/nagient-update"
+    }
+    throw "Docker Compose failed."
+  }
+}
+
 if (-not (Test-Path $CurrentManifest)) {
   throw "Current release manifest is missing."
 }
@@ -198,8 +222,10 @@ $channelPayload = Join-Path ([System.IO.Path]::GetTempPath()) "nagient-channel.j
 $manifestPayload = Join-Path ([System.IO.Path]::GetTempPath()) "nagient-manifest.json"
 
 $currentVersion = Get-JsonField -Path $CurrentManifest -Field "version"
+Write-Step "Resolving update channel metadata"
 Invoke-WebRequest -UseBasicParsing -Uri "$($UpdateBaseUrl.TrimEnd('/'))/channels/$Channel.json" -OutFile $channelPayload
 $manifestUrl = Get-JsonField -Path $channelPayload -Field "manifest_url"
+Write-Step "Downloading target release manifest"
 Invoke-WebRequest -UseBasicParsing -Uri $manifestUrl -OutFile $manifestPayload
 
 $targetVersion = Get-JsonField -Path $manifestPayload -Field "version"
@@ -212,6 +238,7 @@ $composeUrl = Get-JsonField -Path $manifestPayload -Field "docker.compose_url"
 $image = Get-JsonField -Path $manifestPayload -Field "docker.image"
 $updateUrl = Get-ArtifactUrl -Path $manifestPayload -Name "update.ps1"
 $uninstallUrl = Get-ArtifactUrl -Path $manifestPayload -Name "uninstall.ps1"
+Write-Step "Refreshing local runtime assets"
 Invoke-WebRequest -UseBasicParsing -Uri $composeUrl -OutFile $ComposeFile
 Invoke-WebRequest -UseBasicParsing -Uri $updateUrl -OutFile (Join-Path $NagientHome "bin/nagient-update.ps1")
 Invoke-WebRequest -UseBasicParsing -Uri $uninstallUrl -OutFile (Join-Path $NagientHome "bin/nagient-uninstall.ps1")
@@ -226,7 +253,9 @@ NAGIENT_CONTAINER_NAME=nagient
 NAGIENT_DOCKER_PROJECT_NAME=nagient
 "@ | Set-Content -Path $EnvFile -Encoding utf8
 
-docker compose -f $ComposeFile --env-file $EnvFile pull
-docker compose -f $ComposeFile --env-file $EnvFile up -d
+Write-Step "Pulling Docker image $image"
+Invoke-ComposeUpdateStep pull
+Write-Step "Restarting Nagient container"
+Invoke-ComposeUpdateStep up -d
 
 Write-Host "Nagient upgraded: $currentVersion -> $targetVersion"
