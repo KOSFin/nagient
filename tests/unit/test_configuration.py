@@ -172,6 +172,36 @@ class ConfigurationTests(unittest.TestCase):
             self.assertEqual(runtime_config.providers[0].provider_id, "openai-codex")
             self.assertTrue(runtime_config.providers[0].enabled)
 
+    def test_single_enabled_provider_becomes_effective_default_when_agent_default_is_absent(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir)
+            config_file = home_dir / "config.toml"
+            config_file.write_text(
+                "\n".join(
+                    [
+                        "[providers.openai]",
+                        'plugin = "builtin.openai"',
+                        "enabled = true",
+                        'auth = "api_key"',
+                        'api_key_secret = "OPENAI_API_KEY"',
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            settings = Settings.from_env(
+                {
+                    "NAGIENT_HOME": str(home_dir),
+                    "NAGIENT_CONFIG": str(config_file),
+                }
+            )
+
+            runtime_config = load_runtime_configuration(settings)
+
+            self.assertEqual(runtime_config.default_provider, "openai")
+
 
 if __name__ == "__main__":
     unittest.main()

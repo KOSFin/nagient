@@ -22,6 +22,26 @@ class ConfigurationServiceTests(unittest.TestCase):
                     config_updates={"bot_token_secret": "123456:telegram-token"},
                 )
 
+    def test_first_enabled_provider_becomes_default_automatically(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir) / ".nagient"
+            settings = Settings.from_env({"NAGIENT_HOME": str(home_dir)})
+            container = build_container(settings)
+            container.configuration_service.initialize(force=True)
+
+            payload = container.configuration_service.configure_provider(
+                "openai",
+                enabled=True,
+                config_updates={
+                    "auth": "api_key",
+                    "api_key_secret": "OPENAI_API_KEY",
+                },
+            )
+
+            self.assertTrue(payload["default"])
+            config_text = settings.config_file.read_text(encoding="utf-8")
+            self.assertIn('default_provider = "openai"', config_text)
+
 
 if __name__ == "__main__":
     unittest.main()

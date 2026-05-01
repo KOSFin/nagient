@@ -30,6 +30,26 @@ class TransportBuiltinsTests(unittest.TestCase):
             any(issue.code == "transport.telegram.invalid_chat_id" for issue in issues)
         )
 
+    def test_telegram_healthcheck_reports_helper_only_limitation(self) -> None:
+        plugin = cast(
+            Any,
+            next(
+                transport.implementation
+                for transport in builtin_plugins()
+                if transport.manifest.plugin_id == "builtin.telegram"
+            ),
+        )
+
+        issues = plugin.healthcheck(
+            "telegram",
+            {"bot_token_secret": "TELEGRAM_BOT_TOKEN"},
+            {"TELEGRAM_BOT_TOKEN": "12345:test-token"},
+        )
+
+        self.assertTrue(
+            any(issue.code == "transport.telegram.helper_only_builtin" for issue in issues)
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -97,7 +97,7 @@ powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagient.ps1" remove
 
 - `nagient init`, `nagient paths`, `nagient preflight`, `nagient reconcile`, `nagient serve`
 - `nagient setup`, `nagient chat`
-- `nagient transport list|scaffold`
+- `nagient transport list|test|scaffold`
 - `nagient provider list|scaffold|models`
 - `nagient auth status|login|complete|logout`
 - `nagient tool list|scaffold|invoke`

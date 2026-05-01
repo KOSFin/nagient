@@ -77,7 +77,7 @@ _TRANSPORT_FIELD_HELP: dict[tuple[str, str], str] = {
     ): (
         "Optional fallback chat id used for outbound notices. For a direct chat, "
         "your Telegram user id usually works. The built-in Telegram transport is "
-        "outbound-only and does not poll for inbound messages yet."
+        "currently helper-only and does not send or poll live messages yet."
     ),
     (
         "webhook",
@@ -251,6 +251,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="List discovered transport plugins",
     )
     transport_list_parser.add_argument("--format", choices=("text", "json"), default="text")
+    transport_test_parser = transport_subparsers.add_parser(
+        "test",
+        help="Run validation and self-tests for configured transport profiles",
+    )
+    transport_test_parser.add_argument("transport_id", nargs="?")
+    transport_test_parser.add_argument("--format", choices=("text", "json"), default="text")
     transport_scaffold_parser = transport_subparsers.add_parser(
         "scaffold",
         help="Generate a custom transport plugin template",
@@ -594,6 +600,10 @@ def main(argv: list[str] | None = None) -> int:
             "issues": [issue.to_dict() for issue in discovery.issues],
         }
         return _emit(payload, args.format)
+
+    if args.command == "transport" and args.transport_command == "test":
+        payload = _transport_test_payload(container, args.transport_id)
+        return _emit(payload, args.format, view="transport_test")
 
     if args.command == "transport" and args.transport_command == "scaffold":
         output_dir = Path(args.output) if args.output else None
@@ -2148,6 +2158,87 @@ def _configuration_diagnostics(
     return diagnostics
 
 
+def _transport_test_payload(
+    container: AppContainer,
+    transport_id: str | None = None,
+) -> dict[str, object]:
+    runtime_config = load_runtime_configuration(container.settings)
+    discovery = container.plugin_registry.discover(container.settings.plugins_dir)
+    selected_transports = [
+        transport
+        for transport in runtime_config.transports
+        if transport_id is None or transport.transport_id == transport_id
+    ]
+    if transport_id and not selected_transports:
+        raise ValueError(f"Transport profile {transport_id!r} was not found.")
+
+    transport_payloads: list[dict[str, object]] = []
+    issues = [issue.to_dict() for issue in discovery.issues]
+    for transport in selected_transports:
+        plugin = discovery.plugins.get(transport.plugin_id)
+        if plugin is None:
+            issue = {
+                "severity": "error" if transport.enabled else "warning",
+                "code": "transport.plugin_not_found",
+                "message": (
+                    f"Transport {transport.transport_id!r} references unknown plugin "
+                    f"{transport.plugin_id!r}."
+                ),
+                "source": transport.transport_id,
+            }
+            state = {
+                "transport_id": transport.transport_id,
+                "plugin_id": transport.plugin_id,
+                "enabled": transport.enabled,
+                "status": "failed" if transport.enabled else "disabled",
+                "exposed_functions": [],
+                "issues": [issue],
+            }
+        else:
+            state = container.transport_manager.inspect_transport(
+                transport=transport,
+                plugin=plugin,
+                secrets=runtime_config.secrets,
+            ).to_dict()
+
+        transport_payloads.append(state)
+        issues.extend(_as_list(state.get("issues")))
+
+    status = _transport_test_status(transport_payloads, issues)
+    errors = [
+        issue for issue in issues if _as_text(_as_dict(issue).get("severity")) == "error"
+    ]
+    return {
+        "status": status,
+        "safe_mode": runtime_config.safe_mode,
+        "can_activate": not runtime_config.safe_mode or not errors,
+        "transports": transport_payloads,
+        "issues": issues,
+        "notices": [f"Transport test status: {status}."],
+    }
+
+
+def _transport_test_status(
+    transports: list[dict[str, object]],
+    issues: list[object],
+) -> str:
+    statuses = {_normalized_status(item.get("status")) for item in transports}
+    if statuses == {"disabled"}:
+        return "disabled"
+
+    if any(_as_text(_as_dict(issue).get("severity")) == "error" for issue in issues):
+        return "failed"
+    if any(_as_text(_as_dict(issue).get("severity")) == "warning" for issue in issues):
+        return "degraded"
+    if "failed" in statuses:
+        return "failed"
+    if "degraded" in statuses:
+        return "degraded"
+    if "ready" in statuses:
+        return "ready"
+    return "unknown"
+
+
 def _component_state_from_report(
     report: dict[str, object],
     component_kind: str,
@@ -2586,6 +2677,8 @@ def _render_text(payload: Mapping[str, object], *, view: str, verbose: bool) -> 
         return _render_paths_summary(payload_dict)
     if view == "chat":
         return _render_chat_summary(payload_dict)
+    if view == "transport_test":
+        return _render_transport_test(payload_dict)
     if view == "config_change":
         return _render_configuration_change(payload_dict)
 
@@ -3093,6 +3186,46 @@ def _render_activation_summary(payload: dict[str, object], *, title: str) -> str
         kind="tool",
         colors=colors,
         detailed=False,
+    )
+
+    notices = _as_list(payload.get("notices"))
+    if notices:
+        _append_section(lines, "Notices", colors)
+        for notice in notices:
+            _append_line(lines, _as_text(notice))
+
+    issues = _as_list(payload.get("issues"))
+    if issues:
+        _append_section(lines, "Issues", colors)
+        _append_issue_block(lines, issues, colors=colors)
+
+    return "\n".join(lines)
+
+
+def _render_transport_test(payload: dict[str, object]) -> str:
+    colors = _supports_color()
+    lines = [_heading("Nagient Transport Test", colors)]
+
+    _append_section(lines, "Overview", colors)
+    _append_key_value(lines, "Status", _format_status(payload.get("status"), colors=colors))
+    _append_key_value(
+        lines,
+        "Can activate",
+        "yes" if _as_bool(payload.get("can_activate")) else "no",
+    )
+    _append_key_value(
+        lines,
+        "Safe mode",
+        "on" if _as_bool(payload.get("safe_mode")) else "off",
+    )
+
+    _append_component_section(
+        lines,
+        "Transports",
+        _as_list(payload.get("transports")),
+        kind="transport",
+        colors=colors,
+        detailed=True,
     )
 
     notices = _as_list(payload.get("notices"))

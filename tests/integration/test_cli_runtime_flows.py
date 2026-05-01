@@ -163,6 +163,60 @@ class CliRuntimeFlowsTests(unittest.TestCase):
             self.assertEqual(heartbeat["runtime_status"], "ready")
             self.assertEqual(heartbeat["transports"][0]["plugin_id"], "builtin.console")
 
+    def test_transport_test_reports_builtin_telegram_helper_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir) / ".nagient"
+            env = {
+                **os.environ,
+                "PYTHONPATH": str(SRC_ROOT),
+                "NAGIENT_HOME": str(home_dir),
+            }
+            subprocess.run(
+                [sys.executable, "-m", "nagient", "init", "--format", "json"],
+                cwd=PROJECT_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            config_file = home_dir / "config.toml"
+            config_file.write_text(
+                config_file.read_text(encoding="utf-8").replace(
+                    "[transports.telegram]\nplugin = \"builtin.telegram\"\nenabled = false",
+                    "[transports.telegram]\nplugin = \"builtin.telegram\"\nenabled = true",
+                ),
+                encoding="utf-8",
+            )
+            (home_dir / "secrets.env").write_text(
+                "TELEGRAM_BOT_TOKEN=12345:test-token\n",
+                encoding="utf-8",
+            )
+
+            test_process = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "nagient",
+                    "transport",
+                    "test",
+                    "telegram",
+                    "--format",
+                    "json",
+                ],
+                cwd=PROJECT_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            test_payload = json.loads(test_process.stdout)
+
+            self.assertEqual(test_payload["status"], "degraded")
+            self.assertEqual(len(test_payload["transports"]), 1)
+            issue_codes = {issue["code"] for issue in test_payload["issues"]}
+            self.assertIn("transport.telegram.helper_only_builtin", issue_codes)
+
     def test_serve_once_stays_alive_enough_to_write_blocked_heartbeat(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             home_dir = Path(temp_dir) / ".nagient"
@@ -514,6 +568,51 @@ class CliRuntimeFlowsTests(unittest.TestCase):
             self.assertIn('path = "/hook"', config_text)
             self.assertIn("[workspace]", config_text)
             self.assertIn('root = "/tmp/project"', config_text)
+
+    def test_setup_provider_auto_selects_first_enabled_profile_as_default(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir) / ".nagient"
+            env = {
+                **os.environ,
+                "PYTHONPATH": str(SRC_ROOT),
+                "NAGIENT_HOME": str(home_dir),
+            }
+            subprocess.run(
+                [sys.executable, "-m", "nagient", "init", "--format", "json"],
+                cwd=PROJECT_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            provider_process = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "nagient",
+                    "setup",
+                    "provider",
+                    "openai",
+                    "--enable",
+                    "--auth",
+                    "api_key",
+                    "--secret-name",
+                    "OPENAI_API_KEY",
+                    "--format",
+                    "json",
+                ],
+                cwd=PROJECT_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            provider_payload = json.loads(provider_process.stdout)
+
+            self.assertTrue(provider_payload["default"])
+            config_text = (home_dir / "config.toml").read_text(encoding="utf-8")
+            self.assertIn('default_provider = "openai"', config_text)
 
 
 if __name__ == "__main__":

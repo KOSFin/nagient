@@ -194,6 +194,91 @@ class ProviderServiceTests(unittest.TestCase):
             self.assertEqual(payload["provider_id"], "demo")
             self.assertEqual(payload["message"], "demo:system:hello")
 
+    def test_chat_uses_single_enabled_provider_when_default_is_not_configured(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir)
+            providers_dir = home_dir / "providers" / "custom.chat"
+            providers_dir.mkdir(parents=True, exist_ok=True)
+            (providers_dir / "provider.toml").write_text(
+                "\n".join(
+                    [
+                        'type = "provider"',
+                        'id = "custom.chat"',
+                        'display_name = "Custom Chat"',
+                        'version = "0.1.0"',
+                        'family = "custom"',
+                        'entrypoint = "provider.py"',
+                        'supported_auth_modes = ["none"]',
+                        'default_auth_mode = "none"',
+                        'capabilities = ["chat"]',
+                        'required_config = []',
+                        'optional_config = ["model"]',
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            (providers_dir / "provider.py").write_text(
+                "\n".join(
+                    [
+                        "from nagient.providers.base import BaseProviderPlugin",
+                        "",
+                        "class CustomChatProvider(BaseProviderPlugin):",
+                        "    def generate_message(",
+                        "        self,",
+                        "        provider_id,",
+                        "        config,",
+                        "        secrets,",
+                        "        credential,",
+                        "        *,",
+                        "        message,",
+                        "        system_prompt=None,",
+                        "    ):",
+                        "        del secrets, credential",
+                        "        prefix = system_prompt or config.get('model', 'custom')",
+                        "        return f'{provider_id}:{prefix}:{message}'",
+                        "",
+                        "def build_plugin():",
+                        "    return CustomChatProvider()",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            config_file = home_dir / "config.toml"
+            config_file.write_text(
+                "\n".join(
+                    [
+                        "[providers.demo]",
+                        'plugin = "custom.chat"',
+                        "enabled = true",
+                        'auth = "none"',
+                        'model = "chatty"',
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            settings = Settings.from_env(
+                {
+                    "NAGIENT_HOME": str(home_dir),
+                    "NAGIENT_CONFIG": str(config_file),
+                    "NAGIENT_PROVIDERS_DIR": str(home_dir / "providers"),
+                }
+            )
+            service = ProviderService(
+                settings=settings,
+                provider_registry=ProviderPluginRegistry(),
+                provider_manager=ProviderManager(),
+                credential_store=FileCredentialStore(settings.credentials_dir),
+                auth_session_store=AuthSessionStore(settings.state_dir / "auth-sessions"),
+            )
+
+            payload = service.chat(message="hello", system_prompt="system")
+
+            self.assertEqual(payload["provider_id"], "demo")
+            self.assertEqual(payload["message"], "demo:system:hello")
+
 
 if __name__ == "__main__":
     unittest.main()

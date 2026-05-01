@@ -117,11 +117,12 @@ def load_runtime_configuration(
     providers = _parse_providers(raw_config)
     tools = _parse_tools(raw_config)
     workspace = _parse_workspace(raw_config, env)
+    default_provider = _resolve_default_provider(raw_config, providers)
 
     return RuntimeConfiguration(
         settings=settings,
         safe_mode=settings.safe_mode,
-        default_provider=_parse_default_provider(raw_config),
+        default_provider=default_provider,
         require_provider=_parse_require_provider(raw_config),
         workspace=workspace,
         transports=transports,
@@ -537,6 +538,27 @@ def _parse_default_provider(payload: dict[str, object]) -> str | None:
     if isinstance(default_provider, str) and default_provider.strip():
         return default_provider.strip()
     return None
+
+
+def _resolve_default_provider(
+    payload: dict[str, object],
+    providers: list[ProviderInstanceConfig],
+) -> str | None:
+    configured_default = _parse_default_provider(payload)
+    if configured_default is not None:
+        return configured_default
+    if _has_explicit_default_provider_setting(payload):
+        return None
+
+    enabled_providers = [provider.provider_id for provider in providers if provider.enabled]
+    if len(enabled_providers) == 1:
+        return enabled_providers[0]
+    return None
+
+
+def _has_explicit_default_provider_setting(payload: dict[str, object]) -> bool:
+    agent = payload.get("agent")
+    return isinstance(agent, dict) and "default_provider" in agent
 
 
 def _parse_require_provider(payload: dict[str, object]) -> bool:

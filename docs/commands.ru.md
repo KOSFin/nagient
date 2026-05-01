@@ -71,6 +71,7 @@ nagient <command> [subcommand] [options]
 ### 2.2 Transport
 
 - `nagient transport list [--format text|json]`
+- `nagient transport test [transport_id] [--format text|json]`
 - `nagient transport scaffold --plugin-id <id> [--output <dir>] [--force] [--format text|json]`
 
 ### 2.3 Provider

@@ -7,6 +7,7 @@ from typing import Any
 
 import nagient.providers.scaffold as provider_scaffold
 from nagient.app.configuration import (
+    _coerce_bool,
     _ensure_mapping,
     read_raw_config,
     render_credentials_readme,
@@ -156,6 +157,16 @@ class ConfigurationService:
         elif default is False and str(agent.get("default_provider", "")).strip() == provider_id:
             agent["default_provider"] = ""
             agent["require_provider"] = False
+        elif default is None and not str(agent.get("default_provider", "")).strip():
+            enabled_provider_ids = [
+                candidate_id
+                for candidate_id, candidate_profile in providers.items()
+                if isinstance(candidate_id, str)
+                and isinstance(candidate_profile, dict)
+                and _coerce_bool(candidate_profile.get("enabled", False))
+            ]
+            if len(enabled_provider_ids) == 1:
+                agent["default_provider"] = enabled_provider_ids[0]
 
         write_raw_config(self.settings.config_file, raw_config)
         return {

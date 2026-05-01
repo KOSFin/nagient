@@ -223,7 +223,10 @@ class RuntimeAgent:
                 continue
 
             transport_state = ready_by_id.get(transport.transport_id)
-            if transport_state is not None and transport_state.status != "ready":
+            if transport_state is not None and transport_state.status not in {
+                "ready",
+                "degraded",
+            }:
                 self._log(
                     log_path,
                     (
@@ -283,23 +286,22 @@ class RuntimeAgent:
             default_chat_id = str(transport.config.get("default_chat_id", "")).strip()
             if default_chat_id:
                 return (
-                    "Transport telegram loaded for outbound delivery helpers. "
-                    f"Default outbound chat is {default_chat_id}. "
-                    "The built-in transport does not poll Telegram on its own yet."
+                    "Transport telegram loaded in helper-only mode. "
+                    f"Default chat hint is {default_chat_id}, but the built-in plugin does "
+                    "not deliver or poll live Telegram messages yet."
                 )
             return (
-                "Transport telegram loaded for outbound delivery helpers. "
-                "No default_chat_id is set, so proactive Telegram notices need a chat id "
-                "from inbound context or manual config. The built-in transport does not poll "
-                "Telegram on its own yet."
+                "Transport telegram loaded in helper-only mode. "
+                "No default_chat_id is set, and the built-in plugin does not deliver or poll "
+                "live Telegram messages yet."
             )
         if transport.transport_id == "webhook":
             path = str(transport.config.get("path", "/events")).strip() or "/events"
             port = transport.config.get("listen_port", 8080)
             return (
-                "Transport webhook loaded with path "
-                f"{path} on port {port}. The built-in transport validates config but "
-                "does not open an HTTP listener on its own yet."
+                "Transport webhook loaded in helper-only mode with path "
+                f"{path} on port {port}. The built-in plugin does not open an HTTP listener "
+                "on its own yet."
             )
         if transport.transport_id == "console":
             return "Transport console loaded as the local fallback transport."

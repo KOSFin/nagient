@@ -206,6 +206,29 @@ class WebhookTransportPlugin(BaseTransportPlugin):
     def reply_json(self, payload: dict[str, object]) -> dict[str, object]:
         return {"content_type": "application/json", "payload": payload}
 
+    def healthcheck(
+        self,
+        transport_id: str,
+        config: Mapping[str, object],
+        secrets: Mapping[str, str],
+    ) -> list[CheckIssue]:
+        del config, secrets
+        return [
+            CheckIssue(
+                severity="warning",
+                code="transport.webhook.helper_only_builtin",
+                message=(
+                    f"Transport {transport_id!r} uses the built-in webhook helper, which "
+                    "does not open an HTTP listener on its own yet."
+                ),
+                source=transport_id,
+                hint=(
+                    "Use a custom webhook transport or an external bridge if you need live "
+                    "inbound webhook delivery."
+                ),
+            )
+        ]
+
 
 class TelegramTransportPlugin(BaseTransportPlugin):
     manifest = TransportPluginManifest(
@@ -334,6 +357,29 @@ class TelegramTransportPlugin(BaseTransportPlugin):
                 )
             ]
         return []
+
+    def healthcheck(
+        self,
+        transport_id: str,
+        config: Mapping[str, object],
+        secrets: Mapping[str, str],
+    ) -> list[CheckIssue]:
+        del config, secrets
+        return [
+            CheckIssue(
+                severity="warning",
+                code="transport.telegram.helper_only_builtin",
+                message=(
+                    f"Transport {transport_id!r} uses the built-in Telegram helper, which "
+                    "does not poll or deliver live Telegram messages yet."
+                ),
+                source=transport_id,
+                hint=(
+                    "Use CLI chat for local testing, or replace the helper with a custom "
+                    "Telegram transport if you need live bot replies."
+                ),
+            )
+        ]
 
     def answer_callback(self, callback_id: str, text: str) -> dict[str, str]:
         return {"status": "queued", "callback_id": callback_id, "text": text}
