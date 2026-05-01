@@ -53,6 +53,27 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Check if GitHub release already exists
+        id: release
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            try {
+              await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag: '${{ steps.meta.outputs.git_tag }}',
+              })
+              core.setOutput('exists', 'true')
+            } catch (error) {
+              if (error.status === 404) {
+                core.setOutput('exists', 'false')
+                return
+              }
+              throw error
+            }
+
       - name: Create and push tag
         if: steps.tag.outputs.exists == 'false'
         shell: bash
@@ -63,8 +84,8 @@ jobs:
           git tag -a "${{ steps.meta.outputs.git_tag }}" -m "Release ${{ steps.meta.outputs.git_tag }}"
           git push origin "${{ steps.meta.outputs.git_tag }}"
 
-      - name: Dispatch release workflow for created tag
-        if: steps.tag.outputs.exists == 'false'
+      - name: Dispatch release workflow when release is missing
+        if: steps.release.outputs.exists == 'false'
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -80,15 +101,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "${{ steps.tag.outputs.exists }}" == "true" ]]; then
+          if [[ "${{ steps.release.outputs.exists }}" == "true" ]]; then
             {
               echo "## Release dispatch skipped"
               echo
-              echo "Tag \`${{ steps.meta.outputs.git_tag }}\` already exists."
-              echo "Auto Tag only dispatches \`release.yml\` when a new version tag is created."
+              echo "GitHub release for \`${{ steps.meta.outputs.git_tag }}\` already exists."
               echo
               echo "To produce a new release, bump \`src/nagient/version.py\` and push to \`main\`."
               echo "If you need to rebuild the existing release manually, start \`Release\` from the Actions tab."
+            } >> "$GITHUB_STEP_SUMMARY"
+          elif [[ "${{ steps.tag.outputs.exists }}" == "true" ]]; then
+            {
+              echo "## Release redispatched"
+              echo
+              echo "Tag \`${{ steps.meta.outputs.git_tag }}\` already exists, but the GitHub release does not."
+              echo "Dispatched \`release.yml\` again for the existing tag."
             } >> "$GITHUB_STEP_SUMMARY"
           else
             {
