@@ -341,6 +341,37 @@ class CliTests(unittest.TestCase):
         )
         self.assertEqual(cli._coerce_cli_value("null"), None)
         self.assertEqual(cli._coerce_cli_value("plain-text"), "plain-text")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir)
+            codex_dir = home_dir / ".codex"
+            codex_dir.mkdir()
+            (codex_dir / "config.toml").write_text(
+                "\n".join(
+                    [
+                        'model_provider = "nekocode"',
+                        'model = "gpt-5.4"',
+                        'model_reasoning_effort = "xhigh"',
+                        "",
+                        "[model_providers.nekocode]",
+                        'name = "nekocode"',
+                        'base_url = "https://ru.gateway.nekocode.app/andromeda/v1"',
+                        'wire_api = "responses"',
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            (codex_dir / "auth.json").write_text('{"OPENAI_API_KEY":"sk-test"}', encoding="utf-8")
+            with patch("nagient.cli.Path.home", return_value=home_dir):
+                updates, notes = cli._codex_host_provider_updates(include_auth_file=True)
+            self.assertEqual(updates["model"], "gpt-5.4")
+            self.assertEqual(updates["reasoning_effort"], "xhigh")
+            self.assertEqual(
+                updates["base_url"],
+                "https://ru.gateway.nekocode.app/andromeda/v1",
+            )
+            self.assertEqual(updates["wire_api"], "responses")
+            self.assertEqual(updates["auth_file"], "/root/.codex/auth.json")
+            self.assertTrue(notes)
         self.assertTrue(cli._resolve_enablement(True, False))
         self.assertFalse(cli._resolve_enablement(False, True))
         self.assertIsNone(cli._resolve_enablement(False, False))

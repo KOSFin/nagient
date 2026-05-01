@@ -273,12 +273,15 @@ class TelegramTransportPlugin(BaseTransportPlugin):
                 )
             )
         default_chat_id = config.get("default_chat_id", "")
-        if default_chat_id and not isinstance(default_chat_id, str):
+        if default_chat_id and not isinstance(default_chat_id, (str, int)):
             issues.append(
                 CheckIssue(
                     severity="error",
                     code="transport.telegram.invalid_chat_id",
-                    message=f"Transport {transport_id!r} must use a string default_chat_id.",
+                    message=(
+                        f"Transport {transport_id!r} must use a string or integer "
+                        "default_chat_id."
+                    ),
                     source=transport_id,
                 )
             )

@@ -7,6 +7,7 @@ import os
 import re
 import sys
 import time
+import tomllib
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -39,6 +40,20 @@ _PROVIDER_FIELD_HELP: dict[tuple[str, str], str] = {
         "openai-codex",
         "auth_file",
     ): "Path to an existing Codex auth cache that Nagient can reuse inside the runtime.",
+    (
+        "openai-codex",
+        "wire_api",
+    ): (
+        "Choose which upstream API surface to use for chat requests. "
+        "Use responses for Codex-style gateways such as nekocode."
+    ),
+    (
+        "openai-codex",
+        "reasoning_effort",
+    ): (
+        "Optional reasoning level for Responses API requests, for example "
+        "low, medium, high, or xhigh."
+    ),
     ("openai", "api_key_secret"): "Secret name for the OpenAI API key used by this profile.",
     (
         "openai",
@@ -60,8 +75,9 @@ _TRANSPORT_FIELD_HELP: dict[tuple[str, str], str] = {
         "telegram",
         "default_chat_id",
     ): (
-        "Optional fallback chat id used for outbound notices when there is no "
-        "inbound Telegram event to supply chat_id automatically."
+        "Optional fallback chat id used for outbound notices. For a direct chat, "
+        "your Telegram user id usually works. The built-in Telegram transport is "
+        "outbound-only and does not poll for inbound messages yet."
     ),
     (
         "webhook",
@@ -933,7 +949,7 @@ def _run_provider_profile_menu(container: AppContainer, provider_id: str) -> Non
             ("model", "Choose model"),
             ("connection", "Connection and auth"),
             ("advanced", "Advanced provider fields"),
-            ("verify", "Verify provider readiness"),
+            ("verify", "Test provider connection"),
         ]
 
         selection = _prompt_menu_choice(
@@ -1350,6 +1366,8 @@ def _run_provider_connection_menu(
                     "Auth file" + _suffix_value(_as_text(config.get("auth_file")), colors=colors),
                 )
             )
+        if provider_id == "openai-codex":
+            options.append(("import_codex", "Import host Codex config"))
 
         selection = _prompt_menu_choice(
             f"Provider {provider_id} connection:",
@@ -1437,6 +1455,30 @@ def _run_provider_connection_menu(
                 _emit_configuration_result(container, payload, "text")
                 config["auth_file"] = auth_file
             continue
+        if selection == "import_codex":
+            imported_updates, notes = _codex_host_provider_updates(include_auth_file=True)
+            if not imported_updates:
+                if notes:
+                    for note in notes:
+                        print(_paint(note, "33", colors=colors))
+                else:
+                    print(
+                        _paint(
+                            "No host Codex settings were found to import.",
+                            "33",
+                            colors=colors,
+                        )
+                    )
+                continue
+            payload = container.configuration_service.configure_provider(
+                provider_id,
+                config_updates=imported_updates,
+            )
+            _emit_configuration_result(container, payload, "text")
+            config.update(imported_updates)
+            for note in notes:
+                print(_paint(note, "2", colors=colors))
+            continue
         if selection == "login":
             _run_provider_login_flow(container, provider_id)
             continue
@@ -1513,8 +1555,11 @@ def _run_provider_quick_connect(container: AppContainer, provider_id: str) -> No
         return
 
     updates: dict[str, object] = {"auth": selection}
+    import_notes: list[str] = []
     if selection == "codex_auth_file":
-        updates["auth_file"] = "/root/.codex/auth.json"
+        imported_updates, import_notes = _codex_host_provider_updates(include_auth_file=True)
+        updates.update(imported_updates)
+        updates.setdefault("auth_file", "/root/.codex/auth.json")
     if selection == "api_key" and "api_key_secret" not in provider.config:
         if provider_id == "openai-codex":
             updates["api_key_secret"] = "CODEX_API_KEY"
@@ -1540,6 +1585,8 @@ def _run_provider_quick_connect(container: AppContainer, provider_id: str) -> No
                 colors=colors,
             )
         )
+        for note in import_notes:
+            print(_paint(note, "2", colors=colors))
 
     _run_provider_login_flow(container, provider_id)
 
@@ -1719,6 +1766,130 @@ def _suggest_secret_name(
 
     raw_label = f"{target_kind}_{target_id}_{field_name}"
     return re.sub(r"[^A-Za-z0-9]+", "_", raw_label).strip("_").upper()
+
+
+def _codex_host_provider_updates(
+    *,
+    include_auth_file: bool,
+    home_dir: Path | None = None,
+) -> tuple[dict[str, object], list[str]]:
+    updates: dict[str, object] = {}
+    notes: list[str] = []
+    resolved_home = home_dir or Path.home()
+
+    config_path = next(
+        (
+            candidate
+            for candidate in _codex_host_config_candidates(resolved_home)
+            if candidate.exists()
+        ),
+        None,
+    )
+    if config_path is not None:
+        try:
+            payload = tomllib.loads(config_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            notes.append(f"Could not read Codex config from {config_path}: {exc}")
+        else:
+            imported_fields = _apply_codex_host_config_updates(payload, updates)
+            if imported_fields:
+                notes.append(
+                    "Imported "
+                    + ", ".join(imported_fields)
+                    + f" from {config_path}."
+                )
+
+    auth_path = next(
+        (
+            candidate
+            for candidate in _codex_host_auth_candidates(resolved_home)
+            if candidate.exists()
+        ),
+        None,
+    )
+    if include_auth_file and auth_path is not None:
+        updates["auth_file"] = "/root/.codex/auth.json"
+        notes.append(f"Found reusable Codex auth cache at {auth_path}.")
+
+    if not updates and not notes:
+        notes.append("No host Codex config or auth cache was found under ~/.codex or ~/.openai.")
+    return updates, notes
+
+
+def _codex_host_config_candidates(home_dir: Path) -> list[Path]:
+    return _unique_paths(
+        [
+            _home_override_path("CODEX_HOME", "config.toml"),
+            _home_override_path("OPENAI_HOME", "config.toml"),
+            home_dir / ".codex" / "config.toml",
+            home_dir / ".openai" / "config.toml",
+        ]
+    )
+
+
+def _codex_host_auth_candidates(home_dir: Path) -> list[Path]:
+    return _unique_paths(
+        [
+            _home_override_path("CODEX_HOME", "auth.json"),
+            _home_override_path("OPENAI_HOME", "auth.json"),
+            home_dir / ".codex" / "auth.json",
+            home_dir / ".openai" / "auth.json",
+        ]
+    )
+
+
+def _home_override_path(env_name: str, filename: str) -> Path | None:
+    raw_value = os.environ.get(env_name, "").strip()
+    if not raw_value:
+        return None
+    return Path(raw_value).expanduser() / filename
+
+
+def _unique_paths(candidates: list[Path | None]) -> list[Path]:
+    unique: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in candidates:
+        if candidate is None:
+            continue
+        if candidate in seen:
+            continue
+        unique.append(candidate)
+        seen.add(candidate)
+    return unique
+
+
+def _apply_codex_host_config_updates(
+    payload: object,
+    updates: dict[str, object],
+) -> list[str]:
+    if not isinstance(payload, dict):
+        return []
+
+    imported_fields: list[str] = []
+    model = _as_text(payload.get("model"))
+    if model:
+        updates["model"] = model
+        imported_fields.append("model")
+
+    reasoning_effort = _as_text(payload.get("model_reasoning_effort"))
+    if reasoning_effort:
+        updates["reasoning_effort"] = reasoning_effort
+        imported_fields.append("reasoning_effort")
+
+    provider_name = _as_text(payload.get("model_provider"))
+    provider_table = _as_dict(payload.get("model_providers")).get(provider_name)
+    provider_payload = _as_dict(provider_table)
+    base_url = _as_text(provider_payload.get("base_url"))
+    if base_url:
+        updates["base_url"] = base_url
+        imported_fields.append("base_url")
+
+    wire_api = _as_text(provider_payload.get("wire_api"))
+    if wire_api:
+        updates["wire_api"] = wire_api
+        imported_fields.append("wire_api")
+
+    return imported_fields
 
 
 def _run_generic_field_editor(

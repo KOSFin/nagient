@@ -392,6 +392,58 @@ class ProviderBuiltinsTests(unittest.TestCase):
 
         self.assertEqual(response, "hello from responses")
 
+    def test_openai_codex_chat_respects_configured_responses_wire_api(self) -> None:
+        plugin = cast(
+            Any,
+            next(
+                provider.implementation
+                for provider in builtin_providers()
+                if provider.manifest.plugin_id == "builtin.openai_codex"
+            ),
+        )
+
+        class _ResponsesOnlyClient:
+            def __init__(self) -> None:
+                self.calls: list[str] = []
+
+            def post_json(
+                self,
+                url: str,
+                payload: dict[str, Any],
+                *,
+                headers: dict[str, str] | None = None,
+                timeout: float | None = None,
+            ) -> dict[str, Any]:
+                del headers, timeout
+                self.calls.append(url)
+                self_case.assertEqual(
+                    url,
+                    "https://ru.gateway.nekocode.app/andromeda/v1/responses",
+                )
+                self_case.assertEqual(payload["model"], "gpt-5.4")
+                self_case.assertEqual(payload["reasoning"], {"effort": "xhigh"})
+                return {"output_text": "hello from configured responses"}
+
+        self_case = self
+        plugin = replace(plugin, http_client=cast(Any, _ResponsesOnlyClient()))
+
+        response = plugin.generate_message(
+            "openai-codex",
+            {
+                "auth": "api_key",
+                "api_key_secret": "CODEX_API_KEY",
+                "model": "gpt-5.4",
+                "base_url": "https://ru.gateway.nekocode.app/andromeda/v1",
+                "wire_api": "responses",
+                "reasoning_effort": "xhigh",
+            },
+            {"CODEX_API_KEY": "sk-codex"},
+            None,
+            message="hello",
+        )
+
+        self.assertEqual(response, "hello from configured responses")
+
 
 if __name__ == "__main__":
     unittest.main()

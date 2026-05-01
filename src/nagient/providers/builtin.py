@@ -43,6 +43,7 @@ _OPENAI_CODEX_OAUTH_SCOPES = (
     "email",
     "offline_access",
 )
+_SUPPORTED_CODEX_WIRE_APIS = {"chat_completions", "responses"}
 
 
 @dataclass(frozen=True)
@@ -111,6 +112,34 @@ class HttpProviderPlugin(BaseProviderPlugin):
                     "provider.invalid_models_path",
                     provider_id,
                     f"Provider {provider_id!r} must use a models_path starting with '/'.",
+                )
+            )
+
+        raw_wire_api = config.get("wire_api")
+        if raw_wire_api is not None and _wire_api_mode(config) is None:
+            issues.append(
+                _issue(
+                    "error",
+                    "provider.invalid_wire_api",
+                    provider_id,
+                    (
+                        f"Provider {provider_id!r} must use wire_api 'chat_completions' "
+                        "or 'responses'."
+                    ),
+                )
+            )
+
+        reasoning_effort = config.get("reasoning_effort")
+        if reasoning_effort is not None and not isinstance(reasoning_effort, str):
+            issues.append(
+                _issue(
+                    "error",
+                    "provider.invalid_reasoning_effort",
+                    provider_id,
+                    (
+                        f"Provider {provider_id!r} must use a string reasoning_effort "
+                        "value when it is set."
+                    ),
                 )
             )
 
@@ -1125,6 +1154,16 @@ class OpenAICodexProviderPlugin(BaseProviderPlugin):
                 "Chat for openai-codex requires either OAuth credentials or an API key."
             )
         model = _require_model(provider_id, config)
+        wire_api = _wire_api_mode(config) or "chat_completions"
+        if wire_api == "responses":
+            payload = self.http_client.post_json(
+                self._responses_url(config),
+                self._responses_payload(config, model, message, system_prompt),
+                headers={"Authorization": f"Bearer {bearer_token}"},
+                timeout=_timeout_seconds(config),
+            )
+            return _parse_openai_response_text(payload, provider_id)
+
         messages: list[dict[str, object]] = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
@@ -1147,14 +1186,27 @@ class OpenAICodexProviderPlugin(BaseProviderPlugin):
 
         payload = self.http_client.post_json(
             self._responses_url(config),
-            {
-                "model": model,
-                "input": _responses_input(message, system_prompt),
-            },
+            self._responses_payload(config, model, message, system_prompt),
             headers={"Authorization": f"Bearer {bearer_token}"},
             timeout=_timeout_seconds(config),
         )
         return _parse_openai_response_text(payload, provider_id)
+
+    def _responses_payload(
+        self,
+        config: Mapping[str, object],
+        model: str,
+        message: str,
+        system_prompt: str | None,
+    ) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "model": model,
+            "input": _responses_input(message, system_prompt),
+        }
+        reasoning_effort = _string_config(config, "reasoning_effort")
+        if reasoning_effort:
+            payload["reasoning"] = {"effort": reasoning_effort}
+        return payload
 
     def refresh_credential(
         self,
@@ -1877,6 +1929,8 @@ def builtin_providers() -> list[LoadedProviderPlugin]:
                     "api_key_secret",
                     "base_url",
                     "model",
+                    "wire_api",
+                    "reasoning_effort",
                     "models_path",
                     "chat_path",
                     "redirect_uri",
@@ -2211,6 +2265,18 @@ def _load_codex_auth_cache(auth_file: Path) -> _CodexAuthCache:
 def _as_string(value: object) -> str | None:
     if isinstance(value, str) and value.strip():
         return value.strip()
+    return None
+
+
+def _wire_api_mode(config: Mapping[str, object]) -> str | None:
+    wire_api = _string_config(config, "wire_api")
+    if wire_api is None:
+        return "chat_completions"
+    normalized = wire_api.strip().lower().replace("-", "_")
+    if normalized == "chat":
+        normalized = "chat_completions"
+    if normalized in _SUPPORTED_CODEX_WIRE_APIS:
+        return normalized
     return None
 
 
