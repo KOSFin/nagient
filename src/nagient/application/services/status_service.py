@@ -135,13 +135,22 @@ class StatusService:
 
         notes: list[str] = []
         if needs_reconcile:
-            notes.append("Config changed after the last activation report. Run `nagient reconcile`.")
+            notes.append(
+                "Config changed after the last activation report. "
+                "Run `nagient reconcile`."
+            )
         if needs_restart:
-            notes.append("Runtime is still using an older config snapshot. Restart it to apply changes.")
+            notes.append(
+                "Runtime is still using an older config snapshot. "
+                "Restart it to apply changes."
+            )
         if runtime_status == "stale":
             notes.append("Heartbeat is stale. The runtime may be stopped or unhealthy.")
         if runtime_status == "stopped":
-            notes.append("Runtime heartbeat was not found. Start the container to activate background services.")
+            notes.append(
+                "Runtime heartbeat was not found. Start the container to activate "
+                "background services."
+            )
 
         return {
             "status": runtime_status,

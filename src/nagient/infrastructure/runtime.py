@@ -8,7 +8,11 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from nagient.app.configuration import RuntimeConfiguration, TransportInstanceConfig, load_runtime_configuration
+from nagient.app.configuration import (
+    RuntimeConfiguration,
+    TransportInstanceConfig,
+    load_runtime_configuration,
+)
 from nagient.app.settings import Settings
 from nagient.domain.entities.system_state import ActivationReport
 from nagient.plugins.registry import TransportPluginRegistry
@@ -162,7 +166,9 @@ class RuntimeAgent:
             f"Default provider: {runtime_config.default_provider or 'none'}.",
         )
 
-        enabled_providers = [provider for provider in activation_report.providers if provider.enabled]
+        enabled_providers = [
+            provider for provider in activation_report.providers if provider.enabled
+        ]
         if enabled_providers:
             for provider in enabled_providers:
                 self._log(
@@ -177,7 +183,9 @@ class RuntimeAgent:
         else:
             self._log(log_path, "No provider profiles are enabled.")
 
-        enabled_transports = [transport for transport in activation_report.transports if transport.enabled]
+        enabled_transports = [
+            transport for transport in activation_report.transports if transport.enabled
+        ]
         if enabled_transports:
             for transport in enabled_transports:
                 self._log(

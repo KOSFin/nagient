@@ -310,7 +310,9 @@ class PreflightService:
                 )
             ]
 
-        transport_names = ", ".join(sorted(transport.transport_id for transport in interactive_transports))
+        transport_names = ", ".join(
+            sorted(transport.transport_id for transport in interactive_transports)
+        )
         return [
             CheckIssue(
                 severity="error",

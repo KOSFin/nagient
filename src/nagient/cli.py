@@ -31,7 +31,10 @@ _PROVIDER_FIELD_HELP: dict[tuple[str, str], str] = {
     (
         "openai-codex",
         "base_url",
-    ): "Only change this for a proxy or compatibility layer. The default OpenAI URL is usually correct.",
+    ): (
+        "Only change this for a proxy or compatibility layer. "
+        "The default OpenAI URL is usually correct."
+    ),
     (
         "openai-codex",
         "auth_file",
@@ -40,14 +43,26 @@ _PROVIDER_FIELD_HELP: dict[tuple[str, str], str] = {
     (
         "openai",
         "base_url",
-    ): "Only change this for a proxy or OpenAI-compatible endpoint. The default OpenAI URL is usually correct.",
+    ): (
+        "Only change this for a proxy or OpenAI-compatible endpoint. "
+        "The default OpenAI URL is usually correct."
+    ),
 }
 _TRANSPORT_FIELD_HELP: dict[tuple[str, str], str] = {
-    ("telegram", "bot_token_secret"): "Secret name for the Telegram bot token. You can paste the raw token and Nagient will store it for you.",
+    (
+        "telegram",
+        "bot_token_secret",
+    ): (
+        "Secret name for the Telegram bot token. You can paste the raw token and "
+        "Nagient will store it for you."
+    ),
     (
         "telegram",
         "default_chat_id",
-    ): "Optional fallback chat id used for outbound notices when there is no inbound Telegram event to supply chat_id automatically.",
+    ): (
+        "Optional fallback chat id used for outbound notices when there is no "
+        "inbound Telegram event to supply chat_id automatically."
+    ),
     (
         "webhook",
         "shared_secret_name",
