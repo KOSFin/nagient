@@ -15,8 +15,16 @@ from nagient.app.configuration import (
 )
 from nagient.app.settings import Settings
 from nagient.domain.entities.system_state import ActivationReport
-from nagient.plugins.base import BaseTransportPlugin
+from nagient.plugins.base import BaseTransportPlugin, TransportRuntimeContext
 from nagient.plugins.registry import TransportPluginRegistry
+
+
+@dataclass
+class _StartedTransport:
+    config: TransportInstanceConfig
+    implementation: BaseTransportPlugin
+    poll_stop_event: threading.Event | None = None
+    poll_thread: threading.Thread | None = None
 
 
 @dataclass
@@ -24,6 +32,7 @@ class RuntimeAgent:
     settings: Settings
     activation_runner: Callable[[], ActivationReport] | None = None
     plugin_registry: TransportPluginRegistry = field(default_factory=TransportPluginRegistry)
+    inbound_message_handler: Callable[[str, dict[str, object]], str | None] | None = None
 
     def serve(self, once: bool = False) -> int:
         self.settings.ensure_directories()
@@ -36,7 +45,7 @@ class RuntimeAgent:
         runtime_config = load_runtime_configuration(self.settings)
         started_at_epoch = time.time()
         started_at = _iso_timestamp(started_at_epoch)
-        started_transports: list[tuple[TransportInstanceConfig, BaseTransportPlugin]] = []
+        started_transports: list[_StartedTransport] = []
         reload_warning_emitted = False
 
         self._log(
@@ -207,13 +216,13 @@ class RuntimeAgent:
         log_path: Path,
         runtime_config: RuntimeConfiguration,
         activation_report: ActivationReport | None,
-    ) -> list[tuple[TransportInstanceConfig, BaseTransportPlugin]]:
+    ) -> list[_StartedTransport]:
         discovered = self.plugin_registry.discover(self.settings.plugins_dir)
         ready_by_id = {
             transport.transport_id: transport
             for transport in (activation_report.transports if activation_report else [])
         }
-        started: list[tuple[TransportInstanceConfig, BaseTransportPlugin]] = []
+        started: list[_StartedTransport] = []
 
         for issue in discovered.issues:
             self._log(log_path, f"Transport discovery issue: {issue.message}")
@@ -248,12 +257,46 @@ class RuntimeAgent:
                 continue
 
             try:
+                runtime_state_dir = self.settings.state_dir / "transports" / transport.transport_id
+                transport_id = transport.transport_id
+
+                def _runtime_log(message: str) -> None:
+                    self._log(log_path, f"Transport {transport_id}: {message}")
+
+                plugin.implementation.bind_runtime(
+                    transport_id,
+                    TransportRuntimeContext(
+                        state_dir=runtime_state_dir,
+                        log=_runtime_log,
+                    ),
+                )
                 plugin.implementation.start(
                     transport.transport_id,
                     transport.config,
                     runtime_config.secrets,
                 )
-                started.append((transport, plugin.implementation))
+                started_transport = _StartedTransport(
+                    config=transport,
+                    implementation=plugin.implementation,
+                )
+                if self._should_spawn_poll_thread(plugin.implementation):
+                    poll_stop_event = threading.Event()
+                    poll_thread = threading.Thread(
+                        target=self._poll_transport_loop,
+                        name=f"nagient-transport-{transport.transport_id}",
+                        args=(
+                            log_path,
+                            transport,
+                            plugin.implementation,
+                            runtime_config.secrets,
+                            poll_stop_event,
+                        ),
+                        daemon=True,
+                    )
+                    started_transport.poll_stop_event = poll_stop_event
+                    started_transport.poll_thread = poll_thread
+                    poll_thread.start()
+                started.append(started_transport)
                 self._log(
                     log_path,
                     self._transport_start_message(transport),
@@ -269,9 +312,15 @@ class RuntimeAgent:
     def _stop_transports(
         self,
         log_path: Path,
-        started_transports: list[tuple[TransportInstanceConfig, BaseTransportPlugin]],
+        started_transports: list[_StartedTransport],
     ) -> None:
-        for transport, implementation in reversed(started_transports):
+        for started_transport in reversed(started_transports):
+            transport = started_transport.config
+            implementation = started_transport.implementation
+            if started_transport.poll_stop_event is not None:
+                started_transport.poll_stop_event.set()
+            if started_transport.poll_thread is not None:
+                started_transport.poll_thread.join(timeout=2.0)
             try:
                 implementation.stop(transport.transport_id)
                 self._log(log_path, f"Transport {transport.transport_id} stopped.")
@@ -281,19 +330,129 @@ class RuntimeAgent:
                     f"Transport {transport.transport_id} failed to stop cleanly: {exc}",
                 )
 
+    def _should_spawn_poll_thread(self, implementation: BaseTransportPlugin) -> bool:
+        return implementation.__class__.poll_inbound_events is not BaseTransportPlugin.poll_inbound_events
+
+    def _poll_transport_loop(
+        self,
+        log_path: Path,
+        transport: TransportInstanceConfig,
+        implementation: BaseTransportPlugin,
+        secrets: dict[str, str],
+        stop_event: threading.Event,
+    ) -> None:
+        while not stop_event.is_set():
+            try:
+                raw_events = implementation.poll_inbound_events(
+                    transport.transport_id,
+                    transport.config,
+                    secrets,
+                )
+            except Exception as exc:
+                self._log(
+                    log_path,
+                    f"Transport {transport.transport_id} poll failed: {exc}",
+                )
+                stop_event.wait(timeout=2.0)
+                continue
+
+            handled_any = False
+            for raw_event in raw_events:
+                handled_any = True
+                self._handle_polled_transport_event(
+                    log_path,
+                    transport,
+                    implementation,
+                    secrets,
+                    raw_event,
+                )
+
+            if not handled_any:
+                stop_event.wait(timeout=0.5)
+
+    def _handle_polled_transport_event(
+        self,
+        log_path: Path,
+        transport: TransportInstanceConfig,
+        implementation: BaseTransportPlugin,
+        secrets: dict[str, str],
+        raw_event: object,
+    ) -> None:
+        try:
+            normalized = implementation.normalize_inbound_event(raw_event)
+        except Exception as exc:
+            self._log(
+                log_path,
+                f"Transport {transport.transport_id} failed to normalize inbound event: {exc}",
+            )
+            return
+
+        event_type = str(normalized.get("event_type", "")).strip().lower()
+        if event_type != "message":
+            return
+
+        text = str(normalized.get("text", "")).strip()
+        if not text:
+            return
+
+        reply_target = normalized.get("reply_target")
+        if not isinstance(reply_target, dict):
+            self._log(
+                log_path,
+                f"Transport {transport.transport_id} produced a message event without reply_target.",
+            )
+            return
+
+        if self.inbound_message_handler is None:
+            self._log(
+                log_path,
+                f"Transport {transport.transport_id} received a message but no handler is configured.",
+            )
+            return
+
+        reply_text: str | None
+        try:
+            reply_text = self.inbound_message_handler(transport.transport_id, normalized)
+        except Exception as exc:
+            reply_text = f"Nagient error: {exc}"
+            self._log(
+                log_path,
+                f"Transport {transport.transport_id} handler failed: {exc}",
+            )
+
+        if not reply_text:
+            return
+
+        reply_payload = dict(reply_target)
+        reply_payload["text"] = reply_text
+        reply_payload["_transport_config"] = dict(transport.config)
+        secret_name = transport.config.get("bot_token_secret")
+        if (
+            transport.transport_id == "telegram"
+            and isinstance(secret_name, str)
+            and secret_name in secrets
+        ):
+            reply_payload["_token"] = secrets[secret_name]
+
+        try:
+            implementation.send_message(reply_payload)
+        except Exception as exc:
+            self._log(
+                log_path,
+                f"Transport {transport.transport_id} failed to send a reply: {exc}",
+            )
+
     def _transport_start_message(self, transport: TransportInstanceConfig) -> str:
         if transport.transport_id == "telegram":
             default_chat_id = str(transport.config.get("default_chat_id", "")).strip()
             if default_chat_id:
                 return (
-                    "Transport telegram loaded in helper-only mode. "
-                    f"Default chat hint is {default_chat_id}, but the built-in plugin does "
-                    "not deliver or poll live Telegram messages yet."
+                    "Transport telegram loaded with live polling enabled. "
+                    f"Default outbound chat is {default_chat_id}."
                 )
             return (
-                "Transport telegram loaded in helper-only mode. "
-                "No default_chat_id is set, and the built-in plugin does not deliver or poll "
-                "live Telegram messages yet."
+                "Transport telegram loaded with live polling enabled. "
+                "Inbound replies use the chat id from each message."
             )
         if transport.transport_id == "webhook":
             path = str(transport.config.get("path", "/events")).strip() or "/events"

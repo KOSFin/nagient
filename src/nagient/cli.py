@@ -76,8 +76,8 @@ _TRANSPORT_FIELD_HELP: dict[tuple[str, str], str] = {
         "default_chat_id",
     ): (
         "Optional fallback chat id used for outbound notices. For a direct chat, "
-        "your Telegram user id usually works. The built-in Telegram transport is "
-        "currently helper-only and does not send or poll live messages yet."
+        "your Telegram user id usually works. Inbound replies use the chat id from each "
+        "incoming Telegram message."
     ),
     (
         "webhook",

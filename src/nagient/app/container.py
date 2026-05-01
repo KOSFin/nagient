@@ -168,6 +168,11 @@ def build_container(settings: Settings | None = None) -> AppContainer:
             settings=resolved_settings,
             activation_runner=reconcile_service.reconcile,
             plugin_registry=plugin_registry,
+            inbound_message_handler=lambda transport_id, event: _respond_to_inbound_transport_message(
+                provider_service,
+                transport_id,
+                event,
+            ),
         ),
     )
 
@@ -181,3 +186,19 @@ def _restore_workspace_snapshot(
     runtime_config = load_runtime_configuration(settings)
     layout = workspace_manager.ensure_layout(runtime_config.workspace)
     return backup_manager.restore_snapshot(layout, snapshot_id)
+
+
+def _respond_to_inbound_transport_message(
+    provider_service: ProviderService,
+    transport_id: str,
+    event: dict[str, object],
+) -> str | None:
+    del transport_id
+    text = str(event.get("text", "")).strip()
+    if not text:
+        return None
+    response = provider_service.chat(message=text)
+    message = response.get("message")
+    if isinstance(message, str):
+        return message
+    return str(message) if message is not None else None

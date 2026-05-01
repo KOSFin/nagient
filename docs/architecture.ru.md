@@ -41,12 +41,22 @@ Transport plugin теперь это Python-компонент с:
 - `send_message`
 - `send_notification`
 - `normalize_inbound_event`
+- `poll_inbound_events`
 - `healthcheck`
 - `selftest`
 - `start`
 - `stop`
 
 Также plugin может объявлять custom namespaced функции вроде `telegram.showPopup` или `webhook.replyJson`.
+
+Runtime работает с transport plugin через единый контракт:
+
+1. `poll_inbound_events` возвращает новые сырые transport-события или вычитывает их из внутренней очереди.
+2. `normalize_inbound_event` переводит каждое сырое событие в transport-agnostic payload.
+3. Нормализованный payload по возможности должен содержать `event_type`, `session_id`, `text`
+   и `reply_target`, если транспорт поддерживает ответ.
+4. Runtime получает ответ от выбранного provider и передает
+   `{**reply_target, "text": "<reply>"}` обратно в `send_message`.
 
 ## Agent Runtime Core
 

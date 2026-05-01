@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from nagient.domain.entities.system_state import CheckIssue
 
@@ -9,6 +10,7 @@ REQUIRED_TRANSPORT_SLOTS = (
     "send_message",
     "send_notification",
     "normalize_inbound_event",
+    "poll_inbound_events",
     "healthcheck",
     "selftest",
     "start",
@@ -48,6 +50,12 @@ class LoadedTransportPlugin:
     source: str
 
 
+@dataclass(frozen=True)
+class TransportRuntimeContext:
+    state_dir: Path
+    log: Callable[[str], None]
+
+
 class BaseTransportPlugin:
     manifest: TransportPluginManifest
 
@@ -73,6 +81,32 @@ class BaseTransportPlugin:
         config: Mapping[str, object],
         secrets: Mapping[str, str],
     ) -> list[CheckIssue]:
+        return []
+
+    def bind_runtime(
+        self,
+        transport_id: str,
+        runtime: TransportRuntimeContext,
+    ) -> None:
+        del transport_id, runtime
+        return None
+
+    def send_message(self, payload: dict[str, object]) -> dict[str, object]:
+        return {"status": "queued", "payload": payload}
+
+    def send_notification(self, payload: dict[str, object]) -> dict[str, object]:
+        return {"status": "queued", "payload": payload}
+
+    def normalize_inbound_event(self, payload: object) -> dict[str, object]:
+        return {"event_type": "unknown", "payload": payload}
+
+    def poll_inbound_events(
+        self,
+        transport_id: str,
+        config: Mapping[str, object],
+        secrets: Mapping[str, str],
+    ) -> list[object]:
+        del transport_id, config, secrets
         return []
 
     def start(

@@ -69,6 +69,8 @@ class CliRuntimeFlowsTests(unittest.TestCase):
             plugin_dir = home_dir / "plugins" / "custom.echo"
             self.assertEqual(scaffold_payload["plugin_id"], "custom.echo")
             self.assertTrue((plugin_dir / "plugin.toml").exists())
+            scaffold_manifest = (plugin_dir / "plugin.toml").read_text(encoding="utf-8")
+            self.assertIn('poll_inbound_events = "echo.pollInboundEvents"', scaffold_manifest)
 
             transport_list_process = subprocess.run(
                 [sys.executable, "-m", "nagient", "transport", "list", "--format", "json"],
@@ -163,7 +165,7 @@ class CliRuntimeFlowsTests(unittest.TestCase):
             self.assertEqual(heartbeat["runtime_status"], "ready")
             self.assertEqual(heartbeat["transports"][0]["plugin_id"], "builtin.console")
 
-    def test_transport_test_reports_builtin_telegram_helper_mode(self) -> None:
+    def test_transport_test_reports_builtin_telegram_ready_when_token_is_configured(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             home_dir = Path(temp_dir) / ".nagient"
             env = {
@@ -212,10 +214,9 @@ class CliRuntimeFlowsTests(unittest.TestCase):
             )
             test_payload = json.loads(test_process.stdout)
 
-            self.assertEqual(test_payload["status"], "degraded")
+            self.assertEqual(test_payload["status"], "ready")
             self.assertEqual(len(test_payload["transports"]), 1)
-            issue_codes = {issue["code"] for issue in test_payload["issues"]}
-            self.assertIn("transport.telegram.helper_only_builtin", issue_codes)
+            self.assertEqual(test_payload["issues"], [])
 
     def test_serve_once_stays_alive_enough_to_write_blocked_heartbeat(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

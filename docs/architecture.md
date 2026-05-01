@@ -41,12 +41,22 @@ Every transport plugin must declare slot bindings for:
 - `send_message`
 - `send_notification`
 - `normalize_inbound_event`
+- `poll_inbound_events`
 - `healthcheck`
 - `selftest`
 - `start`
 - `stop`
 
 Plugins may also declare custom namespaced functions such as `telegram.showPopup` or `webhook.replyJson`.
+
+The runtime treats transport plugins through one shared contract:
+
+1. `poll_inbound_events` returns newly available raw transport events or drains an internal queue.
+2. `normalize_inbound_event` maps each raw event into a transport-agnostic payload.
+3. The normalized payload should include `event_type`, `session_id`, `text`, and
+   `reply_target` whenever the transport supports replies.
+4. The runtime generates a reply through the selected provider and passes
+   `{**reply_target, "text": "<reply>"}` into `send_message`.
 
 ## Agent Runtime Core
 
