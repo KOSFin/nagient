@@ -74,6 +74,11 @@ enabled = true
 [tools.workspace_shell]
 plugin = "workspace.shell"
 enabled = true
+timeout_seconds = 15
+max_output_chars = 8000
+default_ping_count = 4
+normalize_infinite_commands = true
+enforce_finite_commands = true
 
 [tools.workspace_git]
 plugin = "workspace.git"

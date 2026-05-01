@@ -74,20 +74,31 @@ class AgentRuntimeService:
                 config=runtime_config.agent.memory,
                 retrieval_query=retrieval_query,
             )
-            assistant_response = self.provider_service.generate_assistant_response(
-                message=text,
-                provider_id=provider_id,
-                session_id=session_id,
-                transport_id=transport_id,
-                system_prompt=self._system_prompt(
-                    runtime_config,
-                    override=system_prompt_override,
-                ),
-                prompt_context=prompt_context,
-                tool_catalog=self._tool_catalog(runtime_config),
-                transport_catalog=self._transport_catalog(),
-                previous_results=previous_results,
-            )
+            try:
+                assistant_response = self.provider_service.generate_assistant_response(
+                    message=text,
+                    provider_id=provider_id,
+                    session_id=session_id,
+                    transport_id=transport_id,
+                    system_prompt=self._system_prompt(
+                        runtime_config,
+                        override=system_prompt_override,
+                    ),
+                    prompt_context=prompt_context,
+                    tool_catalog=self._tool_catalog(runtime_config),
+                    transport_catalog=self._transport_catalog(),
+                    previous_results=previous_results,
+                )
+            except Exception as exc:
+                return self._finalize_provider_failure(
+                    layout=layout,
+                    session_id=session_id,
+                    transport_id=transport_id,
+                    turn_index=turn_index,
+                    last_message=last_message,
+                    previous_results=previous_results,
+                    error=exc,
+                )
             if assistant_response.message.strip():
                 last_message = assistant_response.message.strip()
                 self.memory_service.append_message(
@@ -322,6 +333,41 @@ class AgentRuntimeService:
                 error=str(exc),
             )
 
+    def _finalize_provider_failure(
+        self,
+        *,
+        layout: object,
+        session_id: str,
+        transport_id: str,
+        turn_index: int,
+        last_message: str | None,
+        previous_results: list[dict[str, object]],
+        error: Exception,
+    ) -> str:
+        reply = _provider_failure_reply(
+            error=error,
+            last_message=last_message,
+            previous_results=previous_results,
+        )
+        self.logger.warning(
+            "agent_runtime.provider_failed",
+            "Provider request failed during an agent turn.",
+            session_id=session_id,
+            transport_id=transport_id,
+            step=turn_index,
+            error=str(error),
+            previous_results=len(previous_results),
+        )
+        self.memory_service.append_message(
+            layout,
+            session_id=session_id,
+            transport_id=transport_id,
+            role="assistant",
+            content=reply,
+            metadata={"turn_index": turn_index, "fallback": "provider_failure"},
+        )
+        return reply
+
 
 def _should_retrieve(message: str) -> bool:
     normalized = message.lower()
@@ -372,6 +418,101 @@ def _runtime_identity_prompt() -> str:
             "If a user asks you to perform an action, prefer tool use over saying you cannot.",
             "Only say that an action is blocked when a tool, policy, missing configuration, or "
             "provider limitation actually prevents it.",
+            "Any shell command must be finite and bounded. Prefer forms like `ping -c 4` or "
+            "`curl --max-time 10`, and avoid interactive or continuous commands.",
             "When useful, explain briefly what you are doing before or after tool use.",
         ]
     )
+
+
+def _provider_failure_reply(
+    *,
+    error: Exception,
+    last_message: str | None,
+    previous_results: list[dict[str, object]],
+) -> str:
+    parts: list[str] = []
+    if last_message:
+        parts.append(last_message)
+
+    if previous_results:
+        parts.append(
+            "The tool step finished, but the provider timed out before it could "
+            "compose the final reply."
+            if _is_timeout_error(error)
+            else "The tool step finished, but the provider failed before it could "
+            "compose the final reply."
+        )
+        summary = _summarize_latest_tool_result(previous_results[-1])
+        if summary:
+            parts.append(summary)
+    else:
+        parts.append(_friendly_provider_error_message(error))
+
+    if not parts:
+        parts.append(_friendly_provider_error_message(error))
+    return "\n\n".join(part for part in parts if part).strip()
+
+
+def _friendly_provider_error_message(error: Exception) -> str:
+    message = str(error).strip() or error.__class__.__name__
+    if _is_timeout_error(error):
+        return (
+            "Provider request timed out before the runtime could finish this turn. "
+            "Retry the request or increase the provider timeout."
+        )
+    return f"Provider request failed during this turn: {message}"
+
+
+def _summarize_latest_tool_result(result: dict[str, object]) -> str:
+    function_name = str(result.get("function_name", "tool"))
+    status = str(result.get("status", "unknown"))
+    output = result.get("output")
+    issues = result.get("issues")
+    lines = [f"Latest tool result: {function_name} ({status})."]
+    if isinstance(output, dict):
+        blocked = output.get("blocked")
+        blocked_reason = output.get("blocked_reason")
+        command = output.get("effective_command") or output.get("command")
+        if isinstance(command, str) and command.strip():
+            lines.append(f"Command: {command}")
+        if blocked and isinstance(blocked_reason, str) and blocked_reason.strip():
+            lines.append(f"Blocked: {blocked_reason.strip()}")
+        timed_out = output.get("timed_out")
+        timeout_seconds = output.get("timeout_seconds")
+        if timed_out:
+            lines.append(
+                f"Timed out after {timeout_seconds} seconds."
+                if isinstance(timeout_seconds, int)
+                else "Timed out before the command completed."
+            )
+        exit_code = output.get("exit_code")
+        if isinstance(exit_code, int):
+            lines.append(f"Exit code: {exit_code}")
+        stdout = output.get("stdout")
+        if isinstance(stdout, str) and stdout.strip():
+            lines.append(f"stdout:\n{_compact_text(stdout, limit=600)}")
+        stderr = output.get("stderr")
+        if isinstance(stderr, str) and stderr.strip():
+            lines.append(f"stderr:\n{_compact_text(stderr, limit=400)}")
+    if isinstance(issues, list):
+        issue_messages = [
+            str(item.get("message", "")).strip()
+            for item in issues
+            if isinstance(item, dict) and str(item.get("message", "")).strip()
+        ]
+        if issue_messages:
+            lines.append(f"Issues: {'; '.join(issue_messages[:2])}")
+    return "\n".join(lines).strip()
+
+
+def _compact_text(value: str, *, limit: int) -> str:
+    stripped = value.strip()
+    if len(stripped) <= limit:
+        return stripped
+    return stripped[:limit].rstrip() + "\n...[truncated]"
+
+
+def _is_timeout_error(error: Exception) -> bool:
+    message = str(error).lower()
+    return "timed out" in message or "timeout" in message

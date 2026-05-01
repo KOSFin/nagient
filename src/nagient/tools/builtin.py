@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
+import signal
 import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -48,6 +50,40 @@ class UrlopenLike(Protocol):
 
 def _default_urlopen(request: Request, timeout: float = 15.0) -> ResponseContextManager:
     return cast(ResponseContextManager, urlopen(request, timeout=timeout))
+
+
+@dataclass(frozen=True)
+class _ShellCommandPlan:
+    effective_command: str
+    notes: list[str] = field(default_factory=list)
+    blocked_reason: str | None = None
+
+
+@dataclass(frozen=True)
+class _ShellProcessResult:
+    exit_code: int | None
+    stdout: str
+    stderr: str
+    timed_out: bool
+
+
+_DEFAULT_SHELL_TIMEOUT_SECONDS = 15
+_DEFAULT_SHELL_GRACE_SECONDS = 2
+_DEFAULT_SHELL_MAX_OUTPUT_CHARS = 8000
+_DEFAULT_SHELL_PING_COUNT = 4
+_SHELL_BLOCKED_PREFIXES = (
+    "watch",
+    "top",
+    "htop",
+    "less",
+    "more",
+    "man",
+    "vim",
+    "vi",
+    "nano",
+    "emacs",
+    "yes",
+)
 
 
 class WorkspaceFsToolPlugin(BaseToolPlugin):
@@ -196,12 +232,31 @@ class WorkspaceShellToolPlugin(BaseToolPlugin):
         namespace="workspace.shell",
         entrypoint="<builtin>",
         capabilities=["workspace", "shell"],
+        optional_config=[
+            "timeout_seconds",
+            "grace_period_seconds",
+            "max_output_chars",
+            "default_ping_count",
+            "normalize_infinite_commands",
+            "enforce_finite_commands",
+        ],
         functions=[
             ToolFunctionManifest(
                 function_name="workspace.shell.run",
                 binding="run",
                 description="Run a shell command with workspace-aware policy guards.",
-                input_schema={"type": "object"},
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "command": {"type": "string"},
+                        "cwd": {"type": "string"},
+                        "timeout_seconds": {"type": "integer", "minimum": 1},
+                        "max_output_chars": {"type": "integer", "minimum": 1},
+                        "read_only": {"type": "boolean"},
+                    },
+                    "required": ["command"],
+                    "additionalProperties": True,
+                },
                 output_schema={"type": "object"},
                 permissions=["workspace.shell"],
                 side_effect="write",
@@ -210,6 +265,45 @@ class WorkspaceShellToolPlugin(BaseToolPlugin):
             )
         ],
     )
+
+    def validate_config(
+        self,
+        tool_id: str,
+        config: Mapping[str, object],
+        secret_broker: object,
+    ) -> list[CheckIssue]:
+        del secret_broker
+        issues: list[CheckIssue] = []
+        for key in (
+            "timeout_seconds",
+            "grace_period_seconds",
+            "max_output_chars",
+            "default_ping_count",
+        ):
+            value = config.get(key)
+            if value is not None and (not isinstance(value, int) or value <= 0):
+                issues.append(
+                    CheckIssue(
+                        severity="error",
+                        code="tool.workspace_shell.invalid_config",
+                        message=(
+                            f"Tool {tool_id!r} must use a positive integer for {key!r}."
+                        ),
+                        source=tool_id,
+                    )
+                )
+        for key in ("normalize_infinite_commands", "enforce_finite_commands"):
+            value = config.get(key)
+            if value is not None and not isinstance(value, bool):
+                issues.append(
+                    CheckIssue(
+                        severity="error",
+                        code="tool.workspace_shell.invalid_config",
+                        message=f"Tool {tool_id!r} must use a boolean for {key!r}.",
+                        source=tool_id,
+                    )
+                )
+        return issues
 
     def assess_risk(
         self,
@@ -265,32 +359,105 @@ class WorkspaceShellToolPlugin(BaseToolPlugin):
             context.workspace,
             cwd,
         )
-        timeout_seconds = arguments.get("timeout_seconds", 30)
-        if not isinstance(timeout_seconds, int) or timeout_seconds <= 0:
-            timeout_seconds = 30
+        timeout_seconds = _positive_int(
+            arguments.get("timeout_seconds"),
+            default=_positive_int(
+                context.config.get("timeout_seconds"),
+                default=_DEFAULT_SHELL_TIMEOUT_SECONDS,
+            ),
+        )
+        grace_period_seconds = _positive_int(
+            context.config.get("grace_period_seconds"),
+            default=_DEFAULT_SHELL_GRACE_SECONDS,
+        )
+        max_output_chars = _positive_int(
+            arguments.get("max_output_chars"),
+            default=_positive_int(
+                context.config.get("max_output_chars"),
+                default=_DEFAULT_SHELL_MAX_OUTPUT_CHARS,
+            ),
+        )
+        default_ping_count = _positive_int(
+            context.config.get("default_ping_count"),
+            default=_DEFAULT_SHELL_PING_COUNT,
+        )
+        normalize_infinite_commands = _bool_config(
+            context.config.get("normalize_infinite_commands"),
+            default=True,
+        )
+        enforce_finite_commands = _bool_config(
+            context.config.get("enforce_finite_commands"),
+            default=True,
+        )
+        command_plan = _plan_shell_command(
+            command,
+            timeout_seconds=timeout_seconds,
+            default_ping_count=default_ping_count,
+            normalize_infinite_commands=normalize_infinite_commands,
+            enforce_finite_commands=enforce_finite_commands,
+        )
         if context.dry_run:
             return {
                 "command": command,
+                "effective_command": command_plan.effective_command,
                 "cwd": str(workdir),
+                "notes": command_plan.notes,
+                "blocked": command_plan.blocked_reason is not None,
+                "blocked_reason": command_plan.blocked_reason,
                 "dry_run": True,
             }
-        process = subprocess.run(
-            command,
+        if command_plan.blocked_reason is not None:
+            return {
+                "command": command,
+                "effective_command": command_plan.effective_command,
+                "cwd": str(workdir),
+                "exit_code": None,
+                "stdout": "",
+                "stderr": "",
+                "timed_out": False,
+                "timeout_seconds": timeout_seconds,
+                "blocked": True,
+                "blocked_reason": command_plan.blocked_reason,
+                "notes": command_plan.notes,
+                "stdout_truncated": False,
+                "stderr_truncated": False,
+            }
+        process = _run_shell_command(
+            command_plan.effective_command,
             cwd=workdir,
-            shell=True,
-            executable="/bin/sh",
             env=_shell_env(context.workspace.root),
-            capture_output=True,
-            text=True,
-            timeout=timeout_seconds,
-            check=False,
+            timeout_seconds=timeout_seconds,
+            grace_period_seconds=grace_period_seconds,
         )
+        stdout, stdout_truncated = _truncate_text(process.stdout, max_output_chars)
+        stderr, stderr_truncated = _truncate_text(process.stderr, max_output_chars)
+        notes = list(command_plan.notes)
+        if stdout_truncated:
+            notes.append(
+                f"stdout was truncated to {max_output_chars} characters."
+            )
+        if stderr_truncated:
+            notes.append(
+                f"stderr was truncated to {max_output_chars} characters."
+            )
+        if process.timed_out:
+            notes.append(
+                f"Command reached the runtime timeout after {timeout_seconds} seconds."
+            )
         return {
             "command": command,
+            "effective_command": command_plan.effective_command,
             "cwd": str(workdir),
-            "exit_code": process.returncode,
-            "stdout": process.stdout,
-            "stderr": process.stderr,
+            "exit_code": process.exit_code,
+            "stdout": stdout,
+            "stderr": stderr,
+            "timed_out": process.timed_out,
+            "timeout_seconds": timeout_seconds,
+            "blocked": False,
+            "blocked_reason": None,
+            "notes": notes,
+            "stdout_truncated": stdout_truncated,
+            "stderr_truncated": stderr_truncated,
         }
 
 
@@ -773,6 +940,153 @@ def _shell_env(workspace_root: Path) -> dict[str, str]:
         "LANG": "C.UTF-8",
         "LC_ALL": "C.UTF-8",
     }
+
+
+def _plan_shell_command(
+    command: str,
+    *,
+    timeout_seconds: int,
+    default_ping_count: int,
+    normalize_infinite_commands: bool,
+    enforce_finite_commands: bool,
+) -> _ShellCommandPlan:
+    normalized = command.strip()
+    for prefix in _SHELL_BLOCKED_PREFIXES:
+        if re.match(rf"^\s*{re.escape(prefix)}\b", normalized):
+            return _ShellCommandPlan(
+                effective_command=command,
+                blocked_reason=(
+                    f"Command {prefix!r} is interactive or continuous. "
+                    "Use a finite non-interactive variant instead."
+                ),
+            )
+
+    if re.match(r"^\s*tail\b", normalized) and re.search(
+        r"(^|\s)(-f|-F|--follow(?:=\S+)?)($|\s)",
+        normalized,
+    ):
+        return _ShellCommandPlan(
+            effective_command=command,
+            blocked_reason=(
+                "Commands that continuously follow output are not allowed. "
+                "Use a finite tail invocation instead."
+            ),
+        )
+
+    notes: list[str] = []
+    effective_command = command
+    if re.match(r"^\s*ping6?\b", normalized):
+        has_count = re.search(r"(^|\s)(-c|--count)(?:\s+|=)\d+", normalized) is not None
+        if not has_count:
+            if normalize_infinite_commands:
+                effective_command = re.sub(
+                    r"^(\s*ping6?\b)",
+                    rf"\1 -c {default_ping_count}",
+                    command,
+                    count=1,
+                )
+                notes.append(
+                    f"Added `-c {default_ping_count}` so ping exits on its own."
+                )
+            elif enforce_finite_commands:
+                return _ShellCommandPlan(
+                    effective_command=command,
+                    blocked_reason=(
+                        "ping must include a finite count such as `-c 4` when used by the agent."
+                    ),
+                )
+    if re.match(r"^\s*curl\b", normalized):
+        has_max_time = re.search(r"(^|\s)(-m|--max-time)(?:\s+|=)\d+", normalized) is not None
+        if not has_max_time and normalize_infinite_commands:
+            effective_command = re.sub(
+                r"^(\s*curl\b)",
+                rf"\1 --max-time {timeout_seconds}",
+                effective_command,
+                count=1,
+            )
+            notes.append(
+                f"Added `--max-time {timeout_seconds}` so curl stays within the shell budget."
+            )
+    return _ShellCommandPlan(
+        effective_command=effective_command,
+        notes=notes,
+    )
+
+
+def _run_shell_command(
+    command: str,
+    *,
+    cwd: Path,
+    env: Mapping[str, str],
+    timeout_seconds: int,
+    grace_period_seconds: int,
+) -> _ShellProcessResult:
+    process = subprocess.Popen(
+        command,
+        cwd=cwd,
+        shell=True,
+        executable="/bin/sh",
+        env=dict(env),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=False,
+        start_new_session=True,
+    )
+    timed_out = False
+    stdout_bytes = b""
+    stderr_bytes = b""
+    try:
+        stdout_bytes, stderr_bytes = process.communicate(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired as exc:
+        timed_out = True
+        stdout_bytes = exc.stdout or b""
+        stderr_bytes = exc.stderr or b""
+        _terminate_shell_process(process)
+        try:
+            flushed_stdout, flushed_stderr = process.communicate(timeout=grace_period_seconds)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            flushed_stdout, flushed_stderr = process.communicate()
+        stdout_bytes += flushed_stdout or b""
+        stderr_bytes += flushed_stderr or b""
+    return _ShellProcessResult(
+        exit_code=None if timed_out else process.returncode,
+        stdout=stdout_bytes.decode("utf-8", errors="replace"),
+        stderr=stderr_bytes.decode("utf-8", errors="replace"),
+        timed_out=timed_out,
+    )
+
+
+def _terminate_shell_process(process: subprocess.Popen[bytes]) -> None:
+    if process.poll() is not None:
+        return
+    if hasattr(os, "killpg"):
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+            return
+        except ProcessLookupError:
+            return
+        except OSError:
+            pass
+    process.terminate()
+
+
+def _truncate_text(value: str, limit: int) -> tuple[str, bool]:
+    if limit <= 0 or len(value) <= limit:
+        return value, False
+    return value[:limit], True
+
+
+def _positive_int(value: object, *, default: int) -> int:
+    if isinstance(value, int) and value > 0:
+        return value
+    return default
+
+
+def _bool_config(value: object, *, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    return default
 
 
 def _run_git(args: list[str], *, cwd: Path) -> str:
