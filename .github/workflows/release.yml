@@ -123,7 +123,7 @@ jobs:
             ${{ steps.meta.outputs.docker_image_latest }}
 
       - name: Publish GitHub release assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.meta.outputs.git_tag }}
           files: |
