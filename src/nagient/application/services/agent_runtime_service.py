@@ -33,6 +33,9 @@ class AgentRuntimeService:
         self,
         transport_id: str,
         event: dict[str, object],
+        *,
+        provider_id: str | None = None,
+        system_prompt_override: str | None = None,
     ) -> str | None:
         runtime_config = load_runtime_configuration(self.settings)
         layout = self.workspace_manager.ensure_layout(runtime_config.workspace)
@@ -72,10 +75,13 @@ class AgentRuntimeService:
             )
             assistant_response = self.provider_service.generate_assistant_response(
                 message=text,
-                provider_id=None,
+                provider_id=provider_id,
                 session_id=session_id,
                 transport_id=transport_id,
-                system_prompt=self._system_prompt(runtime_config),
+                system_prompt=self._system_prompt(
+                    runtime_config,
+                    override=system_prompt_override,
+                ),
                 prompt_context=prompt_context,
                 tool_catalog=self._tool_catalog(runtime_config),
                 transport_catalog=self._transport_catalog(),
@@ -181,11 +187,18 @@ class AgentRuntimeService:
             },
         )
 
-    def _system_prompt(self, runtime_config: RuntimeConfiguration) -> str:
+    def _system_prompt(
+        self,
+        runtime_config: RuntimeConfiguration,
+        *,
+        override: str | None = None,
+    ) -> str:
         prompt_parts: list[str] = []
         system_prompt_file = runtime_config.agent.system_prompt_file
         if system_prompt_file is not None and system_prompt_file.exists():
             prompt_parts.append(system_prompt_file.read_text(encoding="utf-8").strip())
+        if override is not None and override.strip():
+            prompt_parts.append(override.strip())
         prompt_parts.append(
             "You must return strict JSON for the assistant response schema. "
             "Do not emit markdown fences unless the message field itself needs markdown."

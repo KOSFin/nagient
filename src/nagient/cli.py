@@ -252,10 +252,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     chat_parser = subparsers.add_parser(
         "chat",
-        help="Talk to the default provider through the CLI console transport",
+        help="Talk to the agent runtime through the CLI console transport",
         description=(
-            "Open a direct CLI console chat against the selected provider or the "
-            "configured default provider."
+            "Open an agent runtime session over the console transport. "
+            "This path uses the configured system prompt, memory, tools, and transports."
         ),
     )
     chat_parser.add_argument("message", nargs="?")
@@ -793,9 +793,10 @@ def main(argv: list[str] | None = None) -> int:
                 system_prompt=args.system,
             )
         try:
-            payload = container.provider_service.chat(
-                provider_id=args.provider,
+            payload = _run_agent_chat_turn(
+                container,
                 message=args.message,
+                provider_id=args.provider,
                 system_prompt=args.system,
             )
         except Exception as exc:
@@ -2065,6 +2066,7 @@ def _run_chat_session(
     system_prompt: str | None,
 ) -> int:
     colors = _supports_color()
+    session_id = f"console:cli:{int(time.time())}"
     print("")
     print("Nagient Chat")
     print("Type your message and press Enter. Use 0, exit, or quit to leave.")
@@ -2079,10 +2081,12 @@ def _run_chat_session(
         if message.lower() in {"0", "exit", "quit", "/exit"}:
             return 0
         try:
-            payload = container.provider_service.chat(
-                provider_id=provider_id,
+            payload = _run_agent_chat_turn(
+                container,
                 message=message,
+                provider_id=provider_id,
                 system_prompt=system_prompt,
+                session_id=session_id,
             )
         except Exception as exc:
             print("")
@@ -2098,6 +2102,34 @@ def _run_chat_session(
         print("")
         print(f"assistant> {payload['message']}")
         print("")
+
+
+def _run_agent_chat_turn(
+    container: Any,
+    *,
+    message: str,
+    provider_id: str | None,
+    system_prompt: str | None,
+    session_id: str | None = None,
+) -> dict[str, object]:
+    resolved_session_id = session_id or f"console:oneshot:{int(time.time())}"
+    reply = container.agent_runtime_service.handle_inbound_event(
+        "console",
+        {
+            "event_type": "message",
+            "session_id": resolved_session_id,
+            "text": message,
+        },
+        provider_id=provider_id,
+        system_prompt_override=system_prompt,
+    )
+    return {
+        "provider_id": provider_id or "",
+        "transport_id": "console",
+        "session_id": resolved_session_id,
+        "agent_mode": True,
+        "message": reply or "",
+    }
 
 
 def _paths_payload(container: AppContainer) -> dict[str, object]:

@@ -506,8 +506,8 @@ class CliTests(unittest.TestCase):
 
     def test_interactive_chat_session_exits_cleanly(self) -> None:
         container = SimpleNamespace(
-            provider_service=SimpleNamespace(
-                chat=Mock(return_value={"message": "hello", "provider_id": "openai"})
+            agent_runtime_service=SimpleNamespace(
+                handle_inbound_event=Mock(return_value="hello")
             )
         )
         with patch("builtins.input", side_effect=["hey", "0"]):
@@ -752,6 +752,9 @@ class CliTests(unittest.TestCase):
                     )
                 )
             ),
+            agent_runtime_service=SimpleNamespace(
+                handle_inbound_event=Mock(return_value="hello from runtime")
+            ),
         )
 
         exit_code, output = _run_main(["version"], container=container)
@@ -937,7 +940,7 @@ class CliTests(unittest.TestCase):
             container=container,
         )
         self.assertEqual(exit_code, 0)
-        self.assertIn('"message": "hello from provider"', output)
+        self.assertIn('"message": "hello from runtime"', output)
 
         exit_code, output = _run_main(
             ["tool", "list", "--format", "json"],

@@ -14,7 +14,7 @@ from nagient.app.settings import Settings
 from nagient.domain.entities.agent_runtime import AssistantResponse
 from nagient.domain.entities.system_state import CredentialRecord, ProviderState
 from nagient.infrastructure.logging import RuntimeLogger
-from nagient.providers.base import LoadedProviderPlugin
+from nagient.providers.base import BaseProviderPlugin, LoadedProviderPlugin
 from nagient.providers.manager import ProviderManager
 from nagient.providers.registry import ProviderPluginRegistry
 from nagient.providers.storage import AuthSessionStore, FileCredentialStore
@@ -203,7 +203,11 @@ class ProviderService:
             "generate_assistant_response",
             None,
         )
-        if callable(generate_structured):
+        if (
+            callable(generate_structured)
+            and plugin.implementation.__class__.generate_assistant_response
+            is not BaseProviderPlugin.generate_assistant_response
+        ):
             response = generate_structured(
                 provider_config.provider_id,
                 provider_config.config,

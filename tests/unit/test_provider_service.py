@@ -7,6 +7,7 @@ from typing import Any, cast
 
 from nagient.app.settings import Settings
 from nagient.application.services.provider_service import ProviderService
+from nagient.domain.entities.memory import SessionPromptContext
 from nagient.providers.manager import ProviderManager
 from nagient.providers.registry import ProviderPluginRegistry
 from nagient.providers.storage import AuthSessionStore, FileCredentialStore
@@ -278,6 +279,106 @@ class ProviderServiceTests(unittest.TestCase):
 
             self.assertEqual(payload["provider_id"], "demo")
             self.assertEqual(payload["message"], "demo:system:hello")
+
+    def test_generate_assistant_response_falls_back_to_generate_message_when_unimplemented(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir)
+            providers_dir = home_dir / "providers" / "custom.chat"
+            providers_dir.mkdir(parents=True, exist_ok=True)
+            (providers_dir / "provider.toml").write_text(
+                "\n".join(
+                    [
+                        'type = "provider"',
+                        'id = "custom.chat"',
+                        'display_name = "Custom Chat"',
+                        'version = "0.1.0"',
+                        'family = "custom"',
+                        'entrypoint = "provider.py"',
+                        'supported_auth_modes = ["none"]',
+                        'default_auth_mode = "none"',
+                        'capabilities = ["chat"]',
+                        'required_config = []',
+                        'optional_config = ["model"]',
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            (providers_dir / "provider.py").write_text(
+                "\n".join(
+                    [
+                        "from nagient.providers.base import BaseProviderPlugin",
+                        "",
+                        "class CustomChatProvider(BaseProviderPlugin):",
+                        "    def generate_message(",
+                        "        self,",
+                        "        provider_id,",
+                        "        config,",
+                        "        secrets,",
+                        "        credential,",
+                        "        *,",
+                        "        message,",
+                        "        system_prompt=None,",
+                        "    ):",
+                        "        del provider_id, config, secrets, credential, system_prompt",
+                        "        return '{\"message\":\"ready\",\"tool_calls\":[]}'",
+                        "",
+                        "def build_plugin():",
+                        "    return CustomChatProvider()",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            config_file = home_dir / "config.toml"
+            config_file.write_text(
+                "\n".join(
+                    [
+                        "[agent]",
+                        'default_provider = "demo"',
+                        "require_provider = true",
+                        "",
+                        "[providers.demo]",
+                        'plugin = "custom.chat"',
+                        "enabled = true",
+                        'auth = "none"',
+                        'model = "chatty"',
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            settings = Settings.from_env(
+                {
+                    "NAGIENT_HOME": str(home_dir),
+                    "NAGIENT_CONFIG": str(config_file),
+                    "NAGIENT_PROVIDERS_DIR": str(home_dir / "providers"),
+                }
+            )
+            service = ProviderService(
+                settings=settings,
+                provider_registry=ProviderPluginRegistry(),
+                provider_manager=ProviderManager(),
+                credential_store=FileCredentialStore(settings.credentials_dir),
+                auth_session_store=AuthSessionStore(settings.state_dir / "auth-sessions"),
+            )
+
+            payload = service.generate_assistant_response(
+                message="hello",
+                provider_id=None,
+                session_id="console:test",
+                transport_id="console",
+                system_prompt="system",
+                prompt_context=SessionPromptContext(session_id="console:test", summary=""),
+                tool_catalog=[],
+                transport_catalog=[],
+                previous_results=[],
+            )
+
+            self.assertEqual(payload.message, "ready")
+            self.assertEqual(payload.tool_calls, [])
 
 
 if __name__ == "__main__":

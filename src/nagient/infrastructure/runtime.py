@@ -434,10 +434,10 @@ class RuntimeAgent:
         try:
             reply_text = self.inbound_message_handler(transport.transport_id, normalized)
         except Exception as exc:
-            reply_text = f"Nagient error: {exc}"
+            reply_text = f"Nagient error: {_exception_message(exc)}"
             self._log(
                 log_path,
-                f"Transport {transport.transport_id} handler failed: {exc}",
+                f"Transport {transport.transport_id} handler failed: {_exception_message(exc)}",
             )
 
         if not reply_text:
@@ -567,6 +567,13 @@ def _iter_runtime_files(root: Path) -> list[tuple[Path, float]]:
         if child.is_file():
             collected.append((child, child.stat().st_mtime))
     return collected
+
+
+def _exception_message(exc: Exception) -> str:
+    message = str(exc).strip()
+    if message:
+        return message
+    return exc.__class__.__name__
 
 
 def _iso_timestamp(raw_timestamp: float) -> str:
