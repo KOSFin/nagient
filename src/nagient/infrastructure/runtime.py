@@ -15,6 +15,7 @@ from nagient.app.configuration import (
 )
 from nagient.app.settings import Settings
 from nagient.domain.entities.system_state import ActivationReport
+from nagient.plugins.base import BaseTransportPlugin
 from nagient.plugins.registry import TransportPluginRegistry
 
 
@@ -35,7 +36,7 @@ class RuntimeAgent:
         runtime_config = load_runtime_configuration(self.settings)
         started_at_epoch = time.time()
         started_at = _iso_timestamp(started_at_epoch)
-        started_transports: list[tuple[TransportInstanceConfig, object]] = []
+        started_transports: list[tuple[TransportInstanceConfig, BaseTransportPlugin]] = []
         reload_warning_emitted = False
 
         self._log(
@@ -206,13 +207,13 @@ class RuntimeAgent:
         log_path: Path,
         runtime_config: RuntimeConfiguration,
         activation_report: ActivationReport | None,
-    ) -> list[tuple[TransportInstanceConfig, object]]:
+    ) -> list[tuple[TransportInstanceConfig, BaseTransportPlugin]]:
         discovered = self.plugin_registry.discover(self.settings.plugins_dir)
         ready_by_id = {
             transport.transport_id: transport
             for transport in (activation_report.transports if activation_report else [])
         }
-        started: list[tuple[TransportInstanceConfig, object]] = []
+        started: list[tuple[TransportInstanceConfig, BaseTransportPlugin]] = []
 
         for issue in discovered.issues:
             self._log(log_path, f"Transport discovery issue: {issue.message}")
@@ -265,7 +266,7 @@ class RuntimeAgent:
     def _stop_transports(
         self,
         log_path: Path,
-        started_transports: list[tuple[TransportInstanceConfig, object]],
+        started_transports: list[tuple[TransportInstanceConfig, BaseTransportPlugin]],
     ) -> None:
         for transport, implementation in reversed(started_transports):
             try:

@@ -9,6 +9,7 @@ from pathlib import Path
 from nagient.domain.entities.system_state import CheckIssue
 from nagient.plugins.base import (
     REQUIRED_TRANSPORT_SLOTS,
+    BaseTransportPlugin,
     LoadedTransportPlugin,
     TransportPluginManifest,
 )
@@ -98,6 +99,9 @@ class TransportPluginRegistry:
             raise ValueError(msg)
 
         implementation = factory()
+        if not isinstance(implementation, BaseTransportPlugin):
+            msg = "Plugin entrypoint build_plugin() must return BaseTransportPlugin."
+            raise ValueError(msg)
         return LoadedTransportPlugin(
             manifest=manifest,
             implementation=implementation,

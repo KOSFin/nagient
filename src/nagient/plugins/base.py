@@ -44,7 +44,7 @@ class TransportPluginManifest:
 @dataclass(frozen=True)
 class LoadedTransportPlugin:
     manifest: TransportPluginManifest
-    implementation: object
+    implementation: BaseTransportPlugin
     source: str
 
 
