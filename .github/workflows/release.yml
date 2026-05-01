@@ -96,7 +96,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Set up QEMU for cross-platform builds
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Log in to Docker Hub
         if: steps.docker_publish.outputs.push_enabled == 'true'
