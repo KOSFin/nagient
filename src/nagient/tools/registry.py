@@ -6,6 +6,7 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from nagient.domain.entities.config_fields import ConfigFieldSpec
 from nagient.domain.entities.system_state import CheckIssue
 from nagient.domain.entities.tooling import ToolFunctionManifest, ToolPluginManifest
 from nagient.tools.base import BaseToolPlugin, LoadedToolPlugin
@@ -155,8 +156,17 @@ class ToolPluginRegistry:
             namespace=_require_string(payload, "namespace"),
             entrypoint=_require_string(payload, "entrypoint"),
             functions=functions,
-            required_config=_require_string_list(payload.get("required_config")),
-            optional_config=_require_string_list(payload.get("optional_config")),
+            required_config=_merge_config_keys(
+                _require_string_list(payload.get("required_config")),
+                config_fields := _parse_config_fields(payload.get("config_fields")),
+                required=True,
+            ),
+            optional_config=_merge_config_keys(
+                _require_string_list(payload.get("optional_config")),
+                config_fields,
+                required=False,
+            ),
+            config_fields=config_fields,
             capabilities=_require_string_list(payload.get("capabilities")),
             healthcheck_binding=_optional_string(payload.get("healthcheck_binding")),
             selftest_binding=_optional_string(payload.get("selftest_binding")),
@@ -238,3 +248,58 @@ def _string_or_default(value: object, default: str) -> str:
     if isinstance(value, str) and value.strip():
         return value
     return default
+
+
+def _parse_config_fields(value: object) -> list[ConfigFieldSpec]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError("Tool plugin config_fields must be a list of TOML tables.")
+    config_fields: list[ConfigFieldSpec] = []
+    seen: set[str] = set()
+    for raw_field in value:
+        if not isinstance(raw_field, dict):
+            raise ValueError("Each tool config_fields entry must be a table.")
+        key = _require_string(raw_field, "key")
+        if key in seen:
+            raise ValueError(f"Duplicate tool config field {key!r}.")
+        seen.add(key)
+        config_fields.append(
+            ConfigFieldSpec(
+                key=key,
+                label=_optional_text(raw_field.get("label")),
+                help_text=_optional_text(raw_field.get("help_text")),
+                value_type=_optional_text(raw_field.get("value_type")) or "string",
+                category=_optional_text(raw_field.get("category")) or "advanced",
+                required=bool(raw_field.get("required", False)),
+                secret=bool(raw_field.get("secret", False)),
+            )
+        )
+    return config_fields
+
+
+def _optional_text(value: object) -> str:
+    if isinstance(value, str):
+        return value
+    return ""
+
+
+def _merge_config_keys(
+    explicit_keys: list[str],
+    fields: list[ConfigFieldSpec],
+    *,
+    required: bool,
+) -> list[str]:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for key in explicit_keys:
+        if key not in seen:
+            merged.append(key)
+            seen.add(key)
+    for field in fields:
+        if field.required != required:
+            continue
+        if field.key not in seen:
+            merged.append(field.key)
+            seen.add(field.key)
+    return merged

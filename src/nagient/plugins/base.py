@@ -4,6 +4,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from nagient.domain.entities.config_fields import ConfigFieldSpec
 from nagient.domain.entities.system_state import CheckIssue
 
 REQUIRED_TRANSPORT_SLOTS = (
@@ -31,6 +32,7 @@ class TransportPluginManifest:
     required_config: list[str] = field(default_factory=list)
     optional_config: list[str] = field(default_factory=list)
     secret_config: list[str] = field(default_factory=list)
+    config_fields: list[ConfigFieldSpec] = field(default_factory=list)
     instruction_template: str = ""
     config_schema_file: str | None = None
 
@@ -41,6 +43,12 @@ class TransportPluginManifest:
     @property
     def allowed_config(self) -> set[str]:
         return set(self.required_config) | set(self.optional_config)
+
+    def field_by_key(self, key: str) -> ConfigFieldSpec | None:
+        for field_spec in self.config_fields:
+            if field_spec.key == key:
+                return field_spec
+        return None
 
 
 @dataclass(frozen=True)

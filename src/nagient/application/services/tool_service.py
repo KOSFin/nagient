@@ -78,6 +78,9 @@ class ToolService:
                     "display_name": plugin.manifest.display_name,
                     "namespace": plugin.manifest.namespace,
                     "source": plugin.source,
+                    "config_fields": [
+                        field_spec.to_dict() for field_spec in plugin.manifest.config_fields
+                    ],
                     "functions": [function.to_dict() for function in plugin.manifest.functions],
                 }
                 for plugin in discovery.plugins.values()

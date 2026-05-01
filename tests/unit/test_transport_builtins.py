@@ -44,10 +44,60 @@ class TransportBuiltinsTests(unittest.TestCase):
             ),
         )
 
+        class _TelegramHttpClient:
+            def post_json(
+                self,
+                url: str,
+                payload: dict[str, object],
+                *,
+                headers: dict[str, str] | None = None,
+                query: dict[str, str] | None = None,
+                timeout: float | None = None,
+            ) -> dict[str, object]:
+                del headers, query, timeout
+                self.seen_url = url
+                self.seen_payload = dict(payload)
+                return {
+                    "ok": True,
+                    "result": {
+                        "id": 1,
+                        "is_bot": True,
+                        "first_name": "Nagient",
+                    },
+                }
+
+        plugin.http_client = _TelegramHttpClient()
+
         issues = plugin.healthcheck(
             "telegram",
             {"bot_token_secret": "TELEGRAM_BOT_TOKEN"},
             {"TELEGRAM_BOT_TOKEN": "12345:test-token"},
+        )
+
+        self.assertEqual(issues, [])
+
+    def test_telegram_validate_config_accepts_proxy_settings(self) -> None:
+        plugin = cast(
+            Any,
+            next(
+                transport.implementation
+                for transport in builtin_plugins()
+                if transport.manifest.plugin_id == "builtin.telegram"
+            ),
+        )
+
+        issues = plugin.validate_config(
+            "telegram",
+            {
+                "bot_token_secret": "TELEGRAM_BOT_TOKEN",
+                "proxy_url": "http://127.0.0.1:8080",
+                "proxy_username": "proxy-user",
+                "proxy_password_secret": "TELEGRAM_PROXY_PASSWORD",
+            },
+            {
+                "TELEGRAM_BOT_TOKEN": "12345:test-token",
+                "TELEGRAM_PROXY_PASSWORD": "secret",
+            },
         )
 
         self.assertEqual(issues, [])

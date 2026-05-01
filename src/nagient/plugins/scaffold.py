@@ -70,6 +70,28 @@ def _render_plugin_manifest(plugin_id: str, namespace: str) -> str:
             'secret_config = ["api_key_secret"]',
             f'custom_functions = ["{namespace}.showPopup"]',
             "",
+            "[[config_fields]]",
+            'key = "api_key_secret"',
+            'label = "API key secret"',
+            'help_text = "Optional secret name for an upstream SDK or bridge token."',
+            'value_type = "secret"',
+            'category = "connection"',
+            "secret = true",
+            "",
+            "[[config_fields]]",
+            'key = "poll_timeout_seconds"',
+            'label = "Poll timeout"',
+            'help_text = "How long the plugin should wait while polling the remote transport."',
+            'value_type = "integer"',
+            'category = "advanced"',
+            "",
+            "[[config_fields]]",
+            'key = "timeout_seconds"',
+            'label = "Request timeout"',
+            'help_text = "Network timeout budget for outbound transport API calls."',
+            'value_type = "integer"',
+            'category = "advanced"',
+            "",
             "[required_slots]",
             f'send_message = "{namespace}.sendMessage"',
             f'send_notification = "{namespace}.sendNotification"',
@@ -109,6 +131,15 @@ def _render_instructions(plugin_id: str, namespace: str) -> str:
             (
                 f"Use `{namespace}.showPopup` for short contextual confirmations when "
                 "the transport supports it."
+            ),
+            "",
+            (
+                "This scaffold is intentionally SDK-friendly: you can wrap aiogram, discord.py, "
+                "Slack Bolt, or any other Python client inside transport.py."
+            ),
+            (
+                "You do not have to implement a raw webhook bridge unless that matches the "
+                "transport you are targeting."
             ),
             "",
             "Always normalize inbound payloads before passing them to the core agent runtime.",

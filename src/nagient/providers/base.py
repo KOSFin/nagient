@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from nagient.domain.entities.agent_runtime import AssistantResponse
+from nagient.domain.entities.config_fields import ConfigFieldSpec
 from nagient.domain.entities.system_state import (
     AuthSessionState,
     CheckIssue,
@@ -38,11 +39,18 @@ class ProviderPluginManifest:
     optional_config: list[str] = field(default_factory=list)
     secret_config: list[str] = field(default_factory=list)
     credential_fields: list[str] = field(default_factory=list)
+    config_fields: list[ConfigFieldSpec] = field(default_factory=list)
     config_schema_file: str | None = None
 
     @property
     def allowed_config(self) -> set[str]:
         return set(self.required_config) | set(self.optional_config)
+
+    def field_by_key(self, key: str) -> ConfigFieldSpec | None:
+        for field_spec in self.config_fields:
+            if field_spec.key == key:
+                return field_spec
+        return None
 
 
 @dataclass(frozen=True)

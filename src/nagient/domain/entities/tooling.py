@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from nagient.domain.entities.config_fields import ConfigFieldSpec
 from nagient.domain.entities.system_state import CheckIssue
 
 
@@ -54,6 +55,7 @@ class ToolPluginManifest:
     functions: list[ToolFunctionManifest] = field(default_factory=list)
     required_config: list[str] = field(default_factory=list)
     optional_config: list[str] = field(default_factory=list)
+    config_fields: list[ConfigFieldSpec] = field(default_factory=list)
     capabilities: list[str] = field(default_factory=list)
     healthcheck_binding: str | None = None
     selftest_binding: str | None = None
@@ -66,6 +68,12 @@ class ToolPluginManifest:
     @property
     def exposed_functions(self) -> list[str]:
         return sorted(function.function_name for function in self.functions)
+
+    def field_by_key(self, key: str) -> ConfigFieldSpec | None:
+        for field_spec in self.config_fields:
+            if field_spec.key == key:
+                return field_spec
+        return None
 
     def function_by_name(self, function_name: str) -> ToolFunctionManifest | None:
         for function in self.functions:

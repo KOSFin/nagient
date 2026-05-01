@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from types import TracebackType
 from typing import Protocol, cast
 from urllib.error import HTTPError, URLError
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
-from urllib.request import Request, urlopen
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
+from urllib.request import ProxyHandler, Request, build_opener, urlopen
 
 
 class ProviderHttpError(RuntimeError):
@@ -39,6 +39,28 @@ class UrlopenLike(Protocol):
 
 def _default_urlopen(request: Request, timeout: float = 60.0) -> ResponseContextManager:
     return cast(ResponseContextManager, urlopen(request, timeout=timeout))
+
+
+def build_proxy_json_http_client(
+    proxy_url: str,
+    *,
+    username: str | None = None,
+    password: str | None = None,
+    default_timeout: float = 60.0,
+) -> "JsonHttpClient":
+    target_proxy = _proxy_target(proxy_url, username=username, password=password)
+    opener = build_opener(
+        ProxyHandler(
+            {
+                "http": target_proxy,
+                "https": target_proxy,
+            }
+        )
+    ).open
+    return JsonHttpClient(
+        opener=cast(UrlopenLike, opener),
+        default_timeout=default_timeout,
+    )
 
 
 @dataclass(frozen=True)
@@ -137,6 +159,36 @@ def _merge_query(url: str, query: Mapping[str, str]) -> str:
             split.netloc,
             split.path,
             urlencode(current_query),
+            split.fragment,
+        )
+    )
+
+
+def _proxy_target(
+    proxy_url: str,
+    *,
+    username: str | None,
+    password: str | None,
+) -> str:
+    split = urlsplit(proxy_url)
+    if not split.scheme or not split.netloc:
+        raise ValueError("Proxy URL must include a scheme and host.")
+    if split.username or split.password:
+        return proxy_url
+
+    if username is None or password is None:
+        return proxy_url
+
+    host = split.hostname or ""
+    port = f":{split.port}" if split.port is not None else ""
+    credentials = f"{quote(username, safe='')}:{quote(password, safe='')}"
+    netloc = f"{credentials}@{host}{port}"
+    return urlunsplit(
+        (
+            split.scheme,
+            netloc,
+            split.path,
+            split.query,
             split.fragment,
         )
     )

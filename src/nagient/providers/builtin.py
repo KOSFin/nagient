@@ -5,10 +5,11 @@ import calendar
 import hashlib
 import json
 import os
+import re
 import secrets as secretslib
 import time
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlsplit
@@ -153,6 +154,68 @@ class HttpProviderPlugin(BaseProviderPlugin):
                     "provider.invalid_timeout",
                     provider_id,
                     f"Provider {provider_id!r} must use a positive timeout_seconds value.",
+                )
+            )
+
+        retry_attempts = config.get("retry_attempts")
+        if retry_attempts is not None and (
+            not isinstance(retry_attempts, int) or retry_attempts <= 0
+        ):
+            issues.append(
+                _issue(
+                    "error",
+                    "provider.invalid_retry_attempts",
+                    provider_id,
+                    f"Provider {provider_id!r} must use a positive retry_attempts value.",
+                )
+            )
+
+        retry_backoff_seconds = config.get("retry_backoff_seconds")
+        if retry_backoff_seconds is not None and (
+            isinstance(retry_backoff_seconds, bool)
+            or not isinstance(retry_backoff_seconds, (int, float))
+            or retry_backoff_seconds < 0
+        ):
+            issues.append(
+                _issue(
+                    "error",
+                    "provider.invalid_retry_backoff",
+                    provider_id,
+                    (
+                        f"Provider {provider_id!r} must use a non-negative "
+                        "retry_backoff_seconds value."
+                    ),
+                )
+            )
+
+        retry_attempts = config.get("retry_attempts")
+        if retry_attempts is not None and (
+            not isinstance(retry_attempts, int) or retry_attempts <= 0
+        ):
+            issues.append(
+                _issue(
+                    "error",
+                    "provider.invalid_retry_attempts",
+                    provider_id,
+                    f"Provider {provider_id!r} must use a positive retry_attempts value.",
+                )
+            )
+
+        retry_backoff_seconds = config.get("retry_backoff_seconds")
+        if retry_backoff_seconds is not None and (
+            isinstance(retry_backoff_seconds, bool)
+            or not isinstance(retry_backoff_seconds, (int, float))
+            or retry_backoff_seconds < 0
+        ):
+            issues.append(
+                _issue(
+                    "error",
+                    "provider.invalid_retry_backoff",
+                    provider_id,
+                    (
+                        f"Provider {provider_id!r} must use a non-negative "
+                        "retry_backoff_seconds value."
+                    ),
                 )
             )
 
@@ -351,11 +414,12 @@ class HttpProviderPlugin(BaseProviderPlugin):
         credential: CredentialRecord | None,
     ) -> list[ProviderModel]:
         headers, query = self._build_request_auth(config, secrets, credential)
-        payload = self.http_client.get_json(
+        payload = self._get_json(
+            provider_id,
+            config,
             self._models_url(config),
             headers=headers,
             query=query,
-            timeout=_timeout_seconds(config),
         )
         return _parse_data_models(payload, provider_id)
 
@@ -375,7 +439,9 @@ class HttpProviderPlugin(BaseProviderPlugin):
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": message})
-        payload = self.http_client.post_json(
+        payload = self._post_json(
+            provider_id,
+            config,
             self._chat_url(config),
             {
                 "model": model,
@@ -384,7 +450,6 @@ class HttpProviderPlugin(BaseProviderPlugin):
             },
             headers=headers,
             query=query,
-            timeout=_timeout_seconds(config),
         )
         return _parse_openai_chat_message(payload, provider_id)
 
@@ -435,6 +500,69 @@ class HttpProviderPlugin(BaseProviderPlugin):
         headers[self.auth_header_name] = self.auth_header_format.format(token=token)
         return headers, query
 
+    def _get_json(
+        self,
+        provider_id: str,
+        config: Mapping[str, object],
+        url: str,
+        *,
+        headers: Mapping[str, str] | None = None,
+        query: Mapping[str, str] | None = None,
+    ) -> object:
+        return _provider_request_with_retry(
+            config,
+            lambda: self.http_client.get_json(
+                url,
+                headers=headers,
+                query=query,
+                timeout=_timeout_seconds(config),
+            ),
+            provider_id=provider_id,
+        )
+
+    def _post_json(
+        self,
+        provider_id: str,
+        config: Mapping[str, object],
+        url: str,
+        payload: object,
+        *,
+        headers: Mapping[str, str] | None = None,
+        query: Mapping[str, str] | None = None,
+    ) -> object:
+        return _provider_request_with_retry(
+            config,
+            lambda: self.http_client.post_json(
+                url,
+                payload,
+                headers=headers,
+                query=query,
+                timeout=_timeout_seconds(config),
+            ),
+            provider_id=provider_id,
+        )
+
+    def _post_form_json(
+        self,
+        provider_id: str,
+        config: Mapping[str, object],
+        url: str,
+        form: Mapping[str, str],
+        *,
+        headers: Mapping[str, str] | None = None,
+        timeout: float | None = None,
+    ) -> object:
+        return _provider_request_with_retry(
+            config,
+            lambda: self.http_client.post_form_json(
+                url,
+                form,
+                headers=headers,
+                timeout=timeout or _timeout_seconds(config),
+            ),
+            provider_id=provider_id,
+        )
+
 
 @dataclass(frozen=True)
 class AnthropicProviderPlugin(HttpProviderPlugin):
@@ -447,11 +575,12 @@ class AnthropicProviderPlugin(HttpProviderPlugin):
     ) -> list[ProviderModel]:
         headers, query = self._build_request_auth(config, secrets, credential)
         headers["anthropic-version"] = str(config.get("api_version", "2023-06-01"))
-        payload = self.http_client.get_json(
+        payload = self._get_json(
+            provider_id,
+            config,
             self._models_url(config),
             headers=headers,
             query=query,
-            timeout=_timeout_seconds(config),
         )
         return _parse_data_models(payload, provider_id)
 
@@ -475,12 +604,13 @@ class AnthropicProviderPlugin(HttpProviderPlugin):
         }
         if system_prompt:
             payload["system"] = system_prompt
-        response = self.http_client.post_json(
+        response = self._post_json(
+            provider_id,
+            config,
             self._chat_url(config),
             payload,
             headers=headers,
             query=query,
-            timeout=_timeout_seconds(config),
         )
         return _parse_anthropic_message(response, provider_id)
 
@@ -500,11 +630,12 @@ class GeminiProviderPlugin(HttpProviderPlugin):
         credential: CredentialRecord | None,
     ) -> list[ProviderModel]:
         headers, query = self._build_request_auth(config, secrets, credential)
-        payload = self.http_client.get_json(
+        payload = self._get_json(
+            provider_id,
+            config,
             self._models_url(config),
             headers=headers,
             query=query,
-            timeout=_timeout_seconds(config),
         )
         if not isinstance(payload, dict):
             raise ProviderHttpError(
@@ -554,12 +685,13 @@ class GeminiProviderPlugin(HttpProviderPlugin):
         }
         if system_prompt:
             payload["systemInstruction"] = {"parts": [{"text": system_prompt}]}
-        response = self.http_client.post_json(
+        response = self._post_json(
+            provider_id,
+            config,
             self._generate_content_url(config, model),
             payload,
             headers=headers,
             query=query,
-            timeout=_timeout_seconds(config),
         )
         return _parse_gemini_message(response, provider_id)
 
@@ -578,11 +710,12 @@ class OllamaProviderPlugin(HttpProviderPlugin):
         credential: CredentialRecord | None,
     ) -> list[ProviderModel]:
         headers, query = self._build_request_auth(config, secrets, credential)
-        payload = self.http_client.get_json(
+        payload = self._get_json(
+            provider_id,
+            config,
             self._models_url(config),
             headers=headers,
             query=query,
-            timeout=_timeout_seconds(config),
         )
         if not isinstance(payload, dict):
             raise ProviderHttpError(
@@ -625,7 +758,9 @@ class OllamaProviderPlugin(HttpProviderPlugin):
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": message})
-        response = self.http_client.post_json(
+        response = self._post_json(
+            provider_id,
+            config,
             self._chat_url(config),
             {
                 "model": model,
@@ -634,7 +769,6 @@ class OllamaProviderPlugin(HttpProviderPlugin):
             },
             headers=headers,
             query=query,
-            timeout=_timeout_seconds(config),
         )
         return _parse_ollama_message(response, provider_id)
 
@@ -1131,10 +1265,11 @@ class OpenAICodexProviderPlugin(BaseProviderPlugin):
                 "Model discovery for openai-codex requires either OAuth credentials or an "
                 "API key. Run `nagient auth login openai-codex` or set CODEX_API_KEY."
             )
-        payload = self.http_client.get_json(
+        payload = self._get_json(
+            provider_id,
+            config,
             self._models_url(config),
             headers={"Authorization": f"Bearer {bearer_token}"},
-            timeout=_timeout_seconds(config),
         )
         return _parse_data_models(payload, provider_id)
 
@@ -1157,11 +1292,12 @@ class OpenAICodexProviderPlugin(BaseProviderPlugin):
         wire_api = _wire_api_mode(config) or "chat_completions"
         use_responses_fallback = "wire_api" not in config
         if wire_api == "responses":
-            payload = self.http_client.post_json(
+            payload = self._post_json(
+                provider_id,
+                config,
                 self._responses_url(config),
                 self._responses_payload(config, model, message, system_prompt),
                 headers={"Authorization": f"Bearer {bearer_token}"},
-                timeout=_timeout_seconds(config),
             )
             return _parse_openai_response_text(payload, provider_id)
 
@@ -1170,7 +1306,9 @@ class OpenAICodexProviderPlugin(BaseProviderPlugin):
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": message})
         try:
-            payload = self.http_client.post_json(
+            payload = self._post_json(
+                provider_id,
+                config,
                 self._chat_url(config),
                 {
                     "model": model,
@@ -1178,7 +1316,6 @@ class OpenAICodexProviderPlugin(BaseProviderPlugin):
                     "stream": False,
                 },
                 headers={"Authorization": f"Bearer {bearer_token}"},
-                timeout=_timeout_seconds(config),
             )
             return _parse_openai_chat_message(payload, provider_id)
         except ProviderHttpError as exc:
@@ -1188,11 +1325,12 @@ class OpenAICodexProviderPlugin(BaseProviderPlugin):
             ):
                 raise
 
-        payload = self.http_client.post_json(
+        payload = self._post_json(
+            provider_id,
+            config,
             self._responses_url(config),
             self._responses_payload(config, model, message, system_prompt),
             headers={"Authorization": f"Bearer {bearer_token}"},
-            timeout=_timeout_seconds(config),
         )
         return _parse_openai_response_text(payload, provider_id)
 
@@ -1454,7 +1592,12 @@ class OpenAICodexProviderPlugin(BaseProviderPlugin):
         )
 
     def _begin_device_code_login(self, provider_id: str) -> AuthSessionState:
-        payload = self.http_client.post_json(
+        payload = self._post_json(
+            provider_id,
+            {
+                "retry_attempts": 5,
+                "retry_backoff_seconds": 0.5,
+            },
             _OPENAI_CODEX_DEVICE_USERCODE_URL,
             {"client_id": self.client_id},
             headers={"User-Agent": "Nagient/1.0"},
@@ -1707,8 +1850,73 @@ class OpenAICodexProviderPlugin(BaseProviderPlugin):
             return cache.access_token
         return ""
 
+    def _get_json(
+        self,
+        provider_id: str,
+        config: Mapping[str, object],
+        url: str,
+        *,
+        headers: Mapping[str, str] | None = None,
+    ) -> object:
+        return _provider_request_with_retry(
+            config,
+            lambda: self.http_client.get_json(
+                url,
+                headers=headers,
+                timeout=_timeout_seconds(config),
+            ),
+            provider_id=provider_id,
+        )
+
+    def _post_json(
+        self,
+        provider_id: str,
+        config: Mapping[str, object],
+        url: str,
+        payload: object,
+        *,
+        headers: Mapping[str, str] | None = None,
+        timeout: float | None = None,
+    ) -> object:
+        return _provider_request_with_retry(
+            config,
+            lambda: self.http_client.post_json(
+                url,
+                payload,
+                headers=headers,
+                timeout=timeout or _timeout_seconds(config),
+            ),
+            provider_id=provider_id,
+        )
+
+    def _post_form_json(
+        self,
+        provider_id: str,
+        config: Mapping[str, object],
+        url: str,
+        form: Mapping[str, str],
+        *,
+        headers: Mapping[str, str] | None = None,
+        timeout: float | None = None,
+    ) -> object:
+        return _provider_request_with_retry(
+            config,
+            lambda: self.http_client.post_form_json(
+                url,
+                form,
+                headers=headers,
+                timeout=timeout or _timeout_seconds(config),
+            ),
+            provider_id=provider_id,
+        )
+
     def _exchange_refresh_token(self, refresh_token: str) -> dict[str, object] | None:
-        token_payload = self.http_client.post_form_json(
+        token_payload = self._post_form_json(
+            "openai-codex",
+            {
+                "retry_attempts": 5,
+                "retry_backoff_seconds": 0.5,
+            },
             self.token_url,
             {
                 "grant_type": "refresh_token",
@@ -1751,7 +1959,12 @@ class OpenAICodexProviderPlugin(BaseProviderPlugin):
             str(session.metadata.get("redirect_uri", "")).strip()
             or self.default_redirect_uri
         )
-        token_payload = self.http_client.post_form_json(
+        token_payload = self._post_form_json(
+            provider_id,
+            {
+                "retry_attempts": 5,
+                "retry_backoff_seconds": 0.5,
+            },
             self.token_url,
             {
                 "grant_type": "authorization_code",
@@ -1788,7 +2001,12 @@ class OpenAICodexProviderPlugin(BaseProviderPlugin):
             raise ValueError("Device code session is missing required metadata.")
 
         try:
-            authorization_payload = self.http_client.post_json(
+            authorization_payload = self._post_json(
+                provider_id,
+                {
+                    "retry_attempts": 5,
+                    "retry_backoff_seconds": 0.5,
+                },
                 _OPENAI_CODEX_DEVICE_WAIT_URL,
                 {
                     "client_id": self.client_id,
@@ -1816,7 +2034,12 @@ class OpenAICodexProviderPlugin(BaseProviderPlugin):
                 "Device approval is still pending or the server returned an incomplete payload."
             )
 
-        token_payload = self.http_client.post_form_json(
+        token_payload = self._post_form_json(
+            provider_id,
+            {
+                "retry_attempts": 5,
+                "retry_backoff_seconds": 0.5,
+            },
             self.token_url,
             {
                 "grant_type": "authorization_code",
@@ -1896,6 +2119,8 @@ def builtin_providers() -> list[LoadedProviderPlugin]:
                     "chat_path",
                     "organization",
                     "timeout_seconds",
+                    "retry_attempts",
+                    "retry_backoff_seconds",
                 ],
                 secret_config=["api_key_secret"],
                 credential_fields=["access_token", "refresh_token", "expires_at"],
@@ -1939,6 +2164,8 @@ def builtin_providers() -> list[LoadedProviderPlugin]:
                     "chat_path",
                     "redirect_uri",
                     "timeout_seconds",
+                    "retry_attempts",
+                    "retry_backoff_seconds",
                     "auth_file",
                 ],
                 secret_config=["api_key_secret"],
@@ -1978,6 +2205,8 @@ def builtin_providers() -> list[LoadedProviderPlugin]:
                     "api_version",
                     "max_tokens",
                     "timeout_seconds",
+                    "retry_attempts",
+                    "retry_backoff_seconds",
                 ],
                 secret_config=["api_key_secret"],
                 credential_fields=["access_token", "refresh_token", "expires_at"],
@@ -2005,6 +2234,8 @@ def builtin_providers() -> list[LoadedProviderPlugin]:
                     "model",
                     "models_path",
                     "timeout_seconds",
+                    "retry_attempts",
+                    "retry_backoff_seconds",
                 ],
                 secret_config=["api_key_secret"],
             ),
@@ -2031,6 +2262,8 @@ def builtin_providers() -> list[LoadedProviderPlugin]:
                     "models_path",
                     "chat_path",
                     "timeout_seconds",
+                    "retry_attempts",
+                    "retry_backoff_seconds",
                 ],
                 secret_config=["api_key_secret"],
                 credential_fields=["access_token", "refresh_token", "expires_at"],
@@ -2056,6 +2289,8 @@ def builtin_providers() -> list[LoadedProviderPlugin]:
                     "models_path",
                     "chat_path",
                     "timeout_seconds",
+                    "retry_attempts",
+                    "retry_backoff_seconds",
                 ],
                 secret_config=["api_key_secret"],
                 credential_fields=["access_token", "refresh_token", "expires_at"],
@@ -2083,6 +2318,8 @@ def builtin_providers() -> list[LoadedProviderPlugin]:
                     "api_version",
                     "max_tokens",
                     "timeout_seconds",
+                    "retry_attempts",
+                    "retry_backoff_seconds",
                 ],
                 secret_config=["api_key_secret"],
                 credential_fields=["access_token", "refresh_token", "expires_at"],
@@ -2111,6 +2348,8 @@ def builtin_providers() -> list[LoadedProviderPlugin]:
                     "models_path",
                     "chat_path",
                     "timeout_seconds",
+                    "retry_attempts",
+                    "retry_backoff_seconds",
                 ],
                 secret_config=["api_key_secret"],
                 credential_fields=["access_token", "refresh_token", "expires_at"],
@@ -2135,6 +2374,8 @@ def builtin_providers() -> list[LoadedProviderPlugin]:
                     "api_key_secret",
                     "model",
                     "timeout_seconds",
+                    "retry_attempts",
+                    "retry_backoff_seconds",
                 ],
                 secret_config=["api_key_secret"],
                 credential_fields=["access_token", "refresh_token", "expires_at"],
@@ -2562,9 +2803,101 @@ def _timeout_seconds(config: Mapping[str, object]) -> float:
     return 60.0
 
 
+def _retry_attempts(config: Mapping[str, object]) -> int:
+    value = config.get("retry_attempts", 5)
+    if isinstance(value, bool):
+        return 5
+    if isinstance(value, int) and value > 0:
+        return value
+    if isinstance(value, float) and value > 0:
+        return int(value)
+    if isinstance(value, str):
+        try:
+            parsed = int(value)
+        except ValueError:
+            return 5
+        return parsed if parsed > 0 else 5
+    return 5
+
+
+def _retry_backoff_seconds(config: Mapping[str, object]) -> float:
+    value = config.get("retry_backoff_seconds", 0.0)
+    if isinstance(value, bool):
+        return 0.0
+    if isinstance(value, (int, float)) and value >= 0:
+        return float(value)
+    if isinstance(value, str):
+        try:
+            parsed = float(value)
+        except ValueError:
+            return 0.0
+        return parsed if parsed >= 0 else 0.0
+    return 0.0
+
+
+def _provider_request_with_retry(
+    config: Mapping[str, object],
+    operation: Callable[[], object],
+    *,
+    provider_id: str,
+) -> object:
+    attempts = _retry_attempts(config)
+    backoff_seconds = _retry_backoff_seconds(config)
+    last_error: ProviderHttpError | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return operation()
+        except ProviderHttpError as exc:
+            last_error = exc
+            if attempt >= attempts or not _should_retry_provider_http_error(exc):
+                raise
+            if backoff_seconds > 0:
+                sleep_seconds = min(backoff_seconds * (2 ** (attempt - 1)), 8.0)
+                time.sleep(sleep_seconds)
+    if last_error is not None:
+        raise last_error
+    raise ProviderHttpError(
+        f"Provider {provider_id!r} retry loop ended without returning a result."
+    )
+
+
 def _is_timeout_error(exc: ProviderHttpError) -> bool:
     normalized = str(exc).lower()
     return "timed out" in normalized or "timeout" in normalized
+
+
+def _should_retry_provider_http_error(exc: ProviderHttpError) -> bool:
+    normalized = str(exc).lower()
+    if _is_timeout_error(exc):
+        return True
+    if any(
+        marker in normalized
+        for marker in [
+            "connection reset",
+            "connection refused",
+            "temporarily unavailable",
+            "temporary failure",
+            "no address associated with hostname",
+            "name or service not known",
+            "unexpected eof",
+            "handshake operation timed out",
+            "ssl",
+            "tls",
+            "eof occurred in violation of protocol",
+        ]
+    ):
+        return True
+    status_code = _http_status_from_error(exc)
+    if status_code is None:
+        return False
+    return status_code == 429 or 500 <= status_code <= 599
+
+
+def _http_status_from_error(exc: ProviderHttpError) -> int | None:
+    match = re.search(r"\bhttp (\d{3})\b", str(exc), re.IGNORECASE)
+    if match is None:
+        return None
+    return int(match.group(1))
 
 
 def _int_config(config: Mapping[str, object], key: str, default: int) -> int:

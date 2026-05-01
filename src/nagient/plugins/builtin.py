@@ -4,6 +4,7 @@ import json
 from collections.abc import Mapping
 from pathlib import Path
 
+from nagient.domain.entities.config_fields import ConfigFieldSpec
 from nagient.domain.entities.system_state import CheckIssue
 from nagient.plugins.base import (
     BaseTransportPlugin,
@@ -11,7 +12,11 @@ from nagient.plugins.base import (
     TransportPluginManifest,
     TransportRuntimeContext,
 )
-from nagient.providers.http import JsonHttpClient, ProviderHttpError
+from nagient.providers.http import (
+    JsonHttpClient,
+    ProviderHttpError,
+    build_proxy_json_http_client,
+)
 from nagient.version import __version__
 
 
@@ -257,6 +262,7 @@ class TelegramTransportPlugin(BaseTransportPlugin):
         self.http_client = JsonHttpClient()
         self._runtime_contexts: dict[str, TransportRuntimeContext] = {}
         self._last_update_ids: dict[str, int] = {}
+        self._runtime_secrets: dict[str, str] = {}
 
     manifest = TransportPluginManifest(
         plugin_id="builtin.telegram",
@@ -301,8 +307,71 @@ class TelegramTransportPlugin(BaseTransportPlugin):
             "telegram.showPopup",
         ],
         required_config=["bot_token_secret"],
-        optional_config=["default_chat_id", "poll_timeout_seconds", "timeout_seconds"],
-        secret_config=["bot_token_secret"],
+        optional_config=[
+            "default_chat_id",
+            "poll_timeout_seconds",
+            "timeout_seconds",
+            "proxy_url",
+            "proxy_username",
+            "proxy_password_secret",
+        ],
+        secret_config=["bot_token_secret", "proxy_password_secret"],
+        config_fields=[
+            ConfigFieldSpec(
+                key="bot_token_secret",
+                label="Bot token",
+                help_text=(
+                    "Secret name that stores the Telegram bot token used for polling and replies."
+                ),
+                value_type="secret",
+                category="connection",
+                required=True,
+                secret=True,
+            ),
+            ConfigFieldSpec(
+                key="default_chat_id",
+                label="Default chat id",
+                help_text="Fallback chat id used for outbound notices when no reply target exists.",
+                value_type="string",
+                category="connection",
+            ),
+            ConfigFieldSpec(
+                key="proxy_url",
+                label="Proxy URL",
+                help_text="Optional HTTP or HTTPS proxy used for Telegram Bot API calls.",
+                value_type="string",
+                category="connection",
+            ),
+            ConfigFieldSpec(
+                key="proxy_username",
+                label="Proxy username",
+                help_text="Optional username for the configured Telegram proxy.",
+                value_type="string",
+                category="connection",
+            ),
+            ConfigFieldSpec(
+                key="proxy_password_secret",
+                label="Proxy password secret",
+                help_text="Optional secret name that stores the Telegram proxy password.",
+                value_type="secret",
+                category="connection",
+                secret=True,
+            ),
+            ConfigFieldSpec(
+                key="poll_timeout_seconds",
+                label="Poll timeout",
+                help_text="How long the long-polling getUpdates call waits before returning.",
+                value_type="integer",
+                category="advanced",
+            ),
+            ConfigFieldSpec(
+                key="timeout_seconds",
+                label="Request timeout",
+                help_text="Network timeout for outbound Telegram API requests.",
+                value_type="integer",
+                category="advanced",
+            ),
+        ],
         instruction_template=(
             "Use telegram.sendMessage for normal replies, telegram.sendNotification for notices, "
             "telegram.sendTyping for presence, and telegram.showPopup for short user-facing "
@@ -351,6 +420,82 @@ class TelegramTransportPlugin(BaseTransportPlugin):
                     source=transport_id,
                 )
             )
+        proxy_url = config.get("proxy_url")
+        proxy_username = config.get("proxy_username")
+        proxy_password_secret = config.get("proxy_password_secret")
+        if proxy_url:
+            if not isinstance(proxy_url, str) or not proxy_url.startswith(("http://", "https://")):
+                issues.append(
+                    CheckIssue(
+                        severity="error",
+                        code="transport.telegram.invalid_proxy_url",
+                        message=(
+                            f"Transport {transport_id!r} must use an http:// or https:// "
+                            "proxy_url."
+                        ),
+                        source=transport_id,
+                    )
+                )
+            if proxy_username and not isinstance(proxy_username, str):
+                issues.append(
+                    CheckIssue(
+                        severity="error",
+                        code="transport.telegram.invalid_proxy_username",
+                        message=(
+                            f"Transport {transport_id!r} must use a string proxy_username."
+                        ),
+                        source=transport_id,
+                    )
+                )
+            if proxy_password_secret:
+                if not isinstance(proxy_password_secret, str):
+                    issues.append(
+                        CheckIssue(
+                            severity="error",
+                            code="transport.telegram.invalid_proxy_secret_ref",
+                            message=(
+                                f"Transport {transport_id!r} must use a string "
+                                "proxy_password_secret."
+                            ),
+                            source=transport_id,
+                        )
+                    )
+                elif proxy_password_secret not in secrets:
+                    issues.append(
+                        CheckIssue(
+                            severity="error",
+                            code="transport.telegram.proxy_secret_not_found",
+                            message=(
+                                f"Transport {transport_id!r} cannot find proxy password "
+                                f"secret {proxy_password_secret!r}."
+                            ),
+                            source=transport_id,
+                        )
+                    )
+                elif not proxy_username:
+                    issues.append(
+                        CheckIssue(
+                            severity="error",
+                            code="transport.telegram.proxy_username_required",
+                            message=(
+                                f"Transport {transport_id!r} must define proxy_username when "
+                                "proxy_password_secret is set."
+                            ),
+                            source=transport_id,
+                        )
+                    )
+        elif proxy_username or proxy_password_secret:
+            issues.append(
+                CheckIssue(
+                    severity="error",
+                    code="transport.telegram.proxy_url_required",
+                    message=(
+                        f"Transport {transport_id!r} must define proxy_url before using "
+                        "proxy credentials."
+                    ),
+                    source=transport_id,
+                )
+            )
         return issues
 
     def bind_runtime(
@@ -366,6 +511,7 @@ class TelegramTransportPlugin(BaseTransportPlugin):
         config: Mapping[str, object],
         secrets: Mapping[str, str],
     ) -> None:
+        self._runtime_secrets = dict(secrets)
         self._resolve_token(config, secrets)
         self._load_state(transport_id)
 
@@ -398,6 +544,7 @@ class TelegramTransportPlugin(BaseTransportPlugin):
             "sendMessage",
             request_payload,
             timeout=_telegram_timeout_seconds(config),
+            config=config,
         )
         result = _require_telegram_result_object(response, "sendMessage")
         chat_payload = result.get("chat")
@@ -510,6 +657,7 @@ class TelegramTransportPlugin(BaseTransportPlugin):
             "getUpdates",
             request_payload,
             timeout=_telegram_poll_timeout_seconds(config) + 5,
+            config=config,
         )
         result = _require_telegram_result_list(response, "getUpdates")
         typed_updates = [item for item in result if isinstance(item, dict)]
@@ -531,7 +679,27 @@ class TelegramTransportPlugin(BaseTransportPlugin):
         config: Mapping[str, object],
         secrets: Mapping[str, str],
     ) -> list[CheckIssue]:
-        del transport_id, config, secrets
+        try:
+            self._runtime_secrets = dict(secrets)
+            token = self._resolve_token(config, secrets)
+            self._telegram_request(
+                token,
+                "getMe",
+                {},
+                timeout=_telegram_timeout_seconds(config),
+                config=config,
+            )
+        except Exception as exc:
+            return [
+                CheckIssue(
+                    severity="warning",
+                    code="transport.telegram.remote_check_failed",
+                    message=(
+                        f"Transport {transport_id!r} could not reach Telegram Bot API: {exc}"
+                    ),
+                    source=transport_id,
+                )
+            ]
         return []
 
     def answer_callback(self, payload: dict[str, object]) -> dict[str, object]:
@@ -552,6 +720,7 @@ class TelegramTransportPlugin(BaseTransportPlugin):
             "answerCallbackQuery",
             request_payload,
             timeout=_telegram_timeout_seconds(self._config_from_payload(payload)),
+            config=self._config_from_payload(payload),
         )
         return {"status": "answered", "callback_id": callback_id}
 
@@ -570,6 +739,7 @@ class TelegramTransportPlugin(BaseTransportPlugin):
             "sendChatAction",
             {"chat_id": chat_id, "action": action},
             timeout=_telegram_timeout_seconds(config),
+            config=config,
         )
         return {"status": "sent", "chat_id": chat_id, "action": action}
 
@@ -601,6 +771,7 @@ class TelegramTransportPlugin(BaseTransportPlugin):
             "editMessageText",
             request_payload,
             timeout=_telegram_timeout_seconds(config),
+            config=config,
         )
         return {"status": "edited", "chat_id": chat_id, "message_id": message_id}
 
@@ -616,6 +787,7 @@ class TelegramTransportPlugin(BaseTransportPlugin):
             "deleteMessage",
             {"chat_id": chat_id, "message_id": message_id},
             timeout=_telegram_timeout_seconds(config),
+            config=config,
         )
         return {"status": "deleted", "chat_id": chat_id, "message_id": message_id}
 
@@ -641,6 +813,7 @@ class TelegramTransportPlugin(BaseTransportPlugin):
             "setMessageReaction",
             request_payload,
             timeout=_telegram_timeout_seconds(config),
+            config=config,
         )
         return {
             "status": "reacted",
@@ -731,15 +904,33 @@ class TelegramTransportPlugin(BaseTransportPlugin):
         payload: dict[str, object],
         *,
         timeout: int,
+        config: Mapping[str, object],
     ) -> object:
         try:
-            return self.http_client.post_json(
+            return self._telegram_http_client(config).post_json(
                 f"https://api.telegram.org/bot{token}/{method}",
                 payload,
                 timeout=float(timeout),
             )
         except ProviderHttpError as exc:
             raise ValueError(str(exc)) from exc
+
+    def _telegram_http_client(self, config: Mapping[str, object]) -> JsonHttpClient | object:
+        proxy_url = _string_config(config, "proxy_url")
+        if not proxy_url:
+            return self.http_client
+        proxy_username = _string_config(config, "proxy_username")
+        proxy_password_secret = _string_config(config, "proxy_password_secret")
+        proxy_password = ""
+        if proxy_password_secret:
+            proxy_password = self._runtime_secrets.get(proxy_password_secret, "").strip()
+        default_timeout = getattr(self.http_client, "default_timeout", 60.0)
+        return build_proxy_json_http_client(
+            proxy_url,
+            username=proxy_username,
+            password=proxy_password or None,
+            default_timeout=float(default_timeout),
+        )
 
 
 def builtin_plugins() -> list[LoadedTransportPlugin]:
@@ -842,6 +1033,13 @@ def _telegram_sender_name(payload: object) -> str | None:
         return combined
     if username:
         return f"@{username}"
+    return None
+
+
+def _string_config(config: Mapping[str, object], key: str) -> str | None:
+    value = config.get(key)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
     return None
 
 

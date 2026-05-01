@@ -499,6 +499,64 @@ class ProviderBuiltinsTests(unittest.TestCase):
 
         self.assertEqual(response, "hello after timeout fallback")
 
+    def test_openai_builtin_retries_transient_failures_before_success(self) -> None:
+        plugin = cast(
+            Any,
+            next(
+                provider.implementation
+                for provider in builtin_providers()
+                if provider.manifest.plugin_id == "builtin.openai"
+            ),
+        )
+
+        class _FlakyClient:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def post_json(
+                self,
+                url: str,
+                payload: dict[str, Any],
+                *,
+                headers: dict[str, str] | None = None,
+                query: dict[str, str] | None = None,
+                timeout: float | None = None,
+            ) -> dict[str, Any]:
+                del payload, headers, query, timeout
+                self.calls += 1
+                if self.calls < 5:
+                    raise ProviderHttpError(
+                        f"Timed out while waiting for {url}: The read operation timed out"
+                    )
+                return {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": "hello after retries",
+                            }
+                        }
+                    ]
+                }
+
+        http_client = _FlakyClient()
+        plugin = replace(plugin, http_client=cast(Any, http_client))
+
+        response = plugin.generate_message(
+            "openai",
+            {
+                "auth": "api_key",
+                "api_key_secret": "OPENAI_API_KEY",
+                "model": "gpt-4.1-mini",
+                "retry_attempts": 5,
+            },
+            {"OPENAI_API_KEY": "sk-test"},
+            None,
+            message="hello",
+        )
+
+        self.assertEqual(response, "hello after retries")
+        self.assertEqual(http_client.calls, 5)
+
     def test_json_http_client_wraps_socket_timeout(self) -> None:
         client = JsonHttpClient(opener=lambda request, timeout=60: _raise_timeout())
 

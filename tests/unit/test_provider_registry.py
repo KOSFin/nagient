@@ -23,6 +23,7 @@ class ProviderPluginRegistryTests(unittest.TestCase):
             self.assertIn("builtin.openai_codex", discovery.plugins)
             self.assertIn("builtin.deepseek", discovery.plugins)
             self.assertIn("custom.provider", discovery.plugins)
+            self.assertTrue(discovery.plugins["custom.provider"].manifest.config_fields)
             self.assertEqual(discovery.issues, [])
 
 

@@ -22,6 +22,7 @@ class ToolPluginRegistryTests(unittest.TestCase):
             self.assertIn("workspace.fs", discovery.plugins)
             self.assertIn("system.backup", discovery.plugins)
             self.assertIn("custom.tool", discovery.plugins)
+            self.assertTrue(discovery.plugins["custom.tool"].manifest.config_fields)
             self.assertEqual(discovery.issues, [])
 
 

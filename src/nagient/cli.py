@@ -21,6 +21,7 @@ from nagient.app.configuration import (
 from nagient.app.container import AppContainer, build_container
 from nagient.app.settings import Settings
 from nagient.domain.entities.agent_runtime import AgentTurnRequest
+from nagient.domain.entities.config_fields import ConfigFieldSpec
 from nagient.domain.entities.tooling import ToolExecutionRequest
 from nagient.infrastructure.manifests import release_to_dict
 from nagient.version import __version__
@@ -54,6 +55,14 @@ _PROVIDER_FIELD_HELP: dict[tuple[str, str], str] = {
         "Optional reasoning level for Responses API requests, for example "
         "low, medium, high, or xhigh."
     ),
+    (
+        "openai-codex",
+        "retry_attempts",
+    ): "How many times Nagient retries transient provider failures before surfacing an error.",
+    (
+        "openai-codex",
+        "retry_backoff_seconds",
+    ): "Base delay between provider retry attempts. Increase this for flaky upstream gateways.",
     ("openai", "api_key_secret"): "Secret name for the OpenAI API key used by this profile.",
     (
         "openai",
@@ -79,6 +88,21 @@ _TRANSPORT_FIELD_HELP: dict[tuple[str, str], str] = {
         "your Telegram user id usually works. Inbound replies use the chat id from each "
         "incoming Telegram message."
     ),
+    (
+        "telegram",
+        "proxy_url",
+    ): (
+        "Optional HTTP or HTTPS proxy for Telegram API requests. "
+        "Example: http://127.0.0.1:8080"
+    ),
+    (
+        "telegram",
+        "proxy_username",
+    ): "Optional username for the configured Telegram proxy.",
+    (
+        "telegram",
+        "proxy_password_secret",
+    ): "Optional secret name that stores the Telegram proxy password.",
     (
         "webhook",
         "shared_secret_name",
@@ -671,6 +695,10 @@ def main(argv: list[str] | None = None) -> int:
                     "source": plugin.source,
                     "required_config": plugin.manifest.required_config,
                     "optional_config": plugin.manifest.optional_config,
+                    "config_fields": [
+                        field_spec.to_dict()
+                        for field_spec in _manifest_config_fields(plugin.manifest)
+                    ],
                     "custom_functions": plugin.manifest.custom_functions,
                     "exposed_functions": plugin.manifest.exposed_functions,
                 }
@@ -710,6 +738,10 @@ def main(argv: list[str] | None = None) -> int:
                     "required_config": plugin.manifest.required_config,
                     "optional_config": plugin.manifest.optional_config,
                     "secret_config": plugin.manifest.secret_config,
+                    "config_fields": [
+                        field_spec.to_dict()
+                        for field_spec in _manifest_config_fields(plugin.manifest)
+                    ],
                 }
                 for plugin in provider_discovery.plugins.values()
             ],
@@ -1082,14 +1114,16 @@ def _run_provider_profile_menu(container: AppContainer, provider_id: str) -> Non
             )
             continue
         if selection == "advanced":
+            manifest_fields = _manifest_config_fields(manifest)
+            advanced_keys = [
+                key
+                for key in manifest.allowed_config
+                if key not in {"auth", "model", "api_key_secret", "base_url"}
+            ]
             _run_generic_field_editor(
                 title=f"Provider {provider_id} fields:",
                 current_config=config,
-                allowed_keys=sorted(
-                    key
-                    for key in manifest.allowed_config
-                    if key not in {"auth", "model", "api_key_secret", "base_url"}
-                ),
+                allowed_keys=_ordered_config_keys(advanced_keys, manifest_fields),
                 save_callback=lambda updates: container.configuration_service.configure_provider(
                     provider_id,
                     config_updates=updates,
@@ -1107,6 +1141,7 @@ def _run_provider_profile_menu(container: AppContainer, provider_id: str) -> Non
                     key: _provider_field_help(provider_id, key)
                     for key in manifest.allowed_config
                 },
+                field_specs=_field_specs_for_keys(manifest_fields, advanced_keys),
             )
             continue
         if selection == "verify":
@@ -1169,6 +1204,7 @@ def _run_transport_profile_menu(container: AppContainer, transport_id: str) -> N
             _emit_configuration_result(container, payload, "text")
             continue
         if selection == "connection":
+            manifest_fields = _manifest_config_fields(plugin.manifest)
             _run_generic_field_editor(
                 title=f"Transport {transport_id} connection:",
                 current_config=dict(transport.config),
@@ -1176,6 +1212,7 @@ def _run_transport_profile_menu(container: AppContainer, transport_id: str) -> N
                     transport_id,
                     set(plugin.manifest.allowed_config),
                     set(plugin.manifest.secret_config),
+                    manifest_fields,
                 ),
                 save_callback=lambda updates: container.configuration_service.configure_transport(
                     transport_id,
@@ -1190,19 +1227,30 @@ def _run_transport_profile_menu(container: AppContainer, transport_id: str) -> N
                     key: _transport_field_help(transport_id, key)
                     for key in plugin.manifest.allowed_config
                 },
+                field_specs=_field_specs_for_keys(
+                    manifest_fields,
+                    _transport_connection_keys(
+                        transport_id,
+                        set(plugin.manifest.allowed_config),
+                        set(plugin.manifest.secret_config),
+                        manifest_fields,
+                    ),
+                ),
             )
             continue
         if selection == "advanced":
+            manifest_fields = _manifest_config_fields(plugin.manifest)
+            advanced_keys = [
+                key
+                for key in plugin.manifest.allowed_config
+                if key not in plugin.manifest.secret_config
+                and not key.endswith("_id")
+                and not key.endswith("_path")
+            ]
             _run_generic_field_editor(
                 title=f"Transport {transport_id} fields:",
                 current_config=dict(transport.config),
-                allowed_keys=sorted(
-                    key
-                    for key in plugin.manifest.allowed_config
-                    if key not in plugin.manifest.secret_config
-                    and not key.endswith("_id")
-                    and not key.endswith("_path")
-                ),
+                allowed_keys=_ordered_config_keys(advanced_keys, manifest_fields),
                 save_callback=lambda updates: container.configuration_service.configure_transport(
                     transport_id,
                     config_updates=updates,
@@ -1216,6 +1264,7 @@ def _run_transport_profile_menu(container: AppContainer, transport_id: str) -> N
                     key: _transport_field_help(transport_id, key)
                     for key in plugin.manifest.allowed_config
                 },
+                field_specs=_field_specs_for_keys(manifest_fields, advanced_keys),
             )
             continue
         if selection == "verify":
@@ -1271,10 +1320,14 @@ def _run_tool_profile_menu(container: AppContainer, tool_id: str) -> None:
             _emit_configuration_result(container, payload, "text")
             continue
         if selection == "fields":
+            manifest_fields = _manifest_config_fields(plugin.manifest)
             _run_generic_field_editor(
                 title=f"Tool {tool_id} fields:",
                 current_config=dict(tool.config),
-                allowed_keys=sorted(plugin.manifest.allowed_config),
+                allowed_keys=_ordered_config_keys(
+                    plugin.manifest.allowed_config,
+                    manifest_fields,
+                ),
                 save_callback=lambda updates: container.configuration_service.configure_tool(
                     tool_id,
                     config_updates=updates,
@@ -1284,6 +1337,7 @@ def _run_tool_profile_menu(container: AppContainer, tool_id: str) -> None:
                 secret_scope="tool",
                 target_kind="tool",
                 target_id=tool_id,
+                field_specs=list(manifest_fields),
             )
 
 
@@ -1994,11 +2048,17 @@ def _run_generic_field_editor(
     target_kind: str = "",
     target_id: str = "",
     field_help: dict[str, str] | None = None,
+    field_specs: Sequence[ConfigFieldSpec] | None = None,
 ) -> None:
     if not allowed_keys:
         print("No extra config fields are available here.")
         return
     normalized_secret_fields = set(secret_fields or ())
+    spec_by_key = {
+        field_spec.key: field_spec
+        for field_spec in (field_specs or [])
+        if field_spec.key in allowed_keys
+    }
     colors = _supports_color()
     while True:
         selection = _prompt_menu_choice(
@@ -2007,9 +2067,9 @@ def _run_generic_field_editor(
                 (
                     field_name,
                     (
-                        f"{field_name} (secret name)"
+                        f"{_field_label(spec_by_key.get(field_name), field_name)} (secret name)"
                         if field_name in normalized_secret_fields
-                        else field_name
+                        else _field_label(spec_by_key.get(field_name), field_name)
                     )
                     + _suffix_value(_as_text(current_config.get(field_name)), colors=colors),
                 )
@@ -2019,7 +2079,12 @@ def _run_generic_field_editor(
         )
         if selection is None:
             return
-        help_text = (field_help or {}).get(selection, "")
+        selected_spec = spec_by_key.get(selection)
+        help_text = _field_help_message(
+            selection,
+            selected_spec,
+            fallback_help=field_help or {},
+        )
         if help_text:
             print(_paint(help_text, "2", colors=colors))
         if selection in normalized_secret_fields:
@@ -2032,7 +2097,11 @@ def _run_generic_field_editor(
             )
         previous_value = _as_text(current_config.get(selection))
         raw_value = _prompt_text(
-            f"{selection} (secret name)" if selection in normalized_secret_fields else selection,
+            (
+                f"{_field_label(selected_spec, selection)} (secret name)"
+                if selection in normalized_secret_fields
+                else _field_label(selected_spec, selection)
+            ),
             default=previous_value,
         )
         if raw_value is None:
@@ -2051,8 +2120,14 @@ def _run_generic_field_editor(
             current_config[selection] = _coerce_cli_value(saved_secret_name or "")
             continue
 
-        payload = save_callback({selection: _coerce_cli_value(raw_value)})
-        current_config[selection] = _coerce_cli_value(raw_value)
+        try:
+            coerced_value = _coerce_cli_value_for_field(raw_value, selected_spec)
+        except ValueError as exc:
+            print(_paint(str(exc), "31", colors=colors))
+            continue
+
+        payload = save_callback({selection: coerced_value})
+        current_config[selection] = coerced_value
         if container is not None:
             _emit_configuration_result(container, payload, "text")
         else:
@@ -2211,7 +2286,17 @@ def _transport_connection_keys(
     transport_id: str,
     allowed_keys: set[str],
     secret_keys: set[str],
+    field_specs: Sequence[ConfigFieldSpec] | None = None,
 ) -> list[str]:
+    categorized_keys = [
+        field_spec.key
+        for field_spec in (field_specs or [])
+        if field_spec.key in allowed_keys
+        and field_spec.normalized_category() == "connection"
+    ]
+    if categorized_keys:
+        return _ordered_config_keys(categorized_keys, field_specs)
+
     preferred = {
         "telegram": ["bot_token_secret", "default_chat_id"],
         "webhook": ["path", "shared_secret_name"],
@@ -2228,6 +2313,96 @@ def _transport_connection_keys(
         for key in allowed_keys
         if key in secret_keys or key.endswith("_id") or key.endswith("_path")
     )
+
+
+def _ordered_config_keys(
+    keys: Sequence[str] | set[str],
+    field_specs: Sequence[ConfigFieldSpec] | None = None,
+) -> list[str]:
+    requested = set(keys)
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for field_spec in field_specs or []:
+        if field_spec.key in requested and field_spec.key not in seen:
+            ordered.append(field_spec.key)
+            seen.add(field_spec.key)
+    for key in sorted(requested):
+        if key not in seen:
+            ordered.append(key)
+            seen.add(key)
+    return ordered
+
+
+def _field_specs_for_keys(
+    field_specs: Sequence[ConfigFieldSpec],
+    keys: Sequence[str] | set[str],
+) -> list[ConfigFieldSpec]:
+    requested = set(keys)
+    return [field_spec for field_spec in field_specs if field_spec.key in requested]
+
+
+def _manifest_config_fields(manifest: Any) -> list[ConfigFieldSpec]:
+    config_fields = getattr(manifest, "config_fields", [])
+    if not isinstance(config_fields, list):
+        return []
+    return [field_spec for field_spec in config_fields if isinstance(field_spec, ConfigFieldSpec)]
+
+
+def _field_label(field_spec: ConfigFieldSpec | None, field_name: str) -> str:
+    if field_spec is None:
+        return field_name
+    return field_spec.display_label()
+
+
+def _field_help_message(
+    field_name: str,
+    field_spec: ConfigFieldSpec | None,
+    *,
+    fallback_help: dict[str, str],
+) -> str:
+    if field_spec is not None and field_spec.help_text.strip():
+        return field_spec.help_text.strip()
+    return fallback_help.get(field_name, "")
+
+
+def _coerce_cli_value_for_field(
+    raw: str,
+    field_spec: ConfigFieldSpec | None,
+) -> object:
+    if field_spec is None:
+        return _coerce_cli_value(raw)
+    value_type = field_spec.normalized_value_type()
+    if value_type == "string" or value_type == "path":
+        return raw
+    if value_type == "secret":
+        return raw
+    if value_type == "integer":
+        try:
+            return int(raw)
+        except ValueError as exc:
+            raise ValueError(
+                f"{field_spec.display_label()} must be an integer."
+            ) from exc
+    if value_type == "number":
+        try:
+            return float(raw)
+        except ValueError as exc:
+            raise ValueError(
+                f"{field_spec.display_label()} must be a number."
+            ) from exc
+    if value_type == "boolean":
+        lowered = raw.strip().lower()
+        if lowered in {"true", "false"}:
+            return lowered == "true"
+        raise ValueError(f"{field_spec.display_label()} must be true or false.")
+    if value_type == "json":
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"{field_spec.display_label()} must be valid JSON."
+            ) from exc
+    return _coerce_cli_value(raw)
 
 
 def _component_collection_key(component_kind: str) -> str:

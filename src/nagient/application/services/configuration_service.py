@@ -182,6 +182,7 @@ class ConfigurationService:
             "config": {str(key): value for key, value in profile.items() if key != "plugin"},
             "required_config": manifest.required_config,
             "optional_config": manifest.optional_config,
+            "config_fields": [field_spec.to_dict() for field_spec in manifest.config_fields],
         }
 
     def configure_transport(
@@ -234,6 +235,7 @@ class ConfigurationService:
             "config": {str(key): value for key, value in profile.items() if key != "plugin"},
             "required_config": manifest.required_config,
             "optional_config": manifest.optional_config,
+            "config_fields": [field_spec.to_dict() for field_spec in manifest.config_fields],
         }
 
     def configure_tool(
@@ -286,6 +288,7 @@ class ConfigurationService:
             "config": {str(key): value for key, value in profile.items() if key != "plugin"},
             "required_config": manifest.required_config,
             "optional_config": manifest.optional_config,
+            "config_fields": [field_spec.to_dict() for field_spec in manifest.config_fields],
         }
 
     def configure_workspace(

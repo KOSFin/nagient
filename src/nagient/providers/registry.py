@@ -6,6 +6,7 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from nagient.domain.entities.config_fields import ConfigFieldSpec
 from nagient.domain.entities.system_state import CheckIssue
 from nagient.providers.base import (
     REQUIRED_PROVIDER_METHODS,
@@ -136,10 +137,22 @@ class ProviderPluginRegistry:
             supported_auth_modes=_require_string_list(payload.get("supported_auth_modes")),
             default_auth_mode=_require_string(payload, "default_auth_mode"),
             capabilities=_require_string_list(payload.get("capabilities")),
-            required_config=_require_string_list(payload.get("required_config")),
-            optional_config=_require_string_list(payload.get("optional_config")),
-            secret_config=_require_string_list(payload.get("secret_config")),
+            required_config=_merge_config_keys(
+                _require_string_list(payload.get("required_config")),
+                config_fields := _parse_config_fields(payload.get("config_fields")),
+                required=True,
+            ),
+            optional_config=_merge_config_keys(
+                _require_string_list(payload.get("optional_config")),
+                config_fields,
+                required=False,
+            ),
+            secret_config=_merge_string_keys(
+                _require_string_list(payload.get("secret_config")),
+                [field.key for field in config_fields if field.secret],
+            ),
             credential_fields=_require_string_list(payload.get("credential_fields")),
+            config_fields=config_fields,
             config_schema_file=config_schema_file,
         )
 
@@ -191,3 +204,71 @@ def _require_string_list(value: object) -> list[str]:
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
         raise ValueError("Provider plugin lists must contain only strings.")
     return list(value)
+
+
+def _parse_config_fields(value: object) -> list[ConfigFieldSpec]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError("Provider plugin config_fields must be a list of TOML tables.")
+    config_fields: list[ConfigFieldSpec] = []
+    seen: set[str] = set()
+    for raw_field in value:
+        if not isinstance(raw_field, dict):
+            raise ValueError("Each provider config_fields entry must be a table.")
+        key = _require_string(raw_field, "key")
+        if key in seen:
+            raise ValueError(f"Duplicate provider config field {key!r}.")
+        seen.add(key)
+        config_fields.append(
+            ConfigFieldSpec(
+                key=key,
+                label=_optional_string(raw_field.get("label")),
+                help_text=_optional_string(raw_field.get("help_text")),
+                value_type=_optional_string(raw_field.get("value_type")) or "string",
+                category=_optional_string(raw_field.get("category")) or "advanced",
+                required=bool(raw_field.get("required", False)),
+                secret=bool(raw_field.get("secret", False)),
+            )
+        )
+    return config_fields
+
+
+def _optional_string(value: object) -> str:
+    if isinstance(value, str):
+        return value
+    return ""
+
+
+def _merge_config_keys(
+    explicit_keys: list[str],
+    fields: list[ConfigFieldSpec],
+    *,
+    required: bool,
+) -> list[str]:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for key in explicit_keys:
+        if key not in seen:
+            merged.append(key)
+            seen.add(key)
+    for field in fields:
+        if field.required != required:
+            continue
+        if field.key not in seen:
+            merged.append(field.key)
+            seen.add(field.key)
+    return merged
+
+
+def _merge_string_keys(
+    explicit_keys: list[str],
+    derived_keys: list[str],
+) -> list[str]:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for key in [*explicit_keys, *derived_keys]:
+        if key not in seen:
+            merged.append(key)
+            seen.add(key)
+    return merged
