@@ -103,7 +103,7 @@ jobs:
             }
 
       - name: Create or retarget tag when release is missing
-        if: steps.release.outputs.exists == 'false' && (steps.tag.outputs.exists == 'false' || steps.tag.outputs.matches_head == 'false')
+        if: steps.freshness.outputs.is_current_main == 'true' && steps.release.outputs.exists == 'false' && (steps.tag.outputs.exists == 'false' || steps.tag.outputs.matches_head == 'false')
         shell: bash
         run: |
           set -euo pipefail
@@ -158,7 +158,7 @@ jobs:
               } >> "$GITHUB_STEP_SUMMARY"
             else
               {
-                echo "## Tag retargeted and release dispatched"
+                echo "## Tag retargeted"
                 echo
                 echo "Tag \`${{ steps.meta.outputs.git_tag }}\` existed without a GitHub release and pointed to \`${{ steps.tag.outputs.tag_sha }}\`."
                 echo "Moved the tag to current commit \`${{ steps.freshness.outputs.head_sha }}\`."
@@ -167,7 +167,7 @@ jobs:
             fi
           else
             {
-              echo "## Release dispatched"
+              echo "## Tag created"
               echo
               echo "Created tag \`${{ steps.meta.outputs.git_tag }}\`."
               echo "The tag push will trigger \`release.yml\`."
