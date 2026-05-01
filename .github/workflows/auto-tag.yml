@@ -113,7 +113,7 @@ jobs:
           git push origin "+refs/tags/${{ steps.meta.outputs.git_tag }}:refs/tags/${{ steps.meta.outputs.git_tag }}"
 
       - name: Dispatch release workflow when release is missing
-        if: steps.freshness.outputs.is_current_main == 'true' && steps.release.outputs.exists == 'false' && steps.tag.outputs.exists == 'true' && steps.tag.outputs.matches_head == 'true'
+        if: steps.freshness.outputs.is_current_main == 'true' && steps.release.outputs.exists == 'false'
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -162,7 +162,7 @@ jobs:
                 echo
                 echo "Tag \`${{ steps.meta.outputs.git_tag }}\` existed without a GitHub release and pointed to \`${{ steps.tag.outputs.tag_sha }}\`."
                 echo "Moved the tag to current commit \`${{ steps.freshness.outputs.head_sha }}\`."
-                echo "The tag push will trigger \`release.yml\` for the corrected commit."
+                echo "Dispatched \`release.yml\` for the corrected tag."
               } >> "$GITHUB_STEP_SUMMARY"
             fi
           else
@@ -170,6 +170,6 @@ jobs:
               echo "## Tag created"
               echo
               echo "Created tag \`${{ steps.meta.outputs.git_tag }}\`."
-              echo "The tag push will trigger \`release.yml\`."
+              echo "Dispatched \`release.yml\` for the new tag."
             } >> "$GITHUB_STEP_SUMMARY"
           fi
