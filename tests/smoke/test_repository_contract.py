@@ -21,6 +21,19 @@ class RepositoryContractTests(unittest.TestCase):
         for relative_path in required:
             self.assertTrue((PROJECT_ROOT / relative_path).exists(), msg=relative_path)
 
+    def test_dockerfile_includes_runtime_shell_utilities(self) -> None:
+        dockerfile = (PROJECT_ROOT / "Dockerfile").read_text(encoding="utf-8")
+
+        for package_name in [
+            "bash",
+            "ca-certificates",
+            "curl",
+            "git",
+            "iputils-ping",
+            "procps",
+        ]:
+            self.assertIn(package_name, dockerfile)
+
     def test_bundled_update_center_files_are_parseable(self) -> None:
         channel_payload = json.loads(
             (PROJECT_ROOT / "metadata/update-center/channels/stable.json").read_text(

@@ -62,6 +62,7 @@ class AgentRuntimeService:
             content=text,
             metadata=_event_metadata(event, event_type),
         )
+        self._maybe_send_typing(transport_id=transport_id, event=event)
 
         previous_results: list[dict[str, object]] = []
         last_message: str | None = None
@@ -199,6 +200,7 @@ class AgentRuntimeService:
             prompt_parts.append(system_prompt_file.read_text(encoding="utf-8").strip())
         if override is not None and override.strip():
             prompt_parts.append(override.strip())
+        prompt_parts.append(_runtime_identity_prompt())
         prompt_parts.append(
             "You must return strict JSON for the assistant response schema. "
             "Do not emit markdown fences unless the message field itself needs markdown."
@@ -296,6 +298,30 @@ class AgentRuntimeService:
                 reason=mutation.reason,
             )
 
+    def _maybe_send_typing(
+        self,
+        *,
+        transport_id: str,
+        event: dict[str, object],
+    ) -> None:
+        if self.transport_router is None or transport_id == "console":
+            return
+        reply_target = event.get("reply_target")
+        if not isinstance(reply_target, dict) or not reply_target:
+            return
+        try:
+            self.transport_router.send_typing(
+                transport_id=transport_id,
+                payload={str(key): value for key, value in reply_target.items()},
+            )
+        except Exception as exc:
+            self.logger.debug(
+                "agent_runtime.typing_skipped",
+                "Could not send transport typing indicator.",
+                transport_id=transport_id,
+                error=str(exc),
+            )
+
 
 def _should_retrieve(message: str) -> bool:
     normalized = message.lower()
@@ -330,3 +356,22 @@ def _event_metadata(
         elif isinstance(value, dict):
             metadata[key] = {str(item_key): item_value for item_key, item_value in value.items()}
     return metadata
+
+
+def _runtime_identity_prompt() -> str:
+    return "\n".join(
+        [
+            "You are Nagient, a modular agent runtime assistant.",
+            "Your job is to act through the runtime, not like a passive chatbot.",
+            "You can use configured tools to read and write workspace files, run shell "
+            "commands, inspect git state, use durable memory, route outbound messages through "
+            "configured transports, and schedule future jobs or self-wake tasks.",
+            "You have conversation memory with recent context, focused context, retrieval, and "
+            "durable notes.",
+            "If a user asks what you can do, describe your real runtime capabilities.",
+            "If a user asks you to perform an action, prefer tool use over saying you cannot.",
+            "Only say that an action is blocked when a tool, policy, missing configuration, or "
+            "provider limitation actually prevents it.",
+            "When useful, explain briefly what you are doing before or after tool use.",
+        ]
+    )

@@ -1155,6 +1155,7 @@ class OpenAICodexProviderPlugin(BaseProviderPlugin):
             )
         model = _require_model(provider_id, config)
         wire_api = _wire_api_mode(config) or "chat_completions"
+        use_responses_fallback = "wire_api" not in config
         if wire_api == "responses":
             payload = self.http_client.post_json(
                 self._responses_url(config),
@@ -1181,7 +1182,10 @@ class OpenAICodexProviderPlugin(BaseProviderPlugin):
             )
             return _parse_openai_chat_message(payload, provider_id)
         except ProviderHttpError as exc:
-            if not _should_retry_with_responses_api(exc):
+            if not (
+                _should_retry_with_responses_api(exc)
+                or (use_responses_fallback and _is_timeout_error(exc))
+            ):
                 raise
 
         payload = self.http_client.post_json(
@@ -2545,17 +2549,22 @@ def _parse_ollama_message(payload: object, provider_id: str) -> str:
 
 
 def _timeout_seconds(config: Mapping[str, object]) -> float:
-    value = config.get("timeout_seconds", 15)
+    value = config.get("timeout_seconds", 60)
     if isinstance(value, bool):
-        return 15.0
+        return 60.0
     if isinstance(value, (int, float)):
         return float(value)
     if isinstance(value, str):
         try:
             return float(value)
         except ValueError:
-            return 15.0
-    return 15.0
+            return 60.0
+    return 60.0
+
+
+def _is_timeout_error(exc: ProviderHttpError) -> bool:
+    normalized = str(exc).lower()
+    return "timed out" in normalized or "timeout" in normalized
 
 
 def _int_config(config: Mapping[str, object], key: str, default: int) -> int:

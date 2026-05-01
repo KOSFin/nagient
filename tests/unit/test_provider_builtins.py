@@ -444,6 +444,73 @@ class ProviderBuiltinsTests(unittest.TestCase):
 
         self.assertEqual(response, "hello from configured responses")
 
+    def test_openai_codex_chat_retries_with_responses_on_timeout_when_wire_api_is_implicit(
+        self,
+    ) -> None:
+        plugin = cast(
+            Any,
+            next(
+                provider.implementation
+                for provider in builtin_providers()
+                if provider.manifest.plugin_id == "builtin.openai_codex"
+            ),
+        )
+
+        class _TimeoutRetryClient:
+            def __init__(self) -> None:
+                self.calls: list[str] = []
+
+            def post_json(
+                self,
+                url: str,
+                payload: dict[str, Any],
+                *,
+                headers: dict[str, str] | None = None,
+                timeout: float | None = None,
+            ) -> dict[str, Any]:
+                del headers, timeout
+                self.calls.append(url)
+                if url.endswith("/chat/completions"):
+                    raise ProviderHttpError(
+                        "Timed out while waiting for https://api.openai.com/v1/chat/completions: "
+                        "The read operation timed out"
+                    )
+                self_case.assertEqual(url, "https://api.openai.com/v1/responses")
+                self_case.assertEqual(payload["model"], "gpt-5-codex")
+                return {"output_text": "hello after timeout fallback"}
+
+            def assertEqual(self, left: object, right: object) -> None:
+                self_case.assertEqual(left, right)
+
+        self_case = self
+        plugin = replace(plugin, http_client=cast(Any, _TimeoutRetryClient()))
+
+        response = plugin.generate_message(
+            "openai-codex",
+            {
+                "auth": "api_key",
+                "api_key_secret": "CODEX_API_KEY",
+                "model": "gpt-5-codex",
+            },
+            {"CODEX_API_KEY": "sk-codex"},
+            None,
+            message="hello",
+        )
+
+        self.assertEqual(response, "hello after timeout fallback")
+
+    def test_json_http_client_wraps_socket_timeout(self) -> None:
+        client = JsonHttpClient(opener=lambda request, timeout=60: _raise_timeout())
+
+        with self.assertRaises(ProviderHttpError) as raised:
+            client.get_json("https://example.test")
+
+        self.assertIn("Timed out while waiting", str(raised.exception))
+
+
+def _raise_timeout() -> _FakeResponse:
+    raise TimeoutError("The read operation timed out")
+
 
 if __name__ == "__main__":
     unittest.main()

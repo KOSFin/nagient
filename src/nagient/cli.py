@@ -2418,6 +2418,11 @@ def _emit_configuration_result(
 def _friendly_chat_error(exc: Exception) -> str:
     message = str(exc).strip() or exc.__class__.__name__
     normalized = message.lower()
+    if "timed out" in normalized or "timeout" in normalized:
+        return (
+            "Provider request timed out. The model is reachable, but it did not finish in time. "
+            "Retry the request or increase the provider `timeout_seconds` setting."
+        )
     if "internal server error" in normalized or "internal_error" in normalized:
         return (
             "Provider replied with an internal server error. "

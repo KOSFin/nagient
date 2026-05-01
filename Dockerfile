@@ -21,7 +21,16 @@ COPY config/nagient.example.toml /etc/nagient/config.toml
 COPY config/secrets.example.env /etc/nagient/secrets.env
 COPY docker/scripts/entrypoint.sh /usr/local/bin/nagient-entrypoint
 
-RUN python -m pip install --no-cache-dir --upgrade pip \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        bash \
+        ca-certificates \
+        curl \
+        git \
+        iputils-ping \
+        procps \
+    && rm -rf /var/lib/apt/lists/* \
+    && python -m pip install --no-cache-dir --upgrade pip \
     && python -m pip install --no-cache-dir .
 
 RUN chmod +x /usr/local/bin/nagient-entrypoint \

@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock
 
+from nagient.app.configuration import load_runtime_configuration
 from nagient.app.container import build_container
 from nagient.app.settings import Settings
 from nagient.application.services.transport_router_service import TransportRouterService
@@ -69,6 +70,22 @@ class AgentRuntimeServiceTests(unittest.TestCase):
                 (workspace_root / "reminder.txt").read_text(encoding="utf-8"),
                 "scheduled",
             )
+
+    def test_runtime_system_prompt_always_includes_runtime_capabilities(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir) / "home"
+            settings = Settings.from_env({"NAGIENT_HOME": str(home_dir)})
+            container = build_container(settings)
+            container.configuration_service.initialize(force=True)
+            runtime_config = load_runtime_configuration(settings)
+
+            system_prompt = container.agent_runtime_service._system_prompt(  # noqa: SLF001
+                runtime_config,
+            )
+
+            self.assertIn("modular agent runtime assistant", system_prompt)
+            self.assertIn("run shell commands", system_prompt)
+            self.assertIn("route outbound messages", system_prompt)
 
     def test_runtime_handles_edited_messages_and_dispatches_notifications(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

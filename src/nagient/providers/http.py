@@ -37,14 +37,14 @@ class UrlopenLike(Protocol):
     ) -> ResponseContextManager: ...
 
 
-def _default_urlopen(request: Request, timeout: float = 15.0) -> ResponseContextManager:
+def _default_urlopen(request: Request, timeout: float = 60.0) -> ResponseContextManager:
     return cast(ResponseContextManager, urlopen(request, timeout=timeout))
 
 
 @dataclass(frozen=True)
 class JsonHttpClient:
     opener: UrlopenLike = _default_urlopen
-    default_timeout: float = 15.0
+    default_timeout: float = 60.0
 
     def get_json(
         self,
@@ -111,6 +111,10 @@ class JsonHttpClient:
         except URLError as exc:
             raise ProviderHttpError(
                 f"Failed to reach {request.full_url}: {exc.reason}"
+            ) from exc
+        except TimeoutError as exc:
+            raise ProviderHttpError(
+                f"Timed out while waiting for {request.full_url}: {exc}"
             ) from exc
 
         try:
