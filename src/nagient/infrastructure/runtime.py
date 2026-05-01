@@ -257,14 +257,18 @@ class RuntimeAgent:
                 continue
 
             try:
-                runtime_state_dir = self.settings.state_dir / "transports" / transport.transport_id
-                transport_id = transport.transport_id
-
-                def _runtime_log(message: str) -> None:
-                    self._log(log_path, f"Transport {transport_id}: {message}")
+                runtime_state_dir = (
+                    self.settings.state_dir / "transports" / transport.transport_id
+                )
+                def _runtime_log(
+                    message: str,
+                    *,
+                    _transport_id: str = transport.transport_id,
+                ) -> None:
+                    self._log(log_path, self._format_transport_log(_transport_id, message))
 
                 plugin.implementation.bind_runtime(
-                    transport_id,
+                    transport.transport_id,
                     TransportRuntimeContext(
                         state_dir=runtime_state_dir,
                         log=_runtime_log,
@@ -331,7 +335,10 @@ class RuntimeAgent:
                 )
 
     def _should_spawn_poll_thread(self, implementation: BaseTransportPlugin) -> bool:
-        return implementation.__class__.poll_inbound_events is not BaseTransportPlugin.poll_inbound_events
+        return (
+            implementation.__class__.poll_inbound_events
+            is not BaseTransportPlugin.poll_inbound_events
+        )
 
     def _poll_transport_loop(
         self,
@@ -399,14 +406,20 @@ class RuntimeAgent:
         if not isinstance(reply_target, dict):
             self._log(
                 log_path,
-                f"Transport {transport.transport_id} produced a message event without reply_target.",
+                self._format_transport_log(
+                    transport.transport_id,
+                    "produced a message event without reply_target.",
+                ),
             )
             return
 
         if self.inbound_message_handler is None:
             self._log(
                 log_path,
-                f"Transport {transport.transport_id} received a message but no handler is configured.",
+                self._format_transport_log(
+                    transport.transport_id,
+                    "received a message but no handler is configured.",
+                ),
             )
             return
 
@@ -441,6 +454,9 @@ class RuntimeAgent:
                 log_path,
                 f"Transport {transport.transport_id} failed to send a reply: {exc}",
             )
+
+    def _format_transport_log(self, transport_id: str, message: str) -> str:
+        return f"Transport {transport_id}: {message}"
 
     def _transport_start_message(self, transport: TransportInstanceConfig) -> str:
         if transport.transport_id == "telegram":

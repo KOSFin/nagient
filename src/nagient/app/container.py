@@ -129,6 +129,17 @@ def build_container(settings: Settings | None = None) -> AppContainer:
         tool_service=tool_service,
         workflow_service=workflow_service,
     )
+
+    def inbound_message_handler(
+        transport_id: str,
+        event: dict[str, object],
+    ) -> str | None:
+        return _respond_to_inbound_transport_message(
+            provider_service,
+            transport_id,
+            event,
+        )
+
     return AppContainer(
         settings=resolved_settings,
         registry=registry,
@@ -168,11 +179,7 @@ def build_container(settings: Settings | None = None) -> AppContainer:
             settings=resolved_settings,
             activation_runner=reconcile_service.reconcile,
             plugin_registry=plugin_registry,
-            inbound_message_handler=lambda transport_id, event: _respond_to_inbound_transport_message(
-                provider_service,
-                transport_id,
-                event,
-            ),
+            inbound_message_handler=inbound_message_handler,
         ),
     )
 
