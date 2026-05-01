@@ -2173,7 +2173,7 @@ def _transport_test_payload(
         raise ValueError(f"Transport profile {transport_id!r} was not found.")
 
     transport_payloads: list[dict[str, object]] = []
-    issues = [issue.to_dict() for issue in discovery.issues]
+    issues: list[object] = [issue.to_dict() for issue in discovery.issues]
     for transport in selected_transports:
         plugin = discovery.plugins.get(transport.plugin_id)
         if plugin is None:
@@ -2220,7 +2220,7 @@ def _transport_test_payload(
 
 def _transport_test_status(
     transports: list[dict[str, object]],
-    issues: list[object],
+    issues: Sequence[object],
 ) -> str:
     statuses = {_normalized_status(item.get("status")) for item in transports}
     if statuses == {"disabled"}:
