@@ -187,6 +187,90 @@ class TransportBuiltinsTests(unittest.TestCase):
         self.assertEqual(result["status"], "sent")
         self.assertEqual(result["chat_id"], "1522105862")
 
+    def test_telegram_send_typing_and_edit_delete_reaction_use_runtime_payload(self) -> None:
+        plugin = cast(
+            Any,
+            next(
+                transport.implementation
+                for transport in builtin_plugins()
+                if transport.manifest.plugin_id == "builtin.telegram"
+            ),
+        )
+
+        class _TelegramHttpClient:
+            def __init__(self) -> None:
+                self.seen_methods: list[tuple[str, dict[str, object]]] = []
+
+            def post_json(
+                self,
+                url: str,
+                payload: dict[str, object],
+                *,
+                headers: dict[str, str] | None = None,
+                query: dict[str, str] | None = None,
+                timeout: float | None = None,
+            ) -> dict[str, object]:
+                del headers, query, timeout
+                self.seen_methods.append((url.rsplit("/", 1)[-1], dict(payload)))
+                if url.endswith("/editMessageText"):
+                    return {"ok": True, "result": True}
+                if url.endswith("/deleteMessage"):
+                    return {"ok": True, "result": True}
+                if url.endswith("/setMessageReaction"):
+                    return {"ok": True, "result": True}
+                return {"ok": True, "result": True}
+
+        http_client = _TelegramHttpClient()
+        plugin.http_client = http_client
+        payload = {
+            "chat_id": "1522105862",
+            "message_id": "77",
+            "text": "updated",
+            "emoji": "🔥",
+            "_token": "12345:test-token",
+            "_transport_config": {},
+        }
+
+        self.assertEqual(plugin.send_typing(payload)["status"], "sent")
+        self.assertEqual(plugin.edit_message(payload)["status"], "edited")
+        self.assertEqual(plugin.delete_message(payload)["status"], "deleted")
+        self.assertEqual(plugin.set_reaction(payload)["status"], "reacted")
+        self.assertEqual(
+            [method for method, _ in http_client.seen_methods],
+            [
+                "sendChatAction",
+                "editMessageText",
+                "deleteMessage",
+                "setMessageReaction",
+            ],
+        )
+
+    def test_telegram_normalizes_edited_message_event(self) -> None:
+        plugin = cast(
+            Any,
+            next(
+                transport.implementation
+                for transport in builtin_plugins()
+                if transport.manifest.plugin_id == "builtin.telegram"
+            ),
+        )
+
+        normalized = plugin.normalize_inbound_event(
+            {
+                "update_id": 42,
+                "edited_message": {
+                    "message_id": 9,
+                    "text": "edited",
+                    "chat": {"id": 1522105862},
+                    "from": {"id": 100, "first_name": "D"},
+                },
+            }
+        )
+
+        self.assertEqual(normalized["event_type"], "edited_message")
+        self.assertEqual(normalized["message_id"], "9")
+        self.assertEqual(normalized["reply_target"], {"chat_id": "1522105862"})
+
 
 if __name__ == "__main__":
     unittest.main()

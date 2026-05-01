@@ -15,6 +15,7 @@ project_name = "nagient"
 [paths]
 secrets_file = "/var/lib/nagient/secrets.env"
 tool_secrets_file = "/var/lib/nagient/tool-secrets.env"
+prompts_dir = "/var/lib/nagient/prompts"
 plugins_dir = "/var/lib/nagient/plugins"
 tools_dir = "/var/lib/nagient/tools"
 providers_dir = "/var/lib/nagient/providers"
@@ -27,6 +28,20 @@ mode = "bounded"
 [agent]
 default_provider = ""
 require_provider = false
+system_prompt_file = "/var/lib/nagient/prompts/system.md"
+max_turns = 4
+
+[agent.memory]
+hard_message_limit = 100
+dynamic_focus_enabled = true
+dynamic_focus_messages = 10
+summary_trigger_messages = 20
+retrieval_max_results = 8
+
+[agent.logging]
+level = "info"
+json_logs = false
+log_events = true
 
 [transports.console]
 plugin = "builtin.console"
@@ -111,6 +126,18 @@ enabled = true
 
 [tools.system_reconcile]
 plugin = "system.reconcile"
+enabled = true
+
+[tools.transport_router]
+plugin = "transport.router"
+enabled = true
+
+[tools.agent_memory]
+plugin = "agent.memory"
+enabled = true
+
+[tools.system_jobs]
+plugin = "system.jobs"
 enabled = true
 
 [tools.github_api]

@@ -4,17 +4,22 @@ from dataclasses import dataclass
 
 from nagient.app.configuration import load_runtime_configuration
 from nagient.app.settings import Settings
+from nagient.application.services.agent_runtime_service import AgentRuntimeService
 from nagient.application.services.agent_turn_service import AgentTurnService
 from nagient.application.services.configuration_service import ConfigurationService
 from nagient.application.services.health_service import HealthService
 from nagient.application.services.preflight_service import PreflightService
 from nagient.application.services.provider_service import ProviderService
 from nagient.application.services.reconcile_service import ReconcileService
+from nagient.application.services.scheduler_service import SchedulerService
+from nagient.application.services.session_memory_service import SessionMemoryService
 from nagient.application.services.status_service import StatusService
 from nagient.application.services.tool_service import ToolService
+from nagient.application.services.transport_router_service import TransportRouterService
 from nagient.application.services.update_service import UpdateService
 from nagient.application.services.workflow_service import WorkflowService
 from nagient.backups.manager import BackupManager
+from nagient.infrastructure.logging import RuntimeLogger
 from nagient.infrastructure.registry import ManifestRegistry
 from nagient.infrastructure.runtime import RuntimeAgent
 from nagient.plugins.manager import TransportManager
@@ -50,14 +55,19 @@ class AppContainer:
     workflow_service: WorkflowService
     tool_service: ToolService
     provider_service: ProviderService
+    transport_router_service: TransportRouterService
+    memory_service: SessionMemoryService
+    scheduler_service: SchedulerService
     preflight_service: PreflightService
     reconcile_service: ReconcileService
     agent_turn_service: AgentTurnService
+    agent_runtime_service: AgentRuntimeService
     runtime_agent: RuntimeAgent
 
 
 def build_container(settings: Settings | None = None) -> AppContainer:
     resolved_settings = settings or Settings.from_env()
+    runtime_config = load_runtime_configuration(resolved_settings)
     registry = ManifestRegistry(resolved_settings.update_base_url)
     update_service = UpdateService(registry=registry)
     plugin_registry = TransportPluginRegistry()
@@ -66,12 +76,24 @@ def build_container(settings: Settings | None = None) -> AppContainer:
     provider_manager = ProviderManager()
     tool_registry = ToolPluginRegistry()
     tool_manager = ToolManager()
+    root_logger = RuntimeLogger(
+        resolved_settings,
+        component="runtime",
+        agent_logging=runtime_config.agent.logging,
+    )
     secret_broker = SecretBroker(resolved_settings)
     workspace_manager = WorkspaceManager(resolved_settings)
     backup_manager = BackupManager()
     workflow_store = WorkflowStore(resolved_settings)
     credential_store = FileCredentialStore(resolved_settings.credentials_dir)
     auth_session_store = AuthSessionStore(resolved_settings.state_dir / "auth-sessions")
+    transport_router_service = TransportRouterService(
+        settings=resolved_settings,
+        plugin_registry=plugin_registry,
+        logger=root_logger.bind("transport-router"),
+    )
+    memory_service = SessionMemoryService(logger=root_logger.bind("memory"))
+    scheduler_service = SchedulerService(logger=root_logger.bind("scheduler"))
     workflow_service = WorkflowService(
         settings=resolved_settings,
         workflow_store=workflow_store,
@@ -96,6 +118,10 @@ def build_container(settings: Settings | None = None) -> AppContainer:
         workspace_manager=workspace_manager,
         backup_manager=backup_manager,
         workflow_service=workflow_service,
+        transport_router=transport_router_service,
+        memory_service=memory_service,
+        scheduler_service=scheduler_service,
+        logger=root_logger.bind("tool-service"),
     )
     provider_service = ProviderService(
         settings=resolved_settings,
@@ -104,6 +130,7 @@ def build_container(settings: Settings | None = None) -> AppContainer:
         credential_store=credential_store,
         auth_session_store=auth_session_store,
         secret_broker=secret_broker,
+        logger=root_logger.bind("provider-service"),
     )
     preflight_service = PreflightService(
         settings=resolved_settings,
@@ -129,13 +156,22 @@ def build_container(settings: Settings | None = None) -> AppContainer:
         tool_service=tool_service,
         workflow_service=workflow_service,
     )
+    agent_runtime_service = AgentRuntimeService(
+        settings=resolved_settings,
+        workspace_manager=workspace_manager,
+        memory_service=memory_service,
+        provider_service=provider_service,
+        agent_turn_service=agent_turn_service,
+        tool_registry=tool_registry,
+        transport_router=transport_router_service,
+        logger=root_logger.bind("agent-runtime"),
+    )
 
     def inbound_message_handler(
         transport_id: str,
         event: dict[str, object],
     ) -> str | None:
-        return _respond_to_inbound_transport_message(
-            provider_service,
+        return agent_runtime_service.handle_inbound_event(
             transport_id,
             event,
         )
@@ -172,14 +208,21 @@ def build_container(settings: Settings | None = None) -> AppContainer:
         workflow_service=workflow_service,
         tool_service=tool_service,
         provider_service=provider_service,
+        transport_router_service=transport_router_service,
+        memory_service=memory_service,
+        scheduler_service=scheduler_service,
         preflight_service=preflight_service,
         reconcile_service=reconcile_service,
         agent_turn_service=agent_turn_service,
+        agent_runtime_service=agent_runtime_service,
         runtime_agent=RuntimeAgent(
             settings=resolved_settings,
             activation_runner=reconcile_service.reconcile,
             plugin_registry=plugin_registry,
             inbound_message_handler=inbound_message_handler,
+            workspace_manager=workspace_manager,
+            scheduler_service=scheduler_service,
+            scheduled_job_handler=agent_runtime_service.handle_scheduled_job,
         ),
     )
 
@@ -193,19 +236,3 @@ def _restore_workspace_snapshot(
     runtime_config = load_runtime_configuration(settings)
     layout = workspace_manager.ensure_layout(runtime_config.workspace)
     return backup_manager.restore_snapshot(layout, snapshot_id)
-
-
-def _respond_to_inbound_transport_message(
-    provider_service: ProviderService,
-    transport_id: str,
-    event: dict[str, object],
-) -> str | None:
-    del transport_id
-    text = str(event.get("text", "")).strip()
-    if not text:
-        return None
-    response = provider_service.chat(message=text)
-    message = response.get("message")
-    if isinstance(message, str):
-        return message
-    return str(message) if message is not None else None

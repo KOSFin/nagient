@@ -36,6 +36,7 @@ class Settings:
     config_file: Path
     secrets_file: Path
     tool_secrets_file: Path
+    prompts_dir: Path
     plugins_dir: Path
     providers_dir: Path
     tools_dir: Path
@@ -74,6 +75,15 @@ class Settings:
             )
         else:
             plugins_dir = _expand_path(str(home_dir / "plugins"))
+        if "NAGIENT_PROMPTS_DIR" in env:
+            prompts_dir = _expand_path(env["NAGIENT_PROMPTS_DIR"])
+        elif "prompts_dir" in file_values:
+            prompts_dir = _expand_config_relative_path(
+                file_values["prompts_dir"],
+                config_file.parent,
+            )
+        else:
+            prompts_dir = _expand_path(str(home_dir / "prompts"))
         if "NAGIENT_TOOLS_DIR" in env:
             tools_dir = _expand_path(env["NAGIENT_TOOLS_DIR"])
         elif "tools_dir" in file_values:
@@ -120,6 +130,7 @@ class Settings:
             config_file=config_file,
             secrets_file=secrets_file,
             tool_secrets_file=tool_secrets_file,
+            prompts_dir=prompts_dir,
             plugins_dir=plugins_dir,
             providers_dir=providers_dir,
             tools_dir=tools_dir,
@@ -156,6 +167,7 @@ class Settings:
             self.config_file.parent,
             self.secrets_file.parent,
             self.tool_secrets_file.parent,
+            self.prompts_dir,
             self.plugins_dir,
             self.providers_dir,
             self.tools_dir,
@@ -173,6 +185,7 @@ class Settings:
             "config_file": str(self.config_file),
             "secrets_file": str(self.secrets_file),
             "tool_secrets_file": str(self.tool_secrets_file),
+            "prompts_dir": str(self.prompts_dir),
             "plugins_dir": str(self.plugins_dir),
             "providers_dir": str(self.providers_dir),
             "tools_dir": str(self.tools_dir),
@@ -219,6 +232,8 @@ def _read_config(config_file: Path) -> dict[str, str]:
             values["secrets_file"] = str(paths["secrets_file"])
         if isinstance(paths.get("tool_secrets_file"), str):
             values["tool_secrets_file"] = str(paths["tool_secrets_file"])
+        if isinstance(paths.get("prompts_dir"), str):
+            values["prompts_dir"] = str(paths["prompts_dir"])
         if isinstance(paths.get("plugins_dir"), str):
             values["plugins_dir"] = str(paths["plugins_dir"])
         if isinstance(paths.get("tools_dir"), str):

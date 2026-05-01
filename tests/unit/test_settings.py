@@ -28,6 +28,7 @@ class SettingsTests(unittest.TestCase):
                         "",
                         "[paths]",
                         'secrets_file = "./custom-secrets.env"',
+                        'prompts_dir = "./custom-prompts"',
                         'plugins_dir = "./custom-plugins"',
                         'providers_dir = "./custom-providers"',
                         'credentials_dir = "./custom-credentials"',
@@ -50,6 +51,7 @@ class SettingsTests(unittest.TestCase):
             self.assertEqual(settings.docker_project_name, "nagient-dev")
             self.assertFalse(settings.safe_mode)
             self.assertEqual(settings.secrets_file, (home_dir / "custom-secrets.env").resolve())
+            self.assertEqual(settings.prompts_dir, (home_dir / "custom-prompts").resolve())
             self.assertEqual(settings.plugins_dir, (home_dir / "custom-plugins").resolve())
             self.assertEqual(settings.providers_dir, (home_dir / "custom-providers").resolve())
             self.assertEqual(

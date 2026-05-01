@@ -9,10 +9,12 @@ import nagient.providers.scaffold as provider_scaffold
 from nagient.app.configuration import (
     _coerce_bool,
     _ensure_mapping,
+    default_system_prompt_file,
     read_raw_config,
     render_credentials_readme,
     render_default_config,
     render_default_secrets,
+    render_default_system_prompt,
     render_default_tool_secrets,
     render_plugins_readme,
     render_providers_readme,
@@ -43,6 +45,7 @@ class ConfigurationService:
             self.settings.config_file: render_default_config(self.settings),
             self.settings.secrets_file: render_default_secrets(),
             self.settings.tool_secrets_file: render_default_tool_secrets(),
+            default_system_prompt_file(self.settings): render_default_system_prompt(),
             self.settings.plugins_dir / "README.md": render_plugins_readme(),
             self.settings.tools_dir / "README.md": render_tools_readme(),
             self.settings.providers_dir / "README.md": render_providers_readme(),
@@ -60,6 +63,7 @@ class ConfigurationService:
             "config_file": str(self.settings.config_file),
             "secrets_file": str(self.settings.secrets_file),
             "tool_secrets_file": str(self.settings.tool_secrets_file),
+            "prompts_dir": str(self.settings.prompts_dir),
             "plugins_dir": str(self.settings.plugins_dir),
             "tools_dir": str(self.settings.tools_dir),
             "providers_dir": str(self.settings.providers_dir),
@@ -299,10 +303,43 @@ class ConfigurationService:
         write_raw_config(self.settings.config_file, raw_config)
         return {"component": "workspace", "workspace": dict(workspace)}
 
+    def configure_agent(
+        self,
+        updates: dict[str, object],
+    ) -> dict[str, object]:
+        allowed_keys = {
+            "default_provider",
+            "require_provider",
+            "system_prompt_file",
+            "max_turns",
+            "memory",
+            "logging",
+        }
+        self._validate_component_updates(
+            kind="agent",
+            component_id="agent",
+            allowed_keys=allowed_keys,
+            updates=updates,
+        )
+        raw_config = read_raw_config(self.settings.config_file)
+        agent = _ensure_mapping(raw_config, "agent")
+        for key, value in updates.items():
+            if key in {"memory", "logging"} and isinstance(value, dict):
+                nested = agent.get(key)
+                if not isinstance(nested, dict):
+                    nested = {}
+                    agent[key] = nested
+                nested.update(value)
+                continue
+            agent[key] = value
+        write_raw_config(self.settings.config_file, raw_config)
+        return {"component": "agent", "agent": dict(agent)}
+
     def configure_paths(self, updates: dict[str, object]) -> dict[str, object]:
         allowed_keys = {
             "secrets_file",
             "tool_secrets_file",
+            "prompts_dir",
             "plugins_dir",
             "tools_dir",
             "providers_dir",

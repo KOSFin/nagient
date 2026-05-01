@@ -558,6 +558,42 @@ class CliRuntimeFlowsTests(unittest.TestCase):
             self.assertEqual(workspace_payload["workspace"]["root"], "/tmp/project")
             self.assertEqual(workspace_payload["workspace"]["mode"], "unsafe")
 
+            agent_process = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "nagient",
+                    "setup",
+                    "agent",
+                    "--system-prompt-file",
+                    "@prompts/custom-system.md",
+                    "--max-turns",
+                    "6",
+                    "--hard-message-limit",
+                    "120",
+                    "--no-dynamic-focus",
+                    "--dynamic-focus-messages",
+                    "15",
+                    "--summary-trigger-messages",
+                    "18",
+                    "--retrieval-max-results",
+                    "9",
+                    "--log-level",
+                    "debug",
+                    "--json-logs",
+                    "--no-log-events",
+                    "--format",
+                    "json",
+                ],
+                cwd=PROJECT_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            agent_payload = json.loads(agent_process.stdout)
+            self.assertEqual(agent_payload["agent"]["max_turns"], 6)
+
             config_text = (home_dir / "config.toml").read_text(encoding="utf-8")
             self.assertIn('default_provider = "openai"', config_text)
             self.assertIn("require_provider = true", config_text)
@@ -569,6 +605,13 @@ class CliRuntimeFlowsTests(unittest.TestCase):
             self.assertIn('path = "/hook"', config_text)
             self.assertIn("[workspace]", config_text)
             self.assertIn('root = "/tmp/project"', config_text)
+            self.assertIn('system_prompt_file = "', config_text)
+            self.assertIn("max_turns = 6", config_text)
+            self.assertIn("[agent.memory]", config_text)
+            self.assertIn("hard_message_limit = 120", config_text)
+            self.assertIn("dynamic_focus_enabled = false", config_text)
+            self.assertIn("[agent.logging]", config_text)
+            self.assertIn('level = "debug"', config_text)
 
     def test_setup_provider_auto_selects_first_enabled_profile_as_default(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

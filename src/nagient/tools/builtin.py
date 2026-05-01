@@ -14,6 +14,11 @@ from urllib.request import Request, urlopen
 from nagient.domain.entities.security import InteractionRequest, PostSubmitAction
 from nagient.domain.entities.system_state import CheckIssue
 from nagient.domain.entities.tooling import ToolFunctionManifest, ToolPluginManifest
+from nagient.tools.agent_builtin import (
+    AgentMemoryToolPlugin,
+    SystemJobsToolPlugin,
+    TransportRouterToolPlugin,
+)
 from nagient.tools.base import (
     BaseToolPlugin,
     LoadedToolPlugin,
@@ -744,8 +749,11 @@ def builtin_tools() -> list[LoadedToolPlugin]:
         WorkspaceShellToolPlugin(),
         WorkspaceGitToolPlugin(),
         TransportInteractionToolPlugin(),
+        TransportRouterToolPlugin(),
+        AgentMemoryToolPlugin(),
         SystemBackupToolPlugin(),
         SystemReconcileToolPlugin(),
+        SystemJobsToolPlugin(),
         GitHubApiToolPlugin(),
     ]
     return [

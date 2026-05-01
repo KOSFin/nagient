@@ -7,6 +7,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from nagient.app.configuration import (
     RuntimeConfiguration,
@@ -17,6 +18,7 @@ from nagient.app.settings import Settings
 from nagient.domain.entities.system_state import ActivationReport
 from nagient.plugins.base import BaseTransportPlugin, TransportRuntimeContext
 from nagient.plugins.registry import TransportPluginRegistry
+from nagient.workspace.manager import WorkspaceLayout, WorkspaceManager
 
 
 @dataclass
@@ -33,6 +35,9 @@ class RuntimeAgent:
     activation_runner: Callable[[], ActivationReport] | None = None
     plugin_registry: TransportPluginRegistry = field(default_factory=TransportPluginRegistry)
     inbound_message_handler: Callable[[str, dict[str, object]], str | None] | None = None
+    workspace_manager: WorkspaceManager | None = None
+    scheduler_service: Any | None = None
+    scheduled_job_handler: Callable[[Any], str | None] | None = None
 
     def serve(self, once: bool = False) -> int:
         self.settings.ensure_directories()
@@ -46,6 +51,7 @@ class RuntimeAgent:
         started_at_epoch = time.time()
         started_at = _iso_timestamp(started_at_epoch)
         started_transports: list[_StartedTransport] = []
+        scheduler_layout = self._scheduler_layout(runtime_config)
         reload_warning_emitted = False
 
         self._log(
@@ -83,6 +89,7 @@ class RuntimeAgent:
                     started_at_epoch=started_at_epoch,
                     latest_change=latest_change,
                 )
+                self._run_due_jobs(log_path, scheduler_layout)
                 if once:
                     break
                 stop_event.wait(timeout=self.settings.heartbeat_interval_seconds)
@@ -395,7 +402,7 @@ class RuntimeAgent:
             return
 
         event_type = str(normalized.get("event_type", "")).strip().lower()
-        if event_type != "message":
+        if event_type not in {"message", "callback_query", "edited_message"}:
             return
 
         text = str(normalized.get("text", "")).strip()
@@ -439,9 +446,10 @@ class RuntimeAgent:
         reply_payload = dict(reply_target)
         reply_payload["text"] = reply_text
         reply_payload["_transport_config"] = dict(transport.config)
+        reply_payload["_transport_id"] = transport.transport_id
         secret_name = transport.config.get("bot_token_secret")
         if (
-            transport.transport_id == "telegram"
+            transport.plugin_id == "builtin.telegram"
             and isinstance(secret_name, str)
             and secret_name in secrets
         ):
@@ -489,6 +497,39 @@ class RuntimeAgent:
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with log_path.open("a", encoding="utf-8") as handle:
             handle.write(line + "\n")
+
+    def _scheduler_layout(
+        self,
+        runtime_config: RuntimeConfiguration,
+    ) -> WorkspaceLayout | None:
+        if self.workspace_manager is None or self.scheduler_service is None:
+            return None
+        return self.workspace_manager.ensure_layout(runtime_config.workspace)
+
+    def _run_due_jobs(
+        self,
+        log_path: Path,
+        layout: WorkspaceLayout | None,
+    ) -> None:
+        if (
+            layout is None
+            or self.scheduler_service is None
+            or self.scheduled_job_handler is None
+        ):
+            return
+        try:
+            executed = self.scheduler_service.run_due_jobs(
+                layout,
+                self.scheduled_job_handler,
+            )
+        except Exception as exc:
+            self._log(log_path, f"Scheduler failed while running due jobs: {exc}")
+            return
+        for job in executed:
+            self._log(
+                log_path,
+                f"Scheduler executed job {job.job_id} ({job.trigger}).",
+            )
 
 
 def _latest_runtime_input_change(settings: Settings) -> tuple[Path, float] | None:

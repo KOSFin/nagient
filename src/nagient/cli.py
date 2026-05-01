@@ -207,6 +207,28 @@ def build_parser() -> argparse.ArgumentParser:
     setup_tool_parser.add_argument("--set", action="append", default=[])
     setup_tool_parser.add_argument("--format", choices=("text", "json"), default="text")
 
+    setup_agent_parser = setup_subparsers.add_parser(
+        "agent",
+        help="Configure agent runtime settings",
+    )
+    setup_agent_parser.add_argument("--default-provider")
+    setup_agent_parser.add_argument("--require-provider", action="store_true")
+    setup_agent_parser.add_argument("--not-require-provider", action="store_true")
+    setup_agent_parser.add_argument("--system-prompt-file")
+    setup_agent_parser.add_argument("--max-turns", type=int)
+    setup_agent_parser.add_argument("--hard-message-limit", type=int)
+    setup_agent_parser.add_argument("--dynamic-focus", action="store_true")
+    setup_agent_parser.add_argument("--no-dynamic-focus", action="store_true")
+    setup_agent_parser.add_argument("--dynamic-focus-messages", type=int)
+    setup_agent_parser.add_argument("--summary-trigger-messages", type=int)
+    setup_agent_parser.add_argument("--retrieval-max-results", type=int)
+    setup_agent_parser.add_argument("--log-level", choices=("debug", "info", "warning", "error"))
+    setup_agent_parser.add_argument("--json-logs", action="store_true")
+    setup_agent_parser.add_argument("--no-json-logs", action="store_true")
+    setup_agent_parser.add_argument("--log-events", action="store_true")
+    setup_agent_parser.add_argument("--no-log-events", action="store_true")
+    setup_agent_parser.add_argument("--format", choices=("text", "json"), default="text")
+
     setup_workspace_parser = setup_subparsers.add_parser(
         "workspace",
         help="Configure workspace settings",
@@ -221,6 +243,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     setup_paths_parser.add_argument("--secrets-file")
     setup_paths_parser.add_argument("--tool-secrets-file")
+    setup_paths_parser.add_argument("--prompts-dir")
     setup_paths_parser.add_argument("--plugins-dir")
     setup_paths_parser.add_argument("--tools-dir")
     setup_paths_parser.add_argument("--providers-dir")
@@ -535,6 +558,57 @@ def main(argv: list[str] | None = None) -> int:
         )
         return _emit_configuration_result(container, payload, args.format)
 
+    if args.command == "setup" and args.setup_command == "agent":
+        updates: dict[str, object] = {}
+        if args.default_provider is not None:
+            updates["default_provider"] = args.default_provider
+        require_provider = _resolve_enablement(
+            args.require_provider,
+            args.not_require_provider,
+        )
+        if require_provider is not None:
+            updates["require_provider"] = require_provider
+        if args.system_prompt_file is not None:
+            updates["system_prompt_file"] = _resolve_path_alias(
+                args.system_prompt_file,
+                container.settings,
+            )
+        if args.max_turns is not None:
+            updates["max_turns"] = args.max_turns
+
+        memory_updates: dict[str, object] = {}
+        if args.hard_message_limit is not None:
+            memory_updates["hard_message_limit"] = args.hard_message_limit
+        dynamic_focus_enabled = _resolve_enablement(
+            args.dynamic_focus,
+            args.no_dynamic_focus,
+        )
+        if dynamic_focus_enabled is not None:
+            memory_updates["dynamic_focus_enabled"] = dynamic_focus_enabled
+        if args.dynamic_focus_messages is not None:
+            memory_updates["dynamic_focus_messages"] = args.dynamic_focus_messages
+        if args.summary_trigger_messages is not None:
+            memory_updates["summary_trigger_messages"] = args.summary_trigger_messages
+        if args.retrieval_max_results is not None:
+            memory_updates["retrieval_max_results"] = args.retrieval_max_results
+        if memory_updates:
+            updates["memory"] = memory_updates
+
+        logging_updates: dict[str, object] = {}
+        if args.log_level is not None:
+            logging_updates["level"] = args.log_level
+        json_logs = _resolve_enablement(args.json_logs, args.no_json_logs)
+        if json_logs is not None:
+            logging_updates["json_logs"] = json_logs
+        log_events = _resolve_enablement(args.log_events, args.no_log_events)
+        if log_events is not None:
+            logging_updates["log_events"] = log_events
+        if logging_updates:
+            updates["logging"] = logging_updates
+
+        payload = container.configuration_service.configure_agent(updates)
+        return _emit_configuration_result(container, payload, args.format)
+
     if args.command == "setup" and args.setup_command == "workspace":
         payload = container.configuration_service.configure_workspace(
             root=_resolve_path_alias(args.root, container.settings) if args.root else None,
@@ -556,6 +630,11 @@ def main(argv: list[str] | None = None) -> int:
                         args.tool_secrets_file, container.settings
                     )
                     if args.tool_secrets_file
+                    else None,
+                    "prompts_dir": _resolve_path_alias(
+                        args.prompts_dir, container.settings
+                    )
+                    if args.prompts_dir
                     else None,
                     "plugins_dir": _resolve_path_alias(
                         args.plugins_dir, container.settings
@@ -2032,12 +2111,14 @@ def _paths_payload(container: AppContainer) -> dict[str, object]:
 
 
 def _path_aliases(settings: Settings) -> dict[str, str]:
+    prompts_dir = getattr(settings, "prompts_dir", None)
     return {
         "@home": str(settings.home_dir),
         "@config": str(settings.config_file),
         "@config_dir": str(settings.config_file.parent),
         "@secrets": str(settings.secrets_file),
         "@tool_secrets": str(settings.tool_secrets_file),
+        "@prompts": str(prompts_dir) if prompts_dir is not None else str(settings.home_dir),
         "@plugins": str(settings.plugins_dir),
         "@providers": str(settings.providers_dir),
         "@tools": str(settings.tools_dir),

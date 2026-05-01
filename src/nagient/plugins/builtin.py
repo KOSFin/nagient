@@ -284,15 +284,29 @@ class TelegramTransportPlugin(BaseTransportPlugin):
             "telegram.start": "start",
             "telegram.stop": "stop",
             "telegram.answerCallback": "answer_callback",
+            "telegram.sendChatAction": "send_chat_action",
+            "telegram.sendTyping": "send_typing",
+            "telegram.editMessage": "edit_message",
+            "telegram.deleteMessage": "delete_message",
+            "telegram.setReaction": "set_reaction",
             "telegram.showPopup": "show_popup",
         },
-        custom_functions=["telegram.answerCallback", "telegram.showPopup"],
+        custom_functions=[
+            "telegram.answerCallback",
+            "telegram.sendChatAction",
+            "telegram.sendTyping",
+            "telegram.editMessage",
+            "telegram.deleteMessage",
+            "telegram.setReaction",
+            "telegram.showPopup",
+        ],
         required_config=["bot_token_secret"],
-        optional_config=["default_chat_id", "poll_timeout_seconds"],
+        optional_config=["default_chat_id", "poll_timeout_seconds", "timeout_seconds"],
         secret_config=["bot_token_secret"],
         instruction_template=(
             "Use telegram.sendMessage for normal replies, telegram.sendNotification for notices, "
-            "and telegram.showPopup for short user-facing confirmations."
+            "telegram.sendTyping for presence, and telegram.showPopup for short user-facing "
+            "confirmations."
         ),
     )
 
@@ -409,29 +423,15 @@ class TelegramTransportPlugin(BaseTransportPlugin):
 
         message = payload.get("message")
         if isinstance(message, dict):
-            chat = message.get("chat")
-            sender = message.get("from")
-            chat_id = _optional_telegram_id(chat, "id")
-            text = _telegram_message_text(message)
-            reply_target: dict[str, object] = {"chat_id": chat_id} if chat_id else {}
-            normalized: dict[str, object] = {
-                "kind": "telegram",
-                "event_type": "message",
-                "session_id": f"telegram:{chat_id}" if chat_id else "telegram:unknown",
-                "text": text,
-                "reply_target": reply_target,
-                "payload": dict(payload),
-            }
-            sender_id = _optional_telegram_id(sender, "id")
-            if sender_id is not None:
-                normalized["sender_id"] = sender_id
-            sender_name = _telegram_sender_name(sender)
-            if sender_name:
-                normalized["sender_name"] = sender_name
-            message_id = message.get("message_id")
-            if message_id is not None:
-                normalized["message_id"] = str(message_id)
-            return normalized
+            return _normalize_telegram_message_payload(payload, message, event_type="message")
+
+        edited_message = payload.get("edited_message")
+        if isinstance(edited_message, dict):
+            return _normalize_telegram_message_payload(
+                payload,
+                edited_message,
+                event_type="edited_message",
+            )
 
         callback_query = payload.get("callback_query")
         if isinstance(callback_query, dict):
@@ -439,7 +439,7 @@ class TelegramTransportPlugin(BaseTransportPlugin):
             chat_id = None
             if isinstance(callback_message, dict):
                 chat_id = _optional_telegram_id(callback_message.get("chat"), "id")
-            normalized = {
+            normalized: dict[str, object] = {
                 "kind": "telegram",
                 "event_type": "callback_query",
                 "session_id": f"telegram:{chat_id}" if chat_id else "telegram:callback",
@@ -450,6 +450,19 @@ class TelegramTransportPlugin(BaseTransportPlugin):
             callback_id = callback_query.get("id")
             if callback_id is not None:
                 normalized["callback_query_id"] = str(callback_id)
+            callback_message_id = (
+                callback_message.get("message_id")
+                if isinstance(callback_message, dict)
+                else None
+            )
+            if callback_message_id is not None:
+                normalized["message_id"] = str(callback_message_id)
+            sender_id = _optional_telegram_id(callback_query.get("from"), "id")
+            if sender_id is not None:
+                normalized["sender_id"] = sender_id
+            sender_name = _telegram_sender_name(callback_query.get("from"))
+            if sender_name:
+                normalized["sender_name"] = sender_name
             return normalized
 
         return {"kind": "telegram", "event_type": "unknown", "payload": dict(payload)}
@@ -486,7 +499,7 @@ class TelegramTransportPlugin(BaseTransportPlugin):
         token = self._resolve_token(config, secrets)
         request_payload: dict[str, object] = {
             "timeout": _telegram_poll_timeout_seconds(config),
-            "allowed_updates": ["message", "callback_query"],
+            "allowed_updates": ["message", "edited_message", "callback_query"],
         }
         last_update_id = self._last_update_ids.get(transport_id)
         if last_update_id is not None:
@@ -546,6 +559,95 @@ class TelegramTransportPlugin(BaseTransportPlugin):
         popup_payload = dict(payload)
         popup_payload["show_alert"] = True
         return self.answer_callback(popup_payload)
+
+    def send_chat_action(self, payload: dict[str, object]) -> dict[str, object]:
+        token = self._resolve_token_from_payload(payload)
+        config = self._config_from_payload(payload)
+        chat_id = self._resolve_chat_id(config, payload)
+        action = str(payload.get("action", "typing")).strip() or "typing"
+        self._telegram_request(
+            token,
+            "sendChatAction",
+            {"chat_id": chat_id, "action": action},
+            timeout=_telegram_timeout_seconds(config),
+        )
+        return {"status": "sent", "chat_id": chat_id, "action": action}
+
+    def send_typing(self, payload: dict[str, object]) -> dict[str, object]:
+        typing_payload = dict(payload)
+        typing_payload["action"] = "typing"
+        return self.send_chat_action(typing_payload)
+
+    def edit_message(self, payload: dict[str, object]) -> dict[str, object]:
+        token = self._resolve_token_from_payload(payload)
+        config = self._config_from_payload(payload)
+        chat_id = self._resolve_chat_id(config, payload)
+        message_id = str(payload.get("message_id", "")).strip()
+        text = str(payload.get("text", "")).strip()
+        if not message_id:
+            raise ValueError("telegram.editMessage requires message_id.")
+        if not text:
+            raise ValueError("telegram.editMessage requires a non-empty text field.")
+        request_payload: dict[str, object] = {
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "text": text,
+        }
+        for field_name in ["parse_mode", "reply_markup", "disable_web_page_preview"]:
+            if field_name in payload:
+                request_payload[field_name] = payload[field_name]
+        self._telegram_request(
+            token,
+            "editMessageText",
+            request_payload,
+            timeout=_telegram_timeout_seconds(config),
+        )
+        return {"status": "edited", "chat_id": chat_id, "message_id": message_id}
+
+    def delete_message(self, payload: dict[str, object]) -> dict[str, object]:
+        token = self._resolve_token_from_payload(payload)
+        config = self._config_from_payload(payload)
+        chat_id = self._resolve_chat_id(config, payload)
+        message_id = str(payload.get("message_id", "")).strip()
+        if not message_id:
+            raise ValueError("telegram.deleteMessage requires message_id.")
+        self._telegram_request(
+            token,
+            "deleteMessage",
+            {"chat_id": chat_id, "message_id": message_id},
+            timeout=_telegram_timeout_seconds(config),
+        )
+        return {"status": "deleted", "chat_id": chat_id, "message_id": message_id}
+
+    def set_reaction(self, payload: dict[str, object]) -> dict[str, object]:
+        token = self._resolve_token_from_payload(payload)
+        config = self._config_from_payload(payload)
+        chat_id = self._resolve_chat_id(config, payload)
+        message_id = str(payload.get("message_id", "")).strip()
+        emoji = str(payload.get("emoji", "")).strip()
+        if not message_id:
+            raise ValueError("telegram.setReaction requires message_id.")
+        if not emoji:
+            raise ValueError("telegram.setReaction requires emoji.")
+        request_payload: dict[str, object] = {
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "reaction": [{"type": "emoji", "emoji": emoji}],
+        }
+        if "is_big" in payload:
+            request_payload["is_big"] = bool(payload["is_big"])
+        self._telegram_request(
+            token,
+            "setMessageReaction",
+            request_payload,
+            timeout=_telegram_timeout_seconds(config),
+        )
+        return {
+            "status": "reacted",
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "emoji": emoji,
+        }
 
     def _resolve_token(
         self,
@@ -686,6 +788,37 @@ def _telegram_message_text(message: Mapping[str, object]) -> str:
     if isinstance(message.get("caption"), str):
         return str(message["caption"])
     return ""
+
+
+def _normalize_telegram_message_payload(
+    payload: Mapping[str, object],
+    message: Mapping[str, object],
+    *,
+    event_type: str,
+) -> dict[str, object]:
+    chat = message.get("chat")
+    sender = message.get("from")
+    chat_id = _optional_telegram_id(chat, "id")
+    text = _telegram_message_text(message)
+    reply_target: dict[str, object] = {"chat_id": chat_id} if chat_id else {}
+    normalized: dict[str, object] = {
+        "kind": "telegram",
+        "event_type": event_type,
+        "session_id": f"telegram:{chat_id}" if chat_id else "telegram:unknown",
+        "text": text,
+        "reply_target": reply_target,
+        "payload": dict(payload),
+    }
+    sender_id = _optional_telegram_id(sender, "id")
+    if sender_id is not None:
+        normalized["sender_id"] = sender_id
+    sender_name = _telegram_sender_name(sender)
+    if sender_name:
+        normalized["sender_name"] = sender_name
+    message_id = message.get("message_id")
+    if message_id is not None:
+        normalized["message_id"] = str(message_id)
+    return normalized
 
 
 def _optional_telegram_id(payload: object, key: str) -> str | None:

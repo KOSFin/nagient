@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
+from nagient.domain.entities.agent_runtime import AssistantResponse
 from nagient.domain.entities.system_state import (
     AuthSessionState,
     CheckIssue,
@@ -152,4 +153,36 @@ class BaseProviderPlugin:
         system_prompt: str | None = None,
     ) -> str:
         del provider_id, config, secrets, credential, message, system_prompt
+        raise NotImplementedError
+
+    def generate_assistant_response(
+        self,
+        provider_id: str,
+        config: Mapping[str, object],
+        secrets: Mapping[str, str],
+        credential: CredentialRecord | None,
+        *,
+        message: str,
+        system_prompt: str,
+        session_id: str,
+        transport_id: str,
+        prompt_context: object,
+        tool_catalog: list[dict[str, object]],
+        transport_catalog: list[dict[str, object]],
+        previous_results: list[dict[str, object]],
+    ) -> AssistantResponse:
+        del (
+            provider_id,
+            config,
+            secrets,
+            credential,
+            message,
+            system_prompt,
+            session_id,
+            transport_id,
+            prompt_context,
+            tool_catalog,
+            transport_catalog,
+            previous_results,
+        )
         raise NotImplementedError

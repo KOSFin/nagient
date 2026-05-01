@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import getpass
+import json
 import time
 from dataclasses import dataclass
 
@@ -10,7 +11,9 @@ from nagient.app.configuration import (
     load_runtime_configuration,
 )
 from nagient.app.settings import Settings
+from nagient.domain.entities.agent_runtime import AssistantResponse
 from nagient.domain.entities.system_state import CredentialRecord, ProviderState
+from nagient.infrastructure.logging import RuntimeLogger
 from nagient.providers.base import LoadedProviderPlugin
 from nagient.providers.manager import ProviderManager
 from nagient.providers.registry import ProviderPluginRegistry
@@ -26,6 +29,7 @@ class ProviderService:
     credential_store: FileCredentialStore
     auth_session_store: AuthSessionStore
     secret_broker: SecretBroker | None = None
+    logger: RuntimeLogger | None = None
 
     def auth_status(
         self,
@@ -93,6 +97,14 @@ class ProviderService:
             runtime_config.secrets,
             credential,
         )
+        self._log(
+            "info",
+            "provider.list_models",
+            "Listed provider models.",
+            provider_id=provider_config.provider_id,
+            plugin_id=provider_config.plugin_id,
+            models=len(models),
+        )
         return {
             "provider_id": provider_config.provider_id,
             "plugin_id": provider_config.plugin_id,
@@ -138,6 +150,14 @@ class ProviderService:
             message=message,
             system_prompt=system_prompt,
         )
+        self._log(
+            "info",
+            "provider.chat",
+            "Generated chat response through provider.",
+            provider_id=provider_config.provider_id,
+            plugin_id=provider_config.plugin_id,
+            transport_id="console",
+        )
         return {
             "provider_id": provider_config.provider_id,
             "plugin_id": provider_config.plugin_id,
@@ -145,6 +165,106 @@ class ProviderService:
             "transport_id": "console",
             "message": response_text,
         }
+
+    def generate_assistant_response(
+        self,
+        *,
+        message: str,
+        provider_id: str | None = None,
+        session_id: str,
+        transport_id: str,
+        system_prompt: str,
+        prompt_context: object,
+        tool_catalog: list[dict[str, object]],
+        transport_catalog: list[dict[str, object]],
+        previous_results: list[dict[str, object]],
+    ) -> AssistantResponse:
+        runtime_config = load_runtime_configuration(self.settings)
+        discovery = self.provider_registry.discover(self.settings.providers_dir)
+        resolved_provider_id = provider_id or runtime_config.default_provider
+        if not resolved_provider_id:
+            raise ValueError(
+                "No provider was selected. Configure [agent].default_provider or pass --provider."
+            )
+        provider_config, plugin = self._resolve_provider(
+            runtime_config,
+            discovery.plugins,
+            resolved_provider_id,
+        )
+        credential = self.credential_store.load(provider_config.provider_id)
+        credential = self._refresh_credential_if_needed(
+            plugin,
+            provider_config.provider_id,
+            provider_config.config,
+            credential,
+        )
+        generate_structured = getattr(
+            plugin.implementation,
+            "generate_assistant_response",
+            None,
+        )
+        if callable(generate_structured):
+            response = generate_structured(
+                provider_config.provider_id,
+                provider_config.config,
+                runtime_config.secrets,
+                credential,
+                message=message,
+                system_prompt=system_prompt,
+                session_id=session_id,
+                transport_id=transport_id,
+                prompt_context=prompt_context,
+                tool_catalog=tool_catalog,
+                transport_catalog=transport_catalog,
+                previous_results=previous_results,
+            )
+            if not isinstance(response, AssistantResponse):
+                raise ValueError("Structured provider response must return AssistantResponse.")
+            self._log(
+                "info",
+                "provider.generate_assistant_response",
+                "Generated structured assistant response through native provider path.",
+                provider_id=provider_config.provider_id,
+                plugin_id=provider_config.plugin_id,
+                session_id=session_id,
+                transport_id=transport_id,
+                tool_calls=len(response.tool_calls),
+            )
+            return response
+
+        generate_message = getattr(plugin.implementation, "generate_message", None)
+        if not callable(generate_message):
+            raise ValueError(
+                f"Provider {resolved_provider_id!r} does not support agent runtime turns."
+            )
+        response_text = generate_message(
+            provider_config.provider_id,
+            provider_config.config,
+            runtime_config.secrets,
+            credential,
+            message=_build_structured_assistant_prompt(
+                session_id=session_id,
+                transport_id=transport_id,
+                user_message=message,
+                prompt_context=prompt_context,
+                tool_catalog=tool_catalog,
+                transport_catalog=transport_catalog,
+                previous_results=previous_results,
+            ),
+            system_prompt=system_prompt,
+        )
+        parsed = _parse_assistant_response(response_text)
+        self._log(
+            "info",
+            "provider.generate_assistant_response",
+            "Generated structured assistant response through JSON fallback path.",
+            provider_id=provider_config.provider_id,
+            plugin_id=provider_config.plugin_id,
+            session_id=session_id,
+            transport_id=transport_id,
+            tool_calls=len(parsed.tool_calls),
+        )
+        return parsed
 
     def login(
         self,
@@ -216,6 +336,15 @@ class ProviderService:
             )
             reloaded_runtime_config = load_runtime_configuration(self.settings)
             state = self._inspect_provider(reloaded_runtime_config, plugin, provider_id)
+            self._log(
+                "info",
+                "provider.login",
+                "Stored API key secret for provider.",
+                provider_id=provider_id,
+                plugin_id=plugin.manifest.plugin_id,
+                auth_mode=auth_mode,
+                secret_name=resolved_secret_name,
+            )
             return {
                 "provider": state.to_dict(),
                 "auth_mode": auth_mode,
@@ -234,6 +363,14 @@ class ProviderService:
                 )
                 path = self.credential_store.save(provider_id, record)
                 state = self._inspect_provider(runtime_config, plugin, provider_id)
+                self._log(
+                    "info",
+                    "provider.login",
+                    "Stored provider token credential.",
+                    provider_id=provider_id,
+                    plugin_id=plugin.manifest.plugin_id,
+                    auth_mode=auth_mode,
+                )
                 return {
                     "provider": state.to_dict(),
                     "credential_path": str(path),
@@ -262,6 +399,14 @@ class ProviderService:
             credential,
         )
         session_path = self.auth_session_store.save(session)
+        self._log(
+            "info",
+            "provider.login",
+            "Created provider auth session.",
+            provider_id=provider_id,
+            plugin_id=plugin.manifest.plugin_id,
+            auth_mode=auth_mode,
+        )
         return {
             "provider_id": provider_id,
             "plugin_id": plugin.manifest.plugin_id,
@@ -305,6 +450,14 @@ class ProviderService:
         path = self.credential_store.save(provider_id, record)
         self.auth_session_store.delete(session_id)
         state = self._inspect_provider(runtime_config, plugin, provider_id)
+        self._log(
+            "info",
+            "provider.complete_login",
+            "Completed provider login flow.",
+            provider_id=provider_id,
+            plugin_id=plugin.manifest.plugin_id,
+            session_id=session_id,
+        )
         return {
             "provider": state.to_dict(),
             "credential_path": str(path),
@@ -332,6 +485,14 @@ class ProviderService:
                 )
         reloaded_runtime_config = load_runtime_configuration(self.settings)
         state = self._inspect_provider(reloaded_runtime_config, plugin, provider_id)
+        self._log(
+            "info",
+            "provider.logout",
+            "Cleared provider credentials.",
+            provider_id=provider_id,
+            plugin_id=plugin.manifest.plugin_id,
+            deleted=deleted or deleted_secret,
+        )
         return {
             "provider": state.to_dict(),
             "deleted": deleted or deleted_secret,
@@ -420,6 +581,19 @@ class ProviderService:
         self.credential_store.save(provider_id, refreshed)
         return refreshed
 
+    def _log(
+        self,
+        level: str,
+        event: str,
+        message: str,
+        **fields: object,
+    ) -> None:
+        if self.logger is None:
+            return
+        log_method = getattr(self.logger, level, None)
+        if callable(log_method):
+            log_method(event, message, **fields)
+
 
 def _auth_mode(config: dict[str, object], default_auth_mode: str) -> str:
     value = config.get("auth")
@@ -435,3 +609,88 @@ def _stdin_is_tty() -> bool:
         return sys.stdin.isatty()
     except Exception:
         return False
+
+
+def _build_structured_assistant_prompt(
+    *,
+    session_id: str,
+    transport_id: str,
+    user_message: str,
+    prompt_context: object,
+    tool_catalog: list[dict[str, object]],
+    transport_catalog: list[dict[str, object]],
+    previous_results: list[dict[str, object]],
+) -> str:
+    prompt_context_payload = (
+        prompt_context.to_dict() if hasattr(prompt_context, "to_dict") else prompt_context
+    )
+    return "\n".join(
+        [
+            "You are running inside the Nagient agent runtime.",
+            "Return exactly one JSON object matching this shape:",
+            (
+                '{"message":"string","tool_calls":[{"call_id":"string","request":{"tool_id":"string",'
+                '"function_name":"string","arguments":{},"dry_run":false,"auto_approve":false}}],'
+                '"interaction_requests":[],"approval_requests":[],"notifications":[],"config_mutations":[]}'
+            ),
+            (
+                "Use tool_calls when a tool can act or verify something. If no tool is "
+                "needed, return an empty tool_calls array."
+            ),
+            f"Session id: {session_id}",
+            f"Transport id: {transport_id}",
+            "Prompt context JSON:",
+            json.dumps(prompt_context_payload, ensure_ascii=False),
+            "Available tools JSON:",
+            json.dumps(tool_catalog, ensure_ascii=False),
+            "Available transports JSON:",
+            json.dumps(transport_catalog, ensure_ascii=False),
+            "Previous tool results JSON:",
+            json.dumps(previous_results, ensure_ascii=False),
+            "Current user message:",
+            user_message,
+        ]
+    )
+
+
+def _parse_assistant_response(response_text: str) -> AssistantResponse:
+    payload = _extract_json_object(response_text)
+    if payload is None:
+        return AssistantResponse(message=response_text.strip())
+    try:
+        parsed = json.loads(payload)
+    except json.JSONDecodeError:
+        return AssistantResponse(message=response_text.strip())
+    if not isinstance(parsed, dict):
+        return AssistantResponse(message=response_text.strip())
+    return AssistantResponse.from_dict(parsed)
+
+
+def _extract_json_object(text: str) -> str | None:
+    stripped = text.strip()
+    if stripped.startswith("{") and stripped.endswith("}"):
+        return stripped
+    start = stripped.find("{")
+    if start == -1:
+        return None
+    depth = 0
+    in_string = False
+    escape = False
+    for index, char in enumerate(stripped[start:], start=start):
+        if in_string:
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return stripped[start : index + 1]
+    return None

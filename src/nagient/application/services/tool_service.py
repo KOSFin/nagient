@@ -35,6 +35,10 @@ class ToolService:
     workspace_manager: WorkspaceManager
     backup_manager: BackupManager
     workflow_service: Any
+    transport_router: Any | None = None
+    memory_service: Any | None = None
+    scheduler_service: Any | None = None
+    logger: Any | None = None
     reconcile_runner: Callable[[], dict[str, object]] | None = None
 
     def list_tools(self) -> dict[str, object]:
@@ -95,6 +99,13 @@ class ToolService:
         runtime_config = load_runtime_configuration(self.settings)
         layout = self.workspace_manager.ensure_layout(runtime_config.workspace)
         discovery = self.tool_registry.discover(self.settings.tools_dir)
+        self._log(
+            "debug",
+            "tool.invoke_batch.start",
+            "Preparing tool batch execution.",
+            requests=len(requests),
+            workspace_id=layout.metadata.workspace_id,
+        )
 
         prepared: list[
             tuple[
@@ -151,7 +162,21 @@ class ToolService:
                     layout,
                     reason="tool-execution-batch",
                 ).snapshot_id
+                self._log(
+                    "info",
+                    "tool.invoke_batch.checkpoint_created",
+                    "Created workspace checkpoint for tool batch.",
+                    checkpoint_id=checkpoint_id,
+                    workspace_id=layout.metadata.workspace_id,
+                )
             except Exception as exc:
+                self._log(
+                    "error",
+                    "tool.invoke_batch.checkpoint_failed",
+                    "Failed to create workspace checkpoint for tool batch.",
+                    error=str(exc),
+                    workspace_id=layout.metadata.workspace_id,
+                )
                 return (
                     [
                         ToolExecutionResult(
@@ -216,6 +241,13 @@ class ToolService:
                         output={},
                     )
                 )
+                self._log(
+                    "info",
+                    "tool.invoke_batch.approval_requested",
+                    "Queued tool execution for approval.",
+                    tool_id=tool_config.tool_id,
+                    function_name=request.function_name,
+                )
                 continue
 
             context = self._build_context(
@@ -248,7 +280,23 @@ class ToolService:
                         interaction_request_id=interaction_request_id,
                     )
                 )
+                self._log(
+                    "info",
+                    "tool.invoke_batch.success",
+                    "Executed tool function successfully.",
+                    tool_id=tool_config.tool_id,
+                    function_name=request.function_name,
+                    checkpoint_id=checkpoint_id if needs_checkpoint else None,
+                )
             except Exception as exc:
+                self._log(
+                    "error",
+                    "tool.invoke_batch.failed",
+                    "Tool function execution failed.",
+                    tool_id=tool_config.tool_id,
+                    function_name=request.function_name,
+                    error=str(exc),
+                )
                 results.append(
                     ToolExecutionResult(
                         tool_id=tool_config.tool_id,
@@ -266,6 +314,14 @@ class ToolService:
                     )
                 )
 
+        self._log(
+            "debug",
+            "tool.invoke_batch.completed",
+            "Completed tool batch execution.",
+            requests=len(requests),
+            results=len(results),
+            checkpoint_id=checkpoint_id,
+        )
         return results, checkpoint_id
 
     def _inspect_tool(
@@ -332,6 +388,10 @@ class ToolService:
             request_approval=self.workflow_service.create_approval,
             invoke_reconcile=self._invoke_reconcile,
             invoke_assistant_resume=self._invoke_assistant_resume,
+            transport_router=self.transport_router,
+            memory_service=self.memory_service,
+            scheduler_service=self.scheduler_service,
+            logger=self.logger,
             dry_run=request.dry_run,
             session_id=request.session_id,
             transport_id=request.transport_id,
@@ -348,3 +408,16 @@ class ToolService:
             "assistant_response": assistant_response.to_dict(),
             "status": "queued",
         }
+
+    def _log(
+        self,
+        level: str,
+        event: str,
+        message: str,
+        **fields: object,
+    ) -> None:
+        if self.logger is None:
+            return
+        log_method = getattr(self.logger, level, None)
+        if callable(log_method):
+            log_method(event, message, **fields)

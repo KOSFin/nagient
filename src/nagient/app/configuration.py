@@ -70,11 +70,66 @@ class WorkspaceConfig:
 
 
 @dataclass(frozen=True)
+class AgentMemoryConfig:
+    hard_message_limit: int = 100
+    dynamic_focus_enabled: bool = True
+    dynamic_focus_messages: int = 10
+    summary_trigger_messages: int = 20
+    retrieval_max_results: int = 8
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "hard_message_limit": self.hard_message_limit,
+            "dynamic_focus_enabled": self.dynamic_focus_enabled,
+            "dynamic_focus_messages": self.dynamic_focus_messages,
+            "summary_trigger_messages": self.summary_trigger_messages,
+            "retrieval_max_results": self.retrieval_max_results,
+        }
+
+
+@dataclass(frozen=True)
+class AgentLoggingConfig:
+    level: str = "info"
+    json_logs: bool = False
+    log_events: bool = True
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "level": self.level,
+            "json_logs": self.json_logs,
+            "log_events": self.log_events,
+        }
+
+
+@dataclass(frozen=True)
+class AgentConfig:
+    default_provider: str | None
+    require_provider: bool
+    system_prompt_file: Path | None
+    max_turns: int = 4
+    memory: AgentMemoryConfig = field(default_factory=AgentMemoryConfig)
+    logging: AgentLoggingConfig = field(default_factory=AgentLoggingConfig)
+
+    def to_dict(self) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "default_provider": self.default_provider,
+            "require_provider": self.require_provider,
+            "max_turns": self.max_turns,
+            "memory": self.memory.to_dict(),
+            "logging": self.logging.to_dict(),
+        }
+        if self.system_prompt_file is not None:
+            payload["system_prompt_file"] = str(self.system_prompt_file)
+        return payload
+
+
+@dataclass(frozen=True)
 class RuntimeConfiguration:
     settings: Settings
     safe_mode: bool
     default_provider: str | None
     require_provider: bool
+    agent: AgentConfig
     workspace: WorkspaceConfig
     transports: list[TransportInstanceConfig]
     providers: list[ProviderInstanceConfig]
@@ -89,6 +144,7 @@ class RuntimeConfiguration:
             "safe_mode": self.safe_mode,
             "default_provider": self.default_provider,
             "require_provider": self.require_provider,
+            "agent": self.agent.to_dict(),
             "workspace": self.workspace.to_dict(),
             "secret_keys": sorted(self.secrets),
             "tool_secret_keys": sorted(self.tool_secrets),
@@ -118,12 +174,20 @@ def load_runtime_configuration(
     tools = _parse_tools(raw_config)
     workspace = _parse_workspace(raw_config, env)
     default_provider = _resolve_default_provider(raw_config, providers)
+    require_provider = _parse_require_provider(raw_config)
+    agent_config = _parse_agent_config(
+        raw_config,
+        settings=settings,
+        default_provider=default_provider,
+        require_provider=require_provider,
+    )
 
     return RuntimeConfiguration(
         settings=settings,
         safe_mode=settings.safe_mode,
         default_provider=default_provider,
-        require_provider=_parse_require_provider(raw_config),
+        require_provider=require_provider,
+        agent=agent_config,
         workspace=workspace,
         transports=transports,
         providers=providers,
@@ -175,6 +239,7 @@ def load_secrets(secrets_file: Path) -> dict[str, str]:
 
 
 def render_default_config(settings: Settings) -> str:
+    default_prompt_file = default_system_prompt_file(settings)
     return "\n".join(
         [
             "[updates]",
@@ -191,6 +256,7 @@ def render_default_config(settings: Settings) -> str:
             "[paths]",
             f'secrets_file = "{settings.secrets_file}"',
             f'tool_secrets_file = "{settings.tool_secrets_file}"',
+            f'prompts_dir = "{settings.prompts_dir}"',
             f'plugins_dir = "{settings.plugins_dir}"',
             f'tools_dir = "{settings.tools_dir}"',
             f'providers_dir = "{settings.providers_dir}"',
@@ -203,6 +269,20 @@ def render_default_config(settings: Settings) -> str:
             "[agent]",
             'default_provider = ""',
             "require_provider = false",
+            f'system_prompt_file = "{default_prompt_file}"',
+            "max_turns = 4",
+            "",
+            "[agent.memory]",
+            "hard_message_limit = 100",
+            "dynamic_focus_enabled = true",
+            "dynamic_focus_messages = 10",
+            "summary_trigger_messages = 20",
+            "retrieval_max_results = 8",
+            "",
+            "[agent.logging]",
+            'level = "info"',
+            "json_logs = false",
+            "log_events = true",
             "",
             "[transports.console]",
             'plugin = "builtin.console"',
@@ -281,12 +361,24 @@ def render_default_config(settings: Settings) -> str:
             'plugin = "transport.interaction"',
             "enabled = true",
             "",
+            "[tools.transport_router]",
+            'plugin = "transport.router"',
+            "enabled = true",
+            "",
+            "[tools.agent_memory]",
+            'plugin = "agent.memory"',
+            "enabled = true",
+            "",
             "[tools.system_backup]",
             'plugin = "system.backup"',
             "enabled = true",
             "",
             "[tools.system_reconcile]",
             'plugin = "system.reconcile"',
+            "enabled = true",
+            "",
+            "[tools.system_jobs]",
+            'plugin = "system.jobs"',
             "enabled = true",
             "",
             "[tools.github_api]",
@@ -322,6 +414,37 @@ def render_default_tool_secrets() -> str:
             "",
         ]
     )
+
+
+def render_default_system_prompt() -> str:
+    return "\n".join(
+        [
+            "You are Nagient, a modular autonomous agent runtime.",
+            "",
+            "Core operating rules:",
+            "- Use enabled tools instead of guessing when a tool can verify something.",
+            (
+                "- Keep actions scoped to the configured workspace unless a tool "
+                "explicitly supports broader access."
+            ),
+            "- Prefer safe, reversible actions when possible.",
+            (
+                "- Use memory tools for durable notes and retrieval instead of "
+                "pretending to remember hidden history."
+            ),
+            "- When sending outbound messages, choose the correct configured transport and target.",
+            (
+                "- Treat approvals, secure inputs, and secrets as workflow actions "
+                "handled by the system."
+            ),
+            "",
+            "Communication rules:",
+            "- Be concise, clear, and action-oriented.",
+            "- Explain what you are doing when executing multi-step work.",
+            "- If tool results are incomplete, say so directly.",
+            "",
+        ]
+    ) + "\n"
 
 
 def render_plugins_readme() -> str:
@@ -568,6 +691,63 @@ def _parse_require_provider(payload: dict[str, object]) -> bool:
     return _coerce_bool(agent.get("require_provider", False))
 
 
+def _parse_agent_config(
+    payload: dict[str, object],
+    *,
+    settings: Settings,
+    default_provider: str | None,
+    require_provider: bool,
+) -> AgentConfig:
+    agent = payload.get("agent")
+    if not isinstance(agent, dict):
+        agent = {}
+    memory = agent.get("memory")
+    if not isinstance(memory, dict):
+        memory = {}
+    logging = agent.get("logging")
+    if not isinstance(logging, dict):
+        logging = {}
+
+    system_prompt_file = _resolve_optional_path(
+        agent.get("system_prompt_file"),
+        base_dir=settings.config_file.parent,
+        fallback=default_system_prompt_file(settings),
+    )
+    max_turns = _positive_int(agent.get("max_turns"), default=4)
+    return AgentConfig(
+        default_provider=default_provider,
+        require_provider=require_provider,
+        system_prompt_file=system_prompt_file,
+        max_turns=max_turns,
+        memory=AgentMemoryConfig(
+            hard_message_limit=_positive_int(
+                memory.get("hard_message_limit"),
+                default=100,
+            ),
+            dynamic_focus_enabled=_coerce_bool(
+                memory.get("dynamic_focus_enabled", True)
+            ),
+            dynamic_focus_messages=_positive_int(
+                memory.get("dynamic_focus_messages"),
+                default=10,
+            ),
+            summary_trigger_messages=_positive_int(
+                memory.get("summary_trigger_messages"),
+                default=20,
+            ),
+            retrieval_max_results=_positive_int(
+                memory.get("retrieval_max_results"),
+                default=8,
+            ),
+        ),
+        logging=AgentLoggingConfig(
+            level=_normalize_log_level(logging.get("level", "info")),
+            json_logs=_coerce_bool(logging.get("json_logs", False)),
+            log_events=_coerce_bool(logging.get("log_events", True)),
+        ),
+    )
+
+
 def _default_tools() -> list[ToolInstanceConfig]:
     return [
         ToolInstanceConfig("workspace_fs", "workspace.fs", True, {}),
@@ -576,6 +756,9 @@ def _default_tools() -> list[ToolInstanceConfig]:
         ToolInstanceConfig("transport_interaction", "transport.interaction", True, {}),
         ToolInstanceConfig("system_backup", "system.backup", True, {}),
         ToolInstanceConfig("system_reconcile", "system.reconcile", True, {}),
+        ToolInstanceConfig("transport_router", "transport.router", True, {}),
+        ToolInstanceConfig("agent_memory", "agent.memory", True, {}),
+        ToolInstanceConfig("system_jobs", "system.jobs", True, {}),
     ]
 
 
@@ -584,6 +767,13 @@ def merge_runtime_config(
     environ: dict[str, str],
 ) -> dict[str, object]:
     merged: dict[str, object] = dict(payload)
+    transports = merged.get("transports")
+    if not isinstance(transports, dict):
+        transports = {}
+    transports = {
+        str(transport_id): dict(values) if isinstance(values, dict) else {}
+        for transport_id, values in transports.items()
+    }
     providers = merged.get("providers")
     if not isinstance(providers, dict):
         providers = {}
@@ -608,18 +798,63 @@ def merge_runtime_config(
             agent = _ensure_mapping(merged, "agent")
             agent["require_provider"] = _coerce_env_value(value)
             continue
+        if key.startswith("NAGIENT_AGENT__"):
+            parts = key.split("__")
+            if len(parts) < 2:
+                continue
+            field_name = "__".join(parts[1:]).strip().lower()
+            if not field_name:
+                continue
+            agent = _ensure_mapping(merged, "agent")
+            agent[field_name] = _coerce_env_value(value)
+            continue
+        if key.startswith("NAGIENT_AGENT_MEMORY__"):
+            parts = key.split("__")
+            if len(parts) < 2:
+                continue
+            field_name = "__".join(parts[1:]).strip().lower()
+            if not field_name:
+                continue
+            agent = _ensure_mapping(merged, "agent")
+            memory = _ensure_nested_mapping(agent, "memory")
+            memory[field_name] = _coerce_env_value(value)
+            continue
+        if key.startswith("NAGIENT_AGENT_LOGGING__"):
+            parts = key.split("__")
+            if len(parts) < 2:
+                continue
+            field_name = "__".join(parts[1:]).strip().lower()
+            if not field_name:
+                continue
+            agent = _ensure_mapping(merged, "agent")
+            logging = _ensure_nested_mapping(agent, "logging")
+            logging[field_name] = _coerce_env_value(value)
+            continue
+        if key.startswith("NAGIENT_TRANSPORT__"):
+            parts = key.split("__")
+            if len(parts) < 3:
+                continue
+            transport_id = parts[1].strip().lower()
+            field_name = "__".join(parts[2:]).strip().lower()
+            if not transport_id or not field_name:
+                continue
+            transport_values = transports.get(transport_id, {})
+            transport_values[field_name] = _coerce_env_value(value)
+            transports[transport_id] = transport_values
+            continue
+        if key.startswith("NAGIENT_TOOL__"):
+            parts = key.split("__")
+            if len(parts) < 3:
+                continue
+            tool_id = parts[1].strip().lower()
+            field_name = "__".join(parts[2:]).strip().lower()
+            if not tool_id or not field_name:
+                continue
+            tool_values = tools.get(tool_id, {})
+            tool_values[field_name] = _coerce_env_value(value)
+            tools[tool_id] = tool_values
+            continue
         if not key.startswith("NAGIENT_PROVIDER__"):
-            if key.startswith("NAGIENT_TOOL__"):
-                parts = key.split("__")
-                if len(parts) < 3:
-                    continue
-                tool_id = parts[1].strip().lower()
-                field_name = "__".join(parts[2:]).strip().lower()
-                if not tool_id or not field_name:
-                    continue
-                tool_values = tools.get(tool_id, {})
-                tool_values[field_name] = _coerce_env_value(value)
-                tools[tool_id] = tool_values
             continue
         parts = key.split("__")
         if len(parts) < 3:
@@ -636,6 +871,8 @@ def merge_runtime_config(
         provider_values[field_name] = _coerce_env_value(value)
         providers[provider_id] = provider_values
 
+    if transports:
+        merged["transports"] = transports
     if providers:
         merged["providers"] = providers
     if tools:
@@ -674,6 +911,55 @@ def _ensure_mapping(payload: dict[str, object], key: str) -> dict[str, object]:
     created: dict[str, object] = {}
     payload[key] = created
     return created
+
+
+def _ensure_nested_mapping(
+    payload: dict[str, object],
+    key: str,
+) -> dict[str, object]:
+    value = payload.get(key)
+    if isinstance(value, dict):
+        return value
+    created: dict[str, object] = {}
+    payload[key] = created
+    return created
+
+
+def _positive_int(value: object, *, default: int) -> int:
+    if isinstance(value, int) and value > 0:
+        return value
+    if isinstance(value, str) and value.strip().isdigit():
+        parsed = int(value.strip())
+        if parsed > 0:
+            return parsed
+    return default
+
+
+def _normalize_log_level(value: object) -> str:
+    if not isinstance(value, str):
+        return "info"
+    normalized = value.strip().lower()
+    if normalized in {"debug", "info", "warning", "error"}:
+        return normalized
+    return "info"
+
+
+def _resolve_optional_path(
+    raw_value: object,
+    *,
+    base_dir: Path,
+    fallback: Path,
+) -> Path:
+    if not isinstance(raw_value, str) or not raw_value.strip():
+        return fallback.resolve()
+    candidate = Path(raw_value).expanduser()
+    if not candidate.is_absolute():
+        candidate = (base_dir / candidate).resolve()
+    return candidate.resolve()
+
+
+def default_system_prompt_file(settings: Settings) -> Path:
+    return (settings.prompts_dir / "system.md").resolve()
 
 
 def render_toml(payload: dict[str, object]) -> str:

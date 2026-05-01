@@ -132,6 +132,30 @@ class ConfigurationTests(unittest.TestCase):
             self.assertEqual(runtime_config.providers[0].provider_id, "openai")
             self.assertTrue(runtime_config.providers[0].enabled)
 
+    def test_environment_transport_overrides_are_merged(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir)
+            settings = Settings.from_env({"NAGIENT_HOME": str(home_dir)})
+
+            runtime_config = load_runtime_configuration(
+                settings,
+                environ={
+                    "NAGIENT_TRANSPORT__TELEGRAM__PLUGIN": "builtin.telegram",
+                    "NAGIENT_TRANSPORT__TELEGRAM__ENABLED": "true",
+                    "NAGIENT_TRANSPORT__TELEGRAM__BOT_TOKEN_SECRET": "TELEGRAM_BOT_TOKEN",
+                    "NAGIENT_TRANSPORT__TELEGRAM__DEFAULT_CHAT_ID": "1522105862",
+                },
+            )
+
+            self.assertEqual(len(runtime_config.transports), 1)
+            self.assertEqual(runtime_config.transports[0].transport_id, "telegram")
+            self.assertEqual(runtime_config.transports[0].plugin_id, "builtin.telegram")
+            self.assertTrue(runtime_config.transports[0].enabled)
+            self.assertEqual(
+                runtime_config.transports[0].config["default_chat_id"],
+                1522105862,
+            )
+
     def test_environment_provider_overrides_accept_underscore_alias_for_hyphenated_ids(
         self,
     ) -> None:
@@ -201,6 +225,59 @@ class ConfigurationTests(unittest.TestCase):
             runtime_config = load_runtime_configuration(settings)
 
             self.assertEqual(runtime_config.default_provider, "openai")
+
+    def test_agent_memory_and_logging_settings_load_from_config_and_env(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir)
+            config_file = home_dir / "config.toml"
+            config_file.write_text(
+                "\n".join(
+                    [
+                        "[agent]",
+                        'system_prompt_file = "./prompts/custom.md"',
+                        "max_turns = 6",
+                        "",
+                        "[agent.memory]",
+                        "hard_message_limit = 120",
+                        "dynamic_focus_enabled = false",
+                        "dynamic_focus_messages = 12",
+                        "summary_trigger_messages = 18",
+                        "retrieval_max_results = 9",
+                        "",
+                        "[agent.logging]",
+                        'level = "debug"',
+                        "json_logs = true",
+                        "log_events = false",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            settings = Settings.from_env(
+                {
+                    "NAGIENT_HOME": str(home_dir),
+                    "NAGIENT_CONFIG": str(config_file),
+                }
+            )
+
+            runtime_config = load_runtime_configuration(
+                settings,
+                environ={
+                    "NAGIENT_AGENT_MEMORY__DYNAMIC_FOCUS_ENABLED": "true",
+                    "NAGIENT_AGENT_LOGGING__LEVEL": "warning",
+                },
+            )
+
+            self.assertEqual(runtime_config.agent.max_turns, 6)
+            self.assertTrue(runtime_config.agent.memory.dynamic_focus_enabled)
+            self.assertEqual(runtime_config.agent.memory.hard_message_limit, 120)
+            self.assertEqual(runtime_config.agent.logging.level, "warning")
+            self.assertTrue(runtime_config.agent.logging.json_logs)
+            self.assertFalse(runtime_config.agent.logging.log_events)
+            self.assertEqual(
+                runtime_config.agent.system_prompt_file,
+                (home_dir / "prompts" / "custom.md").resolve(),
+            )
 
 
 if __name__ == "__main__":

@@ -42,6 +42,10 @@ class ToolExecutionContext:
     request_approval: Callable[[ApprovalRequest], ApprovalRequest]
     invoke_reconcile: Callable[[], dict[str, object]]
     invoke_assistant_resume: Callable[[AssistantResponse], dict[str, object]]
+    transport_router: Any | None = None
+    memory_service: Any | None = None
+    scheduler_service: Any | None = None
+    logger: Any | None = None
     dry_run: bool = False
     session_id: str | None = None
     transport_id: str | None = None
