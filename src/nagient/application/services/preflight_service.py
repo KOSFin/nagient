@@ -238,7 +238,8 @@ class PreflightService:
 
         errors = [issue for issue in issues if issue.severity == "error"]
         warnings = [issue for issue in issues if issue.severity == "warning"]
-        can_activate = not runtime_config.safe_mode or not errors
+        blocking_errors = self._activation_blocking_errors(errors)
+        can_activate = not runtime_config.safe_mode or not blocking_errors
         if not can_activate:
             status = "blocked"
         elif errors or warnings:
@@ -258,6 +259,16 @@ class PreflightService:
             notices=self._build_notices(status, issues),
             effective_config=runtime_config.to_dict(),
         )
+
+    def _activation_blocking_errors(
+        self,
+        issues: list[CheckIssue],
+    ) -> list[CheckIssue]:
+        return [issue for issue in issues if not self._is_nonblocking_tool_issue(issue)]
+
+    def _is_nonblocking_tool_issue(self, issue: CheckIssue) -> bool:
+        code = issue.code.strip().lower()
+        return code.startswith("tool.") or code.startswith("tool_plugin.")
 
     def _build_notices(self, status: str, issues: list[CheckIssue]) -> list[str]:
         notices = [f"Runtime activation status: {status}."]

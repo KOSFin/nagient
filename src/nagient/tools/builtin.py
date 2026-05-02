@@ -529,7 +529,8 @@ class WorkspaceGitToolPlugin(BaseToolPlugin):
                 label="Token secret",
                 help_text=(
                     "Tool secret name that stores an HTTPS git access token. Takes precedence "
-                    "over password_secret when both are configured."
+                    "over password_secret when both are configured. You can paste the raw "
+                    "token and Nagient will store it for you."
                 ),
                 value_type="secret",
                 category="connection",

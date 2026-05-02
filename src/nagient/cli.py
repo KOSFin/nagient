@@ -27,6 +27,15 @@ from nagient.infrastructure.manifests import release_to_dict
 from nagient.version import __version__
 
 _SECRET_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_RAW_SECRET_PATTERNS = (
+    re.compile(r"^gh[pousr]_[A-Za-z0-9_]{12,}$"),
+    re.compile(r"^github_pat_[A-Za-z0-9_]{12,}$"),
+    re.compile(r"^sk-[A-Za-z0-9_-]{12,}$"),
+    re.compile(r"^sk-proj-[A-Za-z0-9_-]{12,}$"),
+    re.compile(r"^glpat-[A-Za-z0-9_-]{12,}$"),
+    re.compile(r"^xox[baprs]-[A-Za-z0-9-]{12,}$"),
+    re.compile(r"^ya29\.[A-Za-z0-9._-]{12,}$"),
+)
 _PROVIDER_FIELD_HELP: dict[tuple[str, str], str] = {
     ("openai-codex", "auth"): "How Nagient authenticates to OpenAI Codex for this profile.",
     ("openai-codex", "api_key_secret"): "Secret name for the OpenAI API key fallback.",
@@ -1883,7 +1892,19 @@ def _save_secret_reference_value(
 
 
 def _looks_like_secret_name(value: str) -> bool:
-    return bool(_SECRET_NAME_PATTERN.fullmatch(value.strip()))
+    normalized = value.strip()
+    if not normalized:
+        return False
+    if _looks_like_raw_secret_value(normalized):
+        return False
+    return bool(_SECRET_NAME_PATTERN.fullmatch(normalized))
+
+
+def _looks_like_raw_secret_value(value: str) -> bool:
+    normalized = value.strip()
+    if not normalized:
+        return False
+    return any(pattern.fullmatch(normalized) for pattern in _RAW_SECRET_PATTERNS)
 
 
 def _suggest_secret_name(

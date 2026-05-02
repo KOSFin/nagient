@@ -27,7 +27,9 @@ if [ ! -f "${TOOL_SECRETS_PATH}" ] && [ -f "/etc/nagient/tool-secrets.env" ]; th
 fi
 
 if [ "${1:-}" = "nagient" ] && [ "${2:-}" = "serve" ]; then
-  python -m nagient reconcile --format json >/tmp/nagient-reconcile.json
+  if ! python -m nagient reconcile --format json >/tmp/nagient-reconcile.json; then
+    echo "nagient: reconcile reported blocked activation; continuing to serve for recovery." >&2
+  fi
 fi
 
 exec "$@"

@@ -517,6 +517,51 @@ class CliTests(unittest.TestCase):
             scope_hint="core",
         )
 
+    def test_run_generic_field_editor_treats_github_pat_as_raw_secret_value(self) -> None:
+        container = SimpleNamespace(
+            secret_broker=SimpleNamespace(
+                store_secret=Mock(),
+                bind_secret=Mock(),
+            ),
+            settings=SimpleNamespace(
+                secrets_file=Path("/tmp/nagient/secrets.env"),
+                tool_secrets_file=Path("/tmp/nagient/tool-secrets.env"),
+            ),
+        )
+        save_callback = Mock(return_value={"component": "tool", "tool_id": "workspace_git"})
+        raw_token = "ghp_1234567890abcdefghijklmn"
+
+        with patch("builtins.input", side_effect=["1", raw_token, "0"]):
+            with patch("nagient.cli._read_secret_input") as read_secret_input:
+                stdout = io.StringIO()
+                with redirect_stdout(stdout):
+                    cli._run_generic_field_editor(
+                        title="Tool workspace_git fields:",
+                        current_config={"token_secret": "GIT_ACCESS_TOKEN"},
+                        allowed_keys=["token_secret"],
+                        save_callback=save_callback,
+                        container=container,
+                        secret_fields={"token_secret"},
+                        secret_scope="tool",
+                        target_kind="tool",
+                        target_id="workspace_git",
+                    )
+
+        read_secret_input.assert_not_called()
+        save_callback.assert_called_once_with({"token_secret": "GIT_ACCESS_TOKEN"})
+        container.secret_broker.store_secret.assert_called_once_with(
+            "GIT_ACCESS_TOKEN",
+            raw_token,
+            scope="tool",
+        )
+        container.secret_broker.bind_secret.assert_called_once_with(
+            "GIT_ACCESS_TOKEN",
+            target_kind="tool",
+            target_id="workspace_git",
+            scope_hint="tool",
+        )
+        self.assertIn("Detected a raw secret value", stdout.getvalue())
+
     def test_interactive_chat_session_exits_cleanly(self) -> None:
         container = SimpleNamespace(
             agent_runtime_service=SimpleNamespace(

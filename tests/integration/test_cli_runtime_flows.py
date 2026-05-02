@@ -259,6 +259,72 @@ class CliRuntimeFlowsTests(unittest.TestCase):
             )
             self.assertEqual(heartbeat["runtime_status"], "blocked")
 
+    def test_entrypoint_continues_to_serve_when_reconcile_is_blocked(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            exec_log = root / "nagient-exec.log"
+
+            fake_python = bin_dir / "python"
+            fake_python.write_text(
+                "\n".join(
+                    [
+                        "#!/bin/sh",
+                        'if [ "${1:-}" = "-m" ] && [ "${2:-}" = "nagient" ] && [ "${3:-}" = "reconcile" ]; then',
+                        "  exit 1",
+                        "fi",
+                        "exit 0",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            fake_python.chmod(0o755)
+
+            fake_nagient = bin_dir / "nagient"
+            fake_nagient.write_text(
+                "\n".join(
+                    [
+                        "#!/bin/sh",
+                        'printf "%s\\n" "$@" > "${EXEC_LOG}"',
+                        "exit 0",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            fake_nagient.chmod(0o755)
+
+            env = {
+                **os.environ,
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+                "EXEC_LOG": str(exec_log),
+                "NAGIENT_CONFIG": str(root / "config.toml"),
+                "NAGIENT_SECRETS_FILE": str(root / "secrets.env"),
+                "NAGIENT_TOOL_SECRETS_FILE": str(root / "tool-secrets.env"),
+                "NAGIENT_PLUGINS_DIR": str(root / "plugins"),
+                "NAGIENT_TOOLS_DIR": str(root / "tools"),
+                "NAGIENT_PROVIDERS_DIR": str(root / "providers"),
+                "NAGIENT_CREDENTIALS_DIR": str(root / "credentials"),
+                "NAGIENT_STATE_DIR": str(root / "state"),
+                "NAGIENT_LOG_DIR": str(root / "logs"),
+                "NAGIENT_RELEASES_DIR": str(root / "releases"),
+            }
+
+            process = subprocess.run(
+                ["sh", "docker/scripts/entrypoint.sh", "nagient", "serve"],
+                cwd=PROJECT_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            self.assertEqual(process.returncode, 0)
+            self.assertEqual(exec_log.read_text(encoding="utf-8").strip(), "serve")
+            self.assertIn("continuing to serve for recovery", process.stderr)
+
     def test_status_text_is_compact_and_host_oriented(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             home_dir = Path(temp_dir) / ".nagient"
