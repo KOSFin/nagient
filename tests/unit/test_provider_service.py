@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import tempfile
 import unittest
 from pathlib import Path
@@ -484,10 +485,17 @@ class ProviderServiceTests(unittest.TestCase):
                 any("Provider demo: runtime hook log" in line for line in runtime_lines)
             )
             self.assertTrue(
-                any("Provider demo: stdout: printed from provider" in line for line in runtime_lines)
+                any(
+                    "Provider demo: stdout: printed from provider" in line
+                    for line in runtime_lines
+                )
             )
             self.assertTrue(
-                any("phase=initial_request" in line and "timeout_seconds=42" in line for line in runtime_lines)
+                any(
+                    "phase=initial_request" in line
+                    and "timeout_seconds=42" in line
+                    for line in runtime_lines
+                )
             )
             self.assertTrue(
                 any("Completed assistant response" in line for line in runtime_lines)
