@@ -271,7 +271,8 @@ class CliRuntimeFlowsTests(unittest.TestCase):
                 "\n".join(
                     [
                         "#!/bin/sh",
-                        'if [ "${1:-}" = "-m" ] && [ "${2:-}" = "nagient" ] && [ "${3:-}" = "reconcile" ]; then',
+                        'if [ "${1:-}" = "-m" ] && [ "${2:-}" = "nagient" ]'
+                        ' && [ "${3:-}" = "reconcile" ]; then',
                         "  exit 1",
                         "fi",
                         "exit 0",
