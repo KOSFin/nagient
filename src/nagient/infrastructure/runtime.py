@@ -16,6 +16,7 @@ from nagient.app.configuration import (
 )
 from nagient.app.settings import Settings
 from nagient.domain.entities.system_state import ActivationReport
+from nagient.infrastructure.logging import write_runtime_log
 from nagient.plugins.base import BaseTransportPlugin, TransportRuntimeContext
 from nagient.plugins.registry import TransportPluginRegistry
 from nagient.workspace.manager import WorkspaceLayout, WorkspaceManager
@@ -491,12 +492,8 @@ class RuntimeAgent:
         return f"Transport {transport.transport_id} loaded."
 
     def _log(self, log_path: Path, message: str) -> None:
-        timestamp = _iso_timestamp(time.time())
-        line = f"[nagient] {timestamp} {message}"
-        print(line, flush=True)
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        with log_path.open("a", encoding="utf-8") as handle:
-            handle.write(line + "\n")
+        del log_path
+        write_runtime_log(self.settings, message)
 
     def _scheduler_layout(
         self,

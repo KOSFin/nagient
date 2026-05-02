@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 import tempfile
 import unittest
 from pathlib import Path
@@ -379,6 +378,120 @@ class ProviderServiceTests(unittest.TestCase):
 
             self.assertEqual(payload.message, "ready")
             self.assertEqual(payload.tool_calls, [])
+
+    def test_generate_assistant_response_mirrors_custom_provider_runtime_logs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir)
+            providers_dir = home_dir / "providers" / "custom.chat"
+            providers_dir.mkdir(parents=True, exist_ok=True)
+            (providers_dir / "provider.toml").write_text(
+                "\n".join(
+                    [
+                        'type = "provider"',
+                        'id = "custom.chat"',
+                        'display_name = "Custom Chat"',
+                        'version = "0.1.0"',
+                        'family = "custom"',
+                        'entrypoint = "provider.py"',
+                        'supported_auth_modes = ["none"]',
+                        'default_auth_mode = "none"',
+                        'capabilities = ["chat"]',
+                        'required_config = []',
+                        'optional_config = ["model", "timeout_seconds"]',
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            (providers_dir / "provider.py").write_text(
+                "\n".join(
+                    [
+                        "from nagient.providers.base import BaseProviderPlugin",
+                        "",
+                        "class CustomChatProvider(BaseProviderPlugin):",
+                        "    def generate_message(",
+                        "        self,",
+                        "        provider_id,",
+                        "        config,",
+                        "        secrets,",
+                        "        credential,",
+                        "        *,",
+                        "        message,",
+                        "        system_prompt=None,",
+                        "    ):",
+                        "        del provider_id, config, secrets, credential, system_prompt",
+                        "        self.runtime_log('runtime hook log')",
+                        "        print('printed from provider')",
+                        "        return '{\"message\":\"ready\",\"tool_calls\":[]}'",
+                        "",
+                        "def build_plugin():",
+                        "    return CustomChatProvider()",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            config_file = home_dir / "config.toml"
+            config_file.write_text(
+                "\n".join(
+                    [
+                        "[agent]",
+                        'default_provider = "demo"',
+                        "require_provider = true",
+                        "",
+                        "[providers.demo]",
+                        'plugin = "custom.chat"',
+                        "enabled = true",
+                        'auth = "none"',
+                        'model = "chatty"',
+                        "timeout_seconds = 42",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            settings = Settings.from_env(
+                {
+                    "NAGIENT_HOME": str(home_dir),
+                    "NAGIENT_CONFIG": str(config_file),
+                    "NAGIENT_PROVIDERS_DIR": str(home_dir / "providers"),
+                }
+            )
+            service = ProviderService(
+                settings=settings,
+                provider_registry=ProviderPluginRegistry(),
+                provider_manager=ProviderManager(),
+                credential_store=FileCredentialStore(settings.credentials_dir),
+                auth_session_store=AuthSessionStore(settings.state_dir / "auth-sessions"),
+            )
+            runtime_lines: list[str] = []
+
+            payload = service.generate_assistant_response(
+                message="hello",
+                provider_id=None,
+                session_id="telegram:demo",
+                transport_id="telegram",
+                system_prompt="system",
+                prompt_context=SessionPromptContext(session_id="telegram:demo", summary=""),
+                tool_catalog=[],
+                transport_catalog=[],
+                previous_results=[],
+                runtime_log=runtime_lines.append,
+            )
+
+            self.assertEqual(payload.message, "ready")
+            self.assertTrue(
+                any("Provider demo: runtime hook log" in line for line in runtime_lines)
+            )
+            self.assertTrue(
+                any("Provider demo: stdout: printed from provider" in line for line in runtime_lines)
+            )
+            self.assertTrue(
+                any("phase=initial_request" in line and "timeout_seconds=42" in line for line in runtime_lines)
+            )
+            self.assertTrue(
+                any("Completed assistant response" in line for line in runtime_lines)
+            )
 
 
 if __name__ == "__main__":

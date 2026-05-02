@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from nagient.domain.entities.agent_runtime import AssistantResponse
 from nagient.domain.entities.config_fields import ConfigFieldSpec
@@ -60,8 +61,34 @@ class LoadedProviderPlugin:
     source: str
 
 
+@dataclass(frozen=True)
+class ProviderRuntimeContext:
+    state_dir: Path
+    log: Callable[[str], None]
+
+
 class BaseProviderPlugin:
     manifest: ProviderPluginManifest
+
+    def bind_runtime(
+        self,
+        provider_id: str,
+        runtime: ProviderRuntimeContext,
+    ) -> None:
+        object.__setattr__(self, "_runtime_provider_id", provider_id)
+        object.__setattr__(self, "_runtime_context", runtime)
+
+    @property
+    def runtime(self) -> ProviderRuntimeContext | None:
+        runtime = getattr(self, "_runtime_context", None)
+        if isinstance(runtime, ProviderRuntimeContext):
+            return runtime
+        return None
+
+    def runtime_log(self, message: str) -> None:
+        runtime = self.runtime
+        if runtime is not None:
+            runtime.log(message)
 
     def validate_config(
         self,

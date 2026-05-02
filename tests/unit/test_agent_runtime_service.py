@@ -226,6 +226,7 @@ class AgentRuntimeServiceTests(unittest.TestCase):
             self.assertEqual(
                 reply,
                 "Provider request timed out before the runtime could finish this turn. "
+                "This is the model/provider timeout, not a tool timeout. "
                 "Retry the request or increase the provider timeout.",
             )
 

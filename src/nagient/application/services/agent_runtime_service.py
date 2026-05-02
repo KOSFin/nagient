@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import dataclass
 from typing import Any
 
@@ -13,7 +14,7 @@ from nagient.domain.entities.agent_runtime import (
     NotificationIntent,
 )
 from nagient.domain.entities.jobs import JobRecord
-from nagient.infrastructure.logging import RuntimeLogger
+from nagient.infrastructure.logging import RuntimeLogger, write_runtime_log
 from nagient.tools.registry import ToolPluginRegistry
 from nagient.workspace.manager import WorkspaceManager
 
@@ -88,6 +89,7 @@ class AgentRuntimeService:
                     tool_catalog=self._tool_catalog(runtime_config),
                     transport_catalog=self._transport_catalog(),
                     previous_results=previous_results,
+                    runtime_log=self._provider_runtime_log,
                 )
             except Exception as exc:
                 return self._finalize_provider_failure(
@@ -368,6 +370,9 @@ class AgentRuntimeService:
         )
         return reply
 
+    def _provider_runtime_log(self, message: str) -> None:
+        write_runtime_log(self.settings, message, stream=sys.__stdout__)
+
 
 def _should_retrieve(message: str) -> bool:
     normalized = message.lower()
@@ -459,6 +464,7 @@ def _friendly_provider_error_message(error: Exception) -> str:
     if _is_timeout_error(error):
         return (
             "Provider request timed out before the runtime could finish this turn. "
+            "This is the model/provider timeout, not a tool timeout. "
             "Retry the request or increase the provider timeout."
         )
     return f"Provider request failed during this turn: {message}"

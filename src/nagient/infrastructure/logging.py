@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TextIO
 
 from nagient.app.configuration import AgentLoggingConfig, load_runtime_configuration
 from nagient.app.settings import Settings
@@ -156,3 +158,19 @@ _LOG_LEVELS = {
 
 def _utc_now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def write_runtime_log(
+    settings: Settings,
+    message: str,
+    *,
+    stream: TextIO | None = None,
+) -> str:
+    created_at = _utc_now()
+    line = f"[nagient] {created_at} {message}"
+    print(line, file=stream or sys.stdout, flush=True)
+    settings.ensure_directories()
+    log_path = settings.log_dir / "runtime.log"
+    with log_path.open("a", encoding="utf-8") as handle:
+        handle.write(line + "\n")
+    return line

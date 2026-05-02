@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import contextlib
 import getpass
+import io
 import json
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from nagient.app.configuration import (
@@ -14,7 +17,11 @@ from nagient.app.settings import Settings
 from nagient.domain.entities.agent_runtime import AssistantResponse
 from nagient.domain.entities.system_state import CredentialRecord, ProviderState
 from nagient.infrastructure.logging import RuntimeLogger
-from nagient.providers.base import BaseProviderPlugin, LoadedProviderPlugin
+from nagient.providers.base import (
+    BaseProviderPlugin,
+    LoadedProviderPlugin,
+    ProviderRuntimeContext,
+)
 from nagient.providers.manager import ProviderManager
 from nagient.providers.registry import ProviderPluginRegistry
 from nagient.providers.storage import AuthSessionStore, FileCredentialStore
@@ -178,6 +185,7 @@ class ProviderService:
         tool_catalog: list[dict[str, object]],
         transport_catalog: list[dict[str, object]],
         previous_results: list[dict[str, object]],
+        runtime_log: Callable[[str], None] | None = None,
     ) -> AssistantResponse:
         runtime_config = load_runtime_configuration(self.settings)
         discovery = self.provider_registry.discover(self.settings.providers_dir)
@@ -198,77 +206,156 @@ class ProviderService:
             provider_config.config,
             credential,
         )
+        phase = _assistant_response_phase(previous_results)
+        configured_timeout = _provider_timeout_seconds(provider_config.config)
+        provider_runtime_log = self._provider_runtime_log(
+            provider_id=provider_config.provider_id,
+            session_id=session_id,
+            transport_id=transport_id,
+            runtime_log=runtime_log,
+        )
+        self._bind_provider_runtime(
+            plugin,
+            provider_id=provider_config.provider_id,
+            runtime_log=provider_runtime_log,
+        )
+        started_at = time.monotonic()
+        if provider_runtime_log is not None:
+            timeout_suffix = (
+                f", timeout_seconds={_format_timeout_seconds(configured_timeout)}"
+                if configured_timeout is not None
+                else ""
+            )
+            provider_runtime_log(
+                "Starting assistant response "
+                f"(phase={phase}, session_id={session_id}, transport_id={transport_id}, "
+                f"previous_results={len(previous_results)}{timeout_suffix})."
+            )
         generate_structured = getattr(
             plugin.implementation,
             "generate_assistant_response",
             None,
         )
-        if (
-            callable(generate_structured)
-            and plugin.implementation.__class__.generate_assistant_response
-            is not BaseProviderPlugin.generate_assistant_response
-        ):
-            response = generate_structured(
-                provider_config.provider_id,
-                provider_config.config,
-                runtime_config.secrets,
-                credential,
-                message=message,
-                system_prompt=system_prompt,
-                session_id=session_id,
-                transport_id=transport_id,
-                prompt_context=prompt_context,
-                tool_catalog=tool_catalog,
-                transport_catalog=transport_catalog,
-                previous_results=previous_results,
+        try:
+            if (
+                callable(generate_structured)
+                and plugin.implementation.__class__.generate_assistant_response
+                is not BaseProviderPlugin.generate_assistant_response
+            ):
+                response = self._call_with_captured_provider_output(
+                    lambda: generate_structured(
+                        provider_config.provider_id,
+                        provider_config.config,
+                        runtime_config.secrets,
+                        credential,
+                        message=message,
+                        system_prompt=system_prompt,
+                        session_id=session_id,
+                        transport_id=transport_id,
+                        prompt_context=prompt_context,
+                        tool_catalog=tool_catalog,
+                        transport_catalog=transport_catalog,
+                        previous_results=previous_results,
+                    ),
+                    provider_runtime_log,
+                )
+                if not isinstance(response, AssistantResponse):
+                    raise ValueError(
+                        "Structured provider response must return AssistantResponse."
+                    )
+                elapsed_ms = int((time.monotonic() - started_at) * 1000)
+                self._log(
+                    "info",
+                    "provider.generate_assistant_response",
+                    "Generated structured assistant response through native provider path.",
+                    provider_id=provider_config.provider_id,
+                    plugin_id=provider_config.plugin_id,
+                    session_id=session_id,
+                    transport_id=transport_id,
+                    tool_calls=len(response.tool_calls),
+                    elapsed_ms=elapsed_ms,
+                    phase=phase,
+                )
+                if provider_runtime_log is not None:
+                    provider_runtime_log(
+                        "Completed assistant response "
+                        f"(phase={phase}) in {elapsed_ms} ms with "
+                        f"{len(response.tool_calls)} tool_calls."
+                    )
+                return response
+
+            generate_message = getattr(plugin.implementation, "generate_message", None)
+            if not callable(generate_message):
+                raise ValueError(
+                    f"Provider {resolved_provider_id!r} does not support agent runtime turns."
+                )
+            response_text = self._call_with_captured_provider_output(
+                lambda: generate_message(
+                    provider_config.provider_id,
+                    provider_config.config,
+                    runtime_config.secrets,
+                    credential,
+                    message=_build_structured_assistant_prompt(
+                        session_id=session_id,
+                        transport_id=transport_id,
+                        user_message=message,
+                        prompt_context=prompt_context,
+                        tool_catalog=tool_catalog,
+                        transport_catalog=transport_catalog,
+                        previous_results=previous_results,
+                    ),
+                    system_prompt=system_prompt,
+                ),
+                provider_runtime_log,
             )
-            if not isinstance(response, AssistantResponse):
-                raise ValueError("Structured provider response must return AssistantResponse.")
+            parsed = _parse_assistant_response(response_text)
+            elapsed_ms = int((time.monotonic() - started_at) * 1000)
             self._log(
                 "info",
                 "provider.generate_assistant_response",
-                "Generated structured assistant response through native provider path.",
+                "Generated structured assistant response through JSON fallback path.",
                 provider_id=provider_config.provider_id,
                 plugin_id=provider_config.plugin_id,
                 session_id=session_id,
                 transport_id=transport_id,
-                tool_calls=len(response.tool_calls),
+                tool_calls=len(parsed.tool_calls),
+                elapsed_ms=elapsed_ms,
+                phase=phase,
             )
-            return response
-
-        generate_message = getattr(plugin.implementation, "generate_message", None)
-        if not callable(generate_message):
-            raise ValueError(
-                f"Provider {resolved_provider_id!r} does not support agent runtime turns."
-            )
-        response_text = generate_message(
-            provider_config.provider_id,
-            provider_config.config,
-            runtime_config.secrets,
-            credential,
-            message=_build_structured_assistant_prompt(
+            if provider_runtime_log is not None:
+                provider_runtime_log(
+                    "Completed assistant response "
+                    f"(phase={phase}) in {elapsed_ms} ms with "
+                    f"{len(parsed.tool_calls)} tool_calls."
+                )
+            return parsed
+        except Exception as exc:
+            elapsed_ms = int((time.monotonic() - started_at) * 1000)
+            self._log(
+                "warning",
+                "provider.generate_assistant_response_failed",
+                "Provider failed while generating an assistant response.",
+                provider_id=provider_config.provider_id,
+                plugin_id=provider_config.plugin_id,
                 session_id=session_id,
                 transport_id=transport_id,
-                user_message=message,
-                prompt_context=prompt_context,
-                tool_catalog=tool_catalog,
-                transport_catalog=transport_catalog,
-                previous_results=previous_results,
-            ),
-            system_prompt=system_prompt,
-        )
-        parsed = _parse_assistant_response(response_text)
-        self._log(
-            "info",
-            "provider.generate_assistant_response",
-            "Generated structured assistant response through JSON fallback path.",
-            provider_id=provider_config.provider_id,
-            plugin_id=provider_config.plugin_id,
-            session_id=session_id,
-            transport_id=transport_id,
-            tool_calls=len(parsed.tool_calls),
-        )
-        return parsed
+                error=str(exc),
+                elapsed_ms=elapsed_ms,
+                phase=phase,
+                timeout_seconds=configured_timeout,
+            )
+            if provider_runtime_log is not None:
+                timeout_note = ""
+                if configured_timeout is not None and _is_timeout_message(exc):
+                    timeout_note = (
+                        ", configured_timeout_seconds="
+                        f"{_format_timeout_seconds(configured_timeout)}"
+                    )
+                provider_runtime_log(
+                    f"Assistant response failed (phase={phase}) after {elapsed_ms} ms"
+                    f"{timeout_note}: {exc}"
+                )
+            raise
 
     def login(
         self,
@@ -598,6 +685,89 @@ class ProviderService:
         if callable(log_method):
             log_method(event, message, **fields)
 
+    def _bind_provider_runtime(
+        self,
+        plugin: LoadedProviderPlugin,
+        *,
+        provider_id: str,
+        runtime_log: Callable[[str], None] | None,
+    ) -> None:
+        state_dir = self.settings.state_dir / "providers" / provider_id
+        state_dir.mkdir(parents=True, exist_ok=True)
+        plugin.implementation.bind_runtime(
+            provider_id,
+            ProviderRuntimeContext(
+                state_dir=state_dir,
+                log=runtime_log or (lambda message: None),
+            ),
+        )
+
+    def _provider_runtime_log(
+        self,
+        *,
+        provider_id: str,
+        session_id: str,
+        transport_id: str,
+        runtime_log: Callable[[str], None] | None,
+    ) -> Callable[[str], None] | None:
+        if runtime_log is None and self.logger is None:
+            return None
+
+        def _emit(message: str) -> None:
+            text = str(message).strip()
+            if not text:
+                return
+            self._log(
+                "info",
+                "provider.runtime",
+                text,
+                provider_id=provider_id,
+                session_id=session_id,
+                transport_id=transport_id,
+            )
+            if runtime_log is not None:
+                runtime_log(f"Provider {provider_id}: {text}")
+
+        return _emit
+
+    def _call_with_captured_provider_output(
+        self,
+        operation: Callable[[], object],
+        runtime_log: Callable[[str], None] | None,
+    ) -> object:
+        if runtime_log is None:
+            return operation()
+        stdout_buffer = io.StringIO()
+        stderr_buffer = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(stdout_buffer), contextlib.redirect_stderr(
+                stderr_buffer
+            ):
+                return operation()
+        finally:
+            self._flush_captured_provider_output(
+                runtime_log,
+                stdout_buffer.getvalue(),
+                stream_name="stdout",
+            )
+            self._flush_captured_provider_output(
+                runtime_log,
+                stderr_buffer.getvalue(),
+                stream_name="stderr",
+            )
+
+    def _flush_captured_provider_output(
+        self,
+        runtime_log: Callable[[str], None],
+        captured: str,
+        *,
+        stream_name: str,
+    ) -> None:
+        for raw_line in captured.splitlines():
+            line = raw_line.rstrip()
+            if line.strip():
+                runtime_log(f"{stream_name}: {line.strip()}")
+
 
 def _auth_mode(config: dict[str, object], default_auth_mode: str) -> str:
     value = config.get("auth")
@@ -613,6 +783,38 @@ def _stdin_is_tty() -> bool:
         return sys.stdin.isatty()
     except Exception:
         return False
+
+
+def _assistant_response_phase(previous_results: list[dict[str, object]]) -> str:
+    return "post_tool_follow_up" if previous_results else "initial_request"
+
+
+def _provider_timeout_seconds(config: dict[str, object]) -> int | float | None:
+    value = config.get("timeout_seconds")
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)) and value > 0:
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = float(value)
+        except ValueError:
+            return None
+        return parsed if parsed > 0 else None
+    return None
+
+
+def _format_timeout_seconds(value: int | float) -> str:
+    if isinstance(value, int):
+        return str(value)
+    if value.is_integer():
+        return str(int(value))
+    return f"{value:g}"
+
+
+def _is_timeout_message(error: Exception) -> bool:
+    message = str(error).lower()
+    return "timed out" in message or "timeout" in message
 
 
 def _build_structured_assistant_prompt(
