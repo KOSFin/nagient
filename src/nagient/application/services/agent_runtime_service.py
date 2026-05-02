@@ -6,12 +6,12 @@ import sys
 from dataclasses import dataclass
 from typing import Any
 
-from nagient.app.configuration import load_runtime_configuration, RuntimeConfiguration
+from nagient.app.configuration import RuntimeConfiguration, load_runtime_configuration
 from nagient.app.settings import Settings
 from nagient.domain.entities.agent_runtime import (
-    AssistantResponse,
     AgentTurnContext,
     AgentTurnRequest,
+    AssistantResponse,
     ConfigMutationIntent,
     NotificationIntent,
 )
