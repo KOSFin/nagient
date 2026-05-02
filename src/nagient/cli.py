@@ -2147,7 +2147,7 @@ def _run_chat_session(
     print("Type your message and press Enter. Use 0, exit, or quit to leave.")
     while True:
         try:
-            message = input("you> ").strip()
+            message = _normalize_cli_text(input("you> ")).strip()
         except (EOFError, KeyboardInterrupt):
             print("")
             return 0
@@ -2187,16 +2187,22 @@ def _run_agent_chat_turn(
     system_prompt: str | None,
     session_id: str | None = None,
 ) -> dict[str, object]:
+    normalized_message = _normalize_cli_text(message).strip()
+    normalized_system_prompt = (
+        _normalize_cli_text(system_prompt).strip() or None
+        if system_prompt is not None
+        else None
+    )
     resolved_session_id = session_id or f"console:oneshot:{int(time.time())}"
     reply = container.agent_runtime_service.handle_inbound_event(
         "console",
         {
             "event_type": "message",
             "session_id": resolved_session_id,
-            "text": message,
+            "text": normalized_message,
         },
         provider_id=provider_id,
-        system_prompt_override=system_prompt,
+        system_prompt_override=normalized_system_prompt,
     )
     return {
         "provider_id": provider_id or "",
@@ -2671,10 +2677,12 @@ def _prompt_text(prompt: str, *, default: str = "") -> str | None:
     colors = _supports_color()
     suffix = f" [{default}]" if default else ""
     try:
-        raw_value = input(
-            _paint(prompt, "1", colors=colors)
-            + _paint(suffix, "2", colors=colors)
-            + ": "
+        raw_value = _normalize_cli_text(
+            input(
+                _paint(prompt, "1", colors=colors)
+                + _paint(suffix, "2", colors=colors)
+                + ": "
+            )
         ).strip()
     except (EOFError, KeyboardInterrupt):
         print("")
@@ -2916,9 +2924,44 @@ def _load_json_argument(raw_value: str) -> dict[str, object]:
 
 def _read_secret_input(prompt: str) -> str | None:
     try:
-        return getpass.getpass(prompt=prompt).strip()
+        return _normalize_cli_text(getpass.getpass(prompt=prompt)).strip()
     except (EOFError, KeyboardInterrupt):
         return None
+
+
+def _normalize_cli_text(value: str) -> str:
+    if not value or not _contains_surrogates(value):
+        return value
+
+    candidate_encodings: list[str] = []
+    for encoding in (
+        getattr(sys.stdin, "encoding", None),
+        sys.getfilesystemencoding(),
+    ):
+        if encoding and encoding not in candidate_encodings:
+            candidate_encodings.append(encoding)
+
+    for encoding in candidate_encodings:
+        try:
+            raw_bytes = value.encode(encoding, errors="surrogateescape")
+        except UnicodeEncodeError:
+            continue
+        try:
+            recovered = raw_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            continue
+        if not _contains_surrogates(recovered):
+            return recovered
+
+    return "".join(char if not _is_surrogate(char) else "\ufffd" for char in value)
+
+
+def _contains_surrogates(value: str) -> bool:
+    return any(_is_surrogate(char) for char in value)
+
+
+def _is_surrogate(char: str) -> bool:
+    return 0xD800 <= ord(char) <= 0xDFFF
 
 
 def _maybe_capture_secret_value(

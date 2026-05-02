@@ -534,6 +534,36 @@ class CliTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertIn("assistant> hello", stdout.getvalue())
 
+    def test_interactive_chat_session_recovers_utf8_from_surrogate_input(self) -> None:
+        container = SimpleNamespace(
+            agent_runtime_service=SimpleNamespace(
+                handle_inbound_event=Mock(return_value="hello")
+            )
+        )
+        raw_message = "дароу напиши мне в тг, проверить надо"
+        surrogate_message = raw_message.encode("utf-8").decode("ascii", "surrogateescape")
+
+        with patch("builtins.input", side_effect=[surrogate_message, "0"]):
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                exit_code = cli._run_chat_session(
+                    container,
+                    provider_id="openai",
+                    system_prompt=None,
+                )
+
+        self.assertEqual(exit_code, 0)
+        container.agent_runtime_service.handle_inbound_event.assert_called_once_with(
+            "console",
+            {
+                "event_type": "message",
+                "session_id": unittest.mock.ANY,
+                "text": raw_message,
+            },
+            provider_id="openai",
+            system_prompt_override=None,
+        )
+
     def test_main_routes_core_and_extended_commands(self) -> None:
         status_payload = _status_payload(
             {
