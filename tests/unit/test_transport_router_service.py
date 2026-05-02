@@ -9,6 +9,7 @@ from nagient.app.settings import Settings
 from nagient.application.services.transport_router_service import TransportRouterService
 from nagient.infrastructure.logging import RuntimeLogger
 from nagient.plugins.base import LoadedTransportPlugin, TransportPluginManifest
+from nagient.plugins.registry import TransportPluginRegistry
 
 
 class _FakeTransportImplementation:
@@ -150,6 +151,37 @@ class TransportRouterServiceTests(unittest.TestCase):
 
             self.assertEqual(payload["status"], "typing")
             self.assertEqual(len(implementation.typing_payloads), 1)
+
+    def test_router_lists_telegram_default_target_hints(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir) / "home"
+            settings = Settings.from_env({"NAGIENT_HOME": str(home_dir)})
+            settings.ensure_directories()
+            settings.config_file.write_text(
+                "\n".join(
+                    [
+                        "[transports.telegram]",
+                        'plugin = "builtin.telegram"',
+                        "enabled = true",
+                        'bot_token_secret = "TELEGRAM_BOT_TOKEN"',
+                        'default_chat_id = "1522105862"',
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            service = TransportRouterService(
+                settings=settings,
+                plugin_registry=TransportPluginRegistry(),
+                logger=RuntimeLogger(settings, "router-test"),
+            )
+
+            payload = service.list_transports()
+
+            self.assertEqual(len(payload), 1)
+            self.assertTrue(payload[0]["default_target_available"])
+            self.assertEqual(payload[0]["default_target_field"], "chat_id")
+            self.assertIn("chat_id may be omitted", payload[0]["send_message_hint"])
 
 
 if __name__ == "__main__":

@@ -858,6 +858,11 @@ def _build_structured_assistant_prompt(
                 "If you still need to inspect tool results before writing the final answer, keep "
                 "message_mode='immediate' and return another tool-free response on the next turn."
             ),
+            (
+                "If a transport entry says default_target_available=true, you may call "
+                "transport.router.send_message with just transport_id and payload.text unless "
+                "you need to override that default target explicitly."
+            ),
             f"Session id: {session_id}",
             f"Transport id: {transport_id}",
             "Prompt context JSON:",

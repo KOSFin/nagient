@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import io
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -239,6 +241,83 @@ class AgentRuntimeServiceTests(unittest.TestCase):
             self.assertIn("Running the command.", reply or "")
             self.assertIn("Latest tool result: workspace.shell.run (success).", reply or "")
             self.assertIn("stdout:\ndone", reply or "")
+
+    def test_runtime_returns_recent_tool_results_when_follow_up_provider_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir) / "home"
+            workspace_root = Path(temp_dir) / "workspace"
+            workspace_root.mkdir(parents=True, exist_ok=True)
+            settings = Settings.from_env({"NAGIENT_HOME": str(home_dir)})
+            container = build_container(settings)
+            container.configuration_service.initialize(force=True)
+            _set_workspace_root(settings.config_file, workspace_root)
+
+            object.__setattr__(
+                container.provider_service,
+                "generate_assistant_response",
+                Mock(
+                    side_effect=[
+                        AssistantResponse(
+                            message="Trying both actions.",
+                            tool_calls=[
+                                NormalizedToolCall(
+                                    call_id="call-1",
+                                    request=ToolExecutionRequest(
+                                        tool_id="workspace_fs",
+                                        function_name="workspace.fs.write_text",
+                                        arguments={
+                                            "path": "reminder.txt",
+                                            "content": "scheduled",
+                                        },
+                                    ),
+                                ),
+                                NormalizedToolCall(
+                                    call_id="call-2",
+                                    request=ToolExecutionRequest(
+                                        tool_id="workspace_shell",
+                                        function_name="workspace.shell.run",
+                                        arguments={
+                                            "command": "printf done",
+                                            "read_only": True,
+                                        },
+                                    ),
+                                ),
+                            ],
+                        ),
+                        ProviderHttpError("Remote end closed connection without response"),
+                    ]
+                ),
+            )
+
+            reply = container.agent_runtime_service.handle_inbound_event(
+                "console",
+                {
+                    "event_type": "message",
+                    "session_id": "console:demo",
+                    "text": "Do two quick checks",
+                },
+            )
+
+            self.assertIsNotNone(reply)
+            self.assertIn("Recent tool results:", reply or "")
+            self.assertIn("workspace.fs.write_text (success).", reply or "")
+            self.assertIn("workspace.shell.run (success).", reply or "")
+
+    def test_provider_runtime_log_writes_file_without_echoing_to_stdout(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir) / "home"
+            settings = Settings.from_env({"NAGIENT_HOME": str(home_dir)})
+            container = build_container(settings)
+            stdout = io.StringIO()
+
+            with redirect_stdout(stdout):
+                container.agent_runtime_service._provider_runtime_log(  # noqa: SLF001
+                    "Provider demo: hidden from interactive chat"
+                )
+
+            self.assertEqual(stdout.getvalue(), "")
+            runtime_log = (settings.log_dir / "runtime.log").read_text(encoding="utf-8")
+            self.assertIn("Provider demo: hidden from interactive chat", runtime_log)
 
     def test_runtime_returns_friendly_timeout_before_tool_execution(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

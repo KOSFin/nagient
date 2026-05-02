@@ -260,6 +260,16 @@ class ToolService:
                 request=request,
                 checkpoint_id=checkpoint_id if needs_checkpoint else None,
             )
+            self._log(
+                "info",
+                "tool.invoke_batch.executing",
+                "Executing tool function.",
+                tool_id=tool_config.tool_id,
+                function_name=request.function_name,
+                argument_keys=sorted(request.arguments),
+                checkpoint_id=checkpoint_id if needs_checkpoint else None,
+                dry_run=request.dry_run,
+            )
             try:
                 output = plugin.implementation.execute(
                     request.function_name,
@@ -290,6 +300,7 @@ class ToolService:
                     tool_id=tool_config.tool_id,
                     function_name=request.function_name,
                     checkpoint_id=checkpoint_id if needs_checkpoint else None,
+                    output_summary=_summarize_tool_output(sanitized_output),
                 )
             except Exception as exc:
                 self._log(
@@ -424,3 +435,47 @@ class ToolService:
         log_method = getattr(self.logger, level, None)
         if callable(log_method):
             log_method(event, message, **fields)
+
+
+def _summarize_tool_output(output: object) -> dict[str, object]:
+    if not isinstance(output, dict):
+        return {}
+
+    summary: dict[str, object] = {"keys": sorted(output)[:8]}
+    scalar_keys = [
+        "status",
+        "message",
+        "chat_id",
+        "message_id",
+        "request_id",
+        "exit_code",
+        "timed_out",
+        "blocked",
+        "blocked_reason",
+    ]
+    for key in scalar_keys:
+        value = output.get(key)
+        if isinstance(value, (str, int, float, bool)) and str(value).strip():
+            summary[key] = value
+
+    if isinstance(output.get("results"), list):
+        summary["results_count"] = len(output["results"])
+    if isinstance(output.get("notes"), list):
+        summary["notes_count"] = len(output["notes"])
+    if isinstance(output.get("transports"), list):
+        summary["transports_count"] = len(output["transports"])
+
+    stdout = output.get("stdout")
+    if isinstance(stdout, str) and stdout.strip():
+        summary["stdout_preview"] = _compact_preview(stdout, limit=160)
+    stderr = output.get("stderr")
+    if isinstance(stderr, str) and stderr.strip():
+        summary["stderr_preview"] = _compact_preview(stderr, limit=160)
+    return summary
+
+
+def _compact_preview(value: str, *, limit: int) -> str:
+    stripped = value.strip()
+    if len(stripped) <= limit:
+        return stripped
+    return stripped[:limit].rstrip() + "..."

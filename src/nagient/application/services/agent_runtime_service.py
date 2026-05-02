@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import re
-import sys
 from dataclasses import dataclass
 from typing import Any
 
@@ -17,7 +16,7 @@ from nagient.domain.entities.agent_runtime import (
 )
 from nagient.domain.entities.jobs import JobRecord
 from nagient.domain.entities.tooling import ToolExecutionResult
-from nagient.infrastructure.logging import RuntimeLogger, write_runtime_log
+from nagient.infrastructure.logging import RuntimeLogger, append_runtime_log
 from nagient.tools.registry import ToolPluginRegistry
 from nagient.workspace.manager import WorkspaceManager
 
@@ -108,6 +107,12 @@ class AgentRuntimeService:
                     previous_results=previous_results,
                     error=exc,
                 )
+            self._log_assistant_response(
+                session_id=session_id,
+                transport_id=transport_id,
+                step=turn_index,
+                assistant_response=assistant_response,
+            )
             if assistant_response.message.strip():
                 if not _should_defer_assistant_message(assistant_response):
                     last_message = assistant_response.message.strip()
@@ -136,6 +141,12 @@ class AgentRuntimeService:
                 )
             )
             if turn_result.tool_results:
+                self._log_tool_results(
+                    session_id=session_id,
+                    transport_id=transport_id,
+                    step=turn_index,
+                    tool_results=turn_result.tool_results,
+                )
                 for result in turn_result.tool_results:
                     self.memory_service.append_message(
                         layout,
@@ -396,7 +407,50 @@ class AgentRuntimeService:
         return reply
 
     def _provider_runtime_log(self, message: str) -> None:
-        write_runtime_log(self.settings, message, stream=sys.__stdout__)
+        append_runtime_log(self.settings, message)
+
+    def _log_assistant_response(
+        self,
+        *,
+        session_id: str,
+        transport_id: str,
+        step: int,
+        assistant_response: AssistantResponse,
+    ) -> None:
+        self.logger.info(
+            "agent_runtime.assistant_response",
+            "Received assistant response from provider.",
+            session_id=session_id,
+            transport_id=transport_id,
+            step=step,
+            message_mode=assistant_response.message_mode,
+            tool_calls=[
+                call.request.function_name for call in assistant_response.tool_calls
+            ],
+            notifications=len(assistant_response.notifications),
+            approvals=len(assistant_response.approval_requests),
+            interactions=len(assistant_response.interaction_requests),
+            message_preview=_compact_text(assistant_response.message, limit=240)
+            if assistant_response.message.strip()
+            else "",
+        )
+
+    def _log_tool_results(
+        self,
+        *,
+        session_id: str,
+        transport_id: str,
+        step: int,
+        tool_results: list[ToolExecutionResult],
+    ) -> None:
+        self.logger.info(
+            "agent_runtime.tool_results",
+            "Completed assistant-requested tool batch.",
+            session_id=session_id,
+            transport_id=transport_id,
+            step=step,
+            results=[_tool_result_log_summary(item) for item in tool_results],
+        )
 
 
 def _should_retrieve(message: str) -> bool:
@@ -475,7 +529,7 @@ def _provider_failure_reply(
             else "The tool step finished, but the provider failed before it could "
             "compose the final reply."
         )
-        summary = _summarize_latest_tool_result(previous_results[-1])
+        summary = _summarize_tool_results(previous_results)
         if summary:
             parts.append(summary)
     else:
@@ -552,18 +606,49 @@ def _lookup_tool_placeholder_value(
     return current
 
 
-def _summarize_latest_tool_result(result: dict[str, object]) -> str:
+def _summarize_tool_results(results: list[dict[str, object]]) -> str:
+    if not results:
+        return ""
+    if len(results) == 1:
+        return _summarize_single_tool_result(results[0], heading="Latest tool result")
+
+    lines = ["Recent tool results:"]
+    for result in results[-4:]:
+        lines.extend(_tool_result_summary_lines(result))
+    return "\n".join(lines).strip()
+
+
+def _summarize_single_tool_result(
+    result: dict[str, object],
+    *,
+    heading: str,
+) -> str:
+    lines = _tool_result_summary_lines(result)
+    if not lines:
+        return ""
+    lines[0] = lines[0].replace("Tool result", heading, 1)
+    return "\n".join(lines).strip()
+
+
+def _tool_result_summary_lines(result: dict[str, object]) -> list[str]:
     function_name = str(result.get("function_name", "tool"))
     status = str(result.get("status", "unknown"))
     output = result.get("output")
     issues = result.get("issues")
-    lines = [f"Latest tool result: {function_name} ({status})."]
+    lines = [f"Tool result: {function_name} ({status})."]
     if isinstance(output, dict):
         blocked = output.get("blocked")
         blocked_reason = output.get("blocked_reason")
         command = output.get("effective_command") or output.get("command")
         if isinstance(command, str) and command.strip():
             lines.append(f"Command: {command}")
+        output_status = output.get("status")
+        if (
+            isinstance(output_status, str)
+            and output_status.strip()
+            and output_status.strip() != status
+        ):
+            lines.append(f"Output status: {output_status.strip()}")
         if blocked and isinstance(blocked_reason, str) and blocked_reason.strip():
             lines.append(f"Blocked: {blocked_reason.strip()}")
         timed_out = output.get("timed_out")
@@ -577,6 +662,18 @@ def _summarize_latest_tool_result(result: dict[str, object]) -> str:
         exit_code = output.get("exit_code")
         if isinstance(exit_code, int):
             lines.append(f"Exit code: {exit_code}")
+        if isinstance(output.get("results"), list):
+            lines.append(f"Results: {len(output['results'])}")
+        if isinstance(output.get("notes"), list):
+            lines.append(f"Notes: {len(output['notes'])}")
+        if isinstance(output.get("transports"), list):
+            lines.append(f"Transports: {len(output['transports'])}")
+        chat_id = output.get("chat_id")
+        if isinstance(chat_id, (str, int)) and str(chat_id).strip():
+            lines.append(f"Chat id: {chat_id}")
+        message_id = output.get("message_id")
+        if isinstance(message_id, (str, int)) and str(message_id).strip():
+            lines.append(f"Message id: {message_id}")
         stdout = output.get("stdout")
         if isinstance(stdout, str) and stdout.strip():
             lines.append(f"stdout:\n{_compact_text(stdout, limit=600)}")
@@ -591,7 +688,35 @@ def _summarize_latest_tool_result(result: dict[str, object]) -> str:
         ]
         if issue_messages:
             lines.append(f"Issues: {'; '.join(issue_messages[:2])}")
-    return "\n".join(lines).strip()
+    return lines
+
+
+def _tool_result_log_summary(result: ToolExecutionResult) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "function_name": result.function_name,
+        "status": result.status,
+    }
+    if isinstance(result.output.get("status"), (str, int, float, bool)):
+        payload["output_status"] = result.output["status"]
+    if isinstance(result.output.get("chat_id"), (str, int)):
+        payload["chat_id"] = result.output["chat_id"]
+    if isinstance(result.output.get("message_id"), (str, int)):
+        payload["message_id"] = result.output["message_id"]
+    if isinstance(result.output.get("results"), list):
+        payload["results_count"] = len(result.output["results"])
+    if isinstance(result.output.get("notes"), list):
+        payload["notes_count"] = len(result.output["notes"])
+    if isinstance(result.output.get("transports"), list):
+        payload["transports_count"] = len(result.output["transports"])
+    stdout = result.output.get("stdout")
+    if isinstance(stdout, str) and stdout.strip():
+        payload["stdout_preview"] = _compact_text(stdout, limit=160)
+    stderr = result.output.get("stderr")
+    if isinstance(stderr, str) and stderr.strip():
+        payload["stderr_preview"] = _compact_text(stderr, limit=160)
+    if result.issues:
+        payload["issues"] = [issue.message for issue in result.issues[:2]]
+    return payload
 
 
 def _compact_text(value: str, *, limit: int) -> str:

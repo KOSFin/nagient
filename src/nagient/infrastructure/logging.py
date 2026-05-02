@@ -160,17 +160,29 @@ def _utc_now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
+def append_runtime_log(
+    settings: Settings,
+    message: str,
+) -> str:
+    line = _runtime_log_line(message)
+    settings.ensure_directories()
+    log_path = settings.log_dir / "runtime.log"
+    with log_path.open("a", encoding="utf-8") as handle:
+        handle.write(line + "\n")
+    return line
+
+
 def write_runtime_log(
     settings: Settings,
     message: str,
     *,
     stream: TextIO | None = None,
 ) -> str:
-    created_at = _utc_now()
-    line = f"[nagient] {created_at} {message}"
+    line = append_runtime_log(settings, message)
     print(line, file=stream or sys.stdout, flush=True)
-    settings.ensure_directories()
-    log_path = settings.log_dir / "runtime.log"
-    with log_path.open("a", encoding="utf-8") as handle:
-        handle.write(line + "\n")
     return line
+
+
+def _runtime_log_line(message: str) -> str:
+    created_at = _utc_now()
+    return f"[nagient] {created_at} {message}"
