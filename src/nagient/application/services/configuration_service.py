@@ -269,7 +269,7 @@ class ConfigurationService:
         self._validate_secret_reference_updates(
             kind="tool",
             component_id=tool_id,
-            secret_keys=set(manifest.secret_config),
+            secret_keys=self._manifest_secret_keys(manifest),
             updates=config_updates or {},
         )
 
@@ -415,6 +415,19 @@ class ConfigurationService:
         if isinstance(existing_plugin_id, str) and existing_plugin_id.strip():
             return existing_plugin_id.strip()
         return fallback_plugin_id
+
+    def _manifest_secret_keys(self, manifest: Any) -> set[str]:
+        secret_config = getattr(manifest, "secret_config", None)
+        if isinstance(secret_config, list):
+            return {str(item) for item in secret_config if isinstance(item, str)}
+        config_fields = getattr(manifest, "config_fields", None)
+        if not isinstance(config_fields, list):
+            return set()
+        return {
+            str(field_spec.key)
+            for field_spec in config_fields
+            if getattr(field_spec, "secret", False)
+        }
 
     def _validate_component_updates(
         self,

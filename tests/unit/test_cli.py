@@ -419,6 +419,19 @@ class CliTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 cli._prompt_for_model_selection(models)
 
+    def test_prompt_menu_choice_reprompts_after_out_of_range_value(self) -> None:
+        with patch("builtins.input", side_effect=["8", "2"]):
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                selection = cli._prompt_menu_choice(
+                    "Tool workspace_git:",
+                    [("toggle", "Disable profile"), ("fields", "Edit config fields")],
+                    zero_label="Back",
+                )
+
+        self.assertEqual(selection, "fields")
+        self.assertIn("Enter a number from 0 to 2.", stdout.getvalue())
+
     def test_run_generic_field_editor_stores_secret_values_for_secret_fields(self) -> None:
         container = SimpleNamespace(
             secret_broker=SimpleNamespace(

@@ -83,6 +83,10 @@ enforce_finite_commands = true
 [tools.workspace_git]
 plugin = "workspace.git"
 enabled = true
+author_name = "Nagient Agent"
+author_email = "agent@example.com"
+username = "git-user"
+token_secret = "GIT_ACCESS_TOKEN"
 ```
 
 ## 4. Секреты
@@ -101,6 +105,8 @@ NAGIENT_WEBHOOK_SHARED_SECRET=
 `tool-secrets.env`:
 
 ```env
+GIT_ACCESS_TOKEN=
+GIT_PASSWORD=
 GITHUB_TOKEN=
 ```
 

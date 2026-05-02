@@ -81,6 +81,7 @@ class NormalizedToolCall:
 @dataclass(frozen=True)
 class AssistantResponse:
     message: str
+    message_mode: str = "immediate"
     tool_calls: list[NormalizedToolCall] = field(default_factory=list)
     interaction_requests: list[InteractionRequest] = field(default_factory=list)
     approval_requests: list[ApprovalRequest] = field(default_factory=list)
@@ -90,6 +91,7 @@ class AssistantResponse:
     def to_dict(self) -> dict[str, object]:
         return {
             "message": self.message,
+            "message_mode": self.message_mode,
             "tool_calls": [call.to_dict() for call in self.tool_calls],
             "interaction_requests": [
                 request.to_dict() for request in self.interaction_requests
@@ -108,6 +110,7 @@ class AssistantResponse:
         config_mutations = payload.get("config_mutations")
         return cls(
             message=str(payload.get("message", "")),
+            message_mode=_normalize_message_mode(payload.get("message_mode")),
             tool_calls=[
                 NormalizedToolCall.from_dict(item)
                 for item in tool_calls
@@ -144,6 +147,15 @@ class AssistantResponse:
             if isinstance(config_mutations, list)
             else [],
         )
+
+
+def _normalize_message_mode(value: object) -> str:
+    if not isinstance(value, str):
+        return "immediate"
+    normalized = value.strip().lower()
+    if normalized == "after_tools":
+        return "after_tools"
+    return "immediate"
 
 
 @dataclass(frozen=True)

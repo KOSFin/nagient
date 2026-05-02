@@ -1333,7 +1333,7 @@ def _run_tool_profile_menu(container: AppContainer, tool_id: str) -> None:
                     config_updates=updates,
                 ),
                 container=container,
-                secret_fields=set(),
+                secret_fields=_manifest_secret_field_keys(plugin.manifest),
                 secret_scope="tool",
                 target_kind="tool",
                 target_id=tool_id,
@@ -2348,6 +2348,14 @@ def _manifest_config_fields(manifest: Any) -> list[ConfigFieldSpec]:
     return [field_spec for field_spec in config_fields if isinstance(field_spec, ConfigFieldSpec)]
 
 
+def _manifest_secret_field_keys(manifest: Any) -> set[str]:
+    return {
+        field_spec.key
+        for field_spec in _manifest_config_fields(manifest)
+        if field_spec.secret
+    }
+
+
 def _field_label(field_spec: ConfigFieldSpec | None, field_name: str) -> str:
     if field_spec is None:
         return field_name
@@ -2619,24 +2627,44 @@ def _prompt_menu_choice(
     zero_label: str,
 ) -> str | None:
     colors = _supports_color()
-    print("")
-    print(_heading(title, colors))
-    for index, (_value, label) in enumerate(options, start=1):
-        print(f"{_paint(str(index), '1;36', colors=colors)}) {label}")
-    print(f"{_paint('0', '1;36', colors=colors)}) {_paint(zero_label, '2', colors=colors)}")
-    try:
-        raw_choice = input(_paint(f"Choice [0-{len(options)}]: ", "1", colors=colors)).strip()
-    except (EOFError, KeyboardInterrupt):
+    while True:
         print("")
-        return None
-    if not raw_choice or raw_choice == "0":
-        return None
-    if not raw_choice.isdigit():
-        raise ValueError("Menu choice must be a number.")
-    selected_index = int(raw_choice)
-    if selected_index < 1 or selected_index > len(options):
-        raise ValueError("Menu choice is out of range.")
-    return options[selected_index - 1][0]
+        print(_heading(title, colors))
+        for index, (_value, label) in enumerate(options, start=1):
+            print(f"{_paint(str(index), '1;36', colors=colors)}) {label}")
+        print(
+            f"{_paint('0', '1;36', colors=colors)}) "
+            f"{_paint(zero_label, '2', colors=colors)}"
+        )
+        try:
+            raw_choice = input(
+                _paint(f"Choice [0-{len(options)}]: ", "1", colors=colors)
+            ).strip()
+        except (EOFError, KeyboardInterrupt):
+            print("")
+            return None
+        if not raw_choice or raw_choice == "0":
+            return None
+        if not raw_choice.isdigit():
+            print(
+                _paint(
+                    f"Enter a number from 0 to {len(options)}.",
+                    "33",
+                    colors=colors,
+                )
+            )
+            continue
+        selected_index = int(raw_choice)
+        if selected_index < 1 or selected_index > len(options):
+            print(
+                _paint(
+                    f"Enter a number from 0 to {len(options)}.",
+                    "33",
+                    colors=colors,
+                )
+            )
+            continue
+        return options[selected_index - 1][0]
 
 
 def _prompt_text(prompt: str, *, default: str = "") -> str | None:

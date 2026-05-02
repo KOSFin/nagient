@@ -361,6 +361,10 @@ def render_default_config(settings: Settings) -> str:
             "[tools.workspace_git]",
             'plugin = "workspace.git"',
             "enabled = true",
+            '# author_name = "Nagient Agent"',
+            '# author_email = "agent@example.com"',
+            '# username = "git-user"',
+            '# token_secret = "GIT_ACCESS_TOKEN"',
             "",
             "[tools.transport_interaction]",
             'plugin = "transport.interaction"',
@@ -415,6 +419,8 @@ def render_default_tool_secrets() -> str:
     return "\n".join(
         [
             "# Secrets for tool and connector integrations.",
+            "# GIT_ACCESS_TOKEN=",
+            "# GIT_PASSWORD=",
             "# GITHUB_TOKEN=",
             "",
         ]

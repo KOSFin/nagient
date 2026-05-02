@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
 import shutil
 import signal
 import subprocess
+import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -14,6 +16,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from nagient.domain.entities.security import InteractionRequest, PostSubmitAction
+from nagient.domain.entities.config_fields import ConfigFieldSpec
 from nagient.domain.entities.system_state import CheckIssue
 from nagient.domain.entities.tooling import ToolFunctionManifest, ToolPluginManifest
 from nagient.tools.agent_builtin import (
@@ -469,7 +472,106 @@ class WorkspaceGitToolPlugin(BaseToolPlugin):
         namespace="workspace.git",
         entrypoint="<builtin>",
         capabilities=["workspace", "git"],
+        optional_config=[
+            "author_name",
+            "author_email",
+            "committer_name",
+            "committer_email",
+            "username",
+            "token_secret",
+            "password_secret",
+        ],
+        config_fields=[
+            ConfigFieldSpec(
+                key="author_name",
+                label="Author name",
+                help_text="Git author name used for git operations executed through the agent.",
+                value_type="string",
+                category="connection",
+            ),
+            ConfigFieldSpec(
+                key="author_email",
+                label="Author email",
+                help_text="Git author email used for git operations executed through the agent.",
+                value_type="string",
+                category="connection",
+            ),
+            ConfigFieldSpec(
+                key="committer_name",
+                label="Committer name",
+                help_text=(
+                    "Optional git committer name. When omitted, the author name is reused."
+                ),
+                value_type="string",
+                category="connection",
+            ),
+            ConfigFieldSpec(
+                key="committer_email",
+                label="Committer email",
+                help_text=(
+                    "Optional git committer email. When omitted, the author email is reused."
+                ),
+                value_type="string",
+                category="connection",
+            ),
+            ConfigFieldSpec(
+                key="username",
+                label="Git username",
+                help_text=(
+                    "HTTPS username used when git asks for credentials. Often required together "
+                    "with a token or password secret."
+                ),
+                value_type="string",
+                category="connection",
+            ),
+            ConfigFieldSpec(
+                key="token_secret",
+                label="Token secret",
+                help_text=(
+                    "Tool secret name that stores an HTTPS git access token. Takes precedence "
+                    "over password_secret when both are configured."
+                ),
+                value_type="secret",
+                category="connection",
+                secret=True,
+            ),
+            ConfigFieldSpec(
+                key="password_secret",
+                label="Password secret",
+                help_text=(
+                    "Tool secret name that stores an HTTPS git password when no token is used."
+                ),
+                value_type="secret",
+                category="connection",
+                secret=True,
+            ),
+        ],
         functions=[
+            ToolFunctionManifest(
+                function_name="workspace.git.run",
+                binding="run_command",
+                description=(
+                    "Run a git subcommand in the workspace repository using the configured "
+                    "git identity and credentials."
+                ),
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "args": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "minItems": 1,
+                        }
+                    },
+                    "required": ["args"],
+                    "additionalProperties": False,
+                },
+                output_schema={"type": "object"},
+                permissions=["workspace.git.read", "workspace.git.write"],
+                side_effect="write",
+                approval_policy="policy",
+                dry_run_supported=True,
+            ),
             ToolFunctionManifest(
                 function_name="workspace.git.status",
                 binding="status",
@@ -500,6 +602,134 @@ class WorkspaceGitToolPlugin(BaseToolPlugin):
         ],
     )
 
+    def assess_risk(
+        self,
+        function_name: str,
+        arguments: Mapping[str, object],
+        context: ToolExecutionContext,
+    ) -> ToolRiskDecision:
+        del context
+        if function_name != "workspace.git.run":
+            return ToolRiskDecision(approval_policy="inherit")
+        raw_args = arguments.get("args")
+        if not isinstance(raw_args, list) or not raw_args:
+            return ToolRiskDecision(approval_policy="required")
+        args = [item for item in raw_args if isinstance(item, str) and item.strip()]
+        if not args:
+            return ToolRiskDecision(approval_policy="required")
+        subcommand = args[0].strip().lower()
+        if subcommand in {"status", "diff", "log", "show", "rev-parse", "ls-files"}:
+            return ToolRiskDecision(
+                approval_policy="never",
+                checkpoint_required=False,
+            )
+        return ToolRiskDecision(
+            approval_policy="required",
+            reason=(
+                "This git subcommand can modify repository state, refs, or remote state and "
+                "requires approval."
+            ),
+            checkpoint_required=False,
+        )
+
+    def validate_config(
+        self,
+        tool_id: str,
+        config: Mapping[str, object],
+        secret_broker: object,
+    ) -> list[CheckIssue]:
+        issues: list[CheckIssue] = []
+        for key in (
+            "author_name",
+            "author_email",
+            "committer_name",
+            "committer_email",
+            "username",
+            "token_secret",
+            "password_secret",
+        ):
+            value = config.get(key)
+            if value is not None and not isinstance(value, str):
+                issues.append(
+                    CheckIssue(
+                        severity="error",
+                        code="tool.workspace_git.invalid_config",
+                        message=f"Tool {tool_id!r} must use a string for {key!r}.",
+                        source=tool_id,
+                    )
+                )
+        author_name = _string_config(config, "author_name")
+        author_email = _string_config(config, "author_email")
+        committer_name = _string_config(config, "committer_name")
+        committer_email = _string_config(config, "committer_email")
+        username = _string_config(config, "username")
+        token_secret = _string_config(config, "token_secret")
+        password_secret = _string_config(config, "password_secret")
+        if bool(author_name) != bool(author_email):
+            issues.append(
+                CheckIssue(
+                    severity="warning",
+                    code="tool.workspace_git.partial_author_identity",
+                    message=(
+                        f"Tool {tool_id!r} should define both author_name and author_email "
+                        "together for a complete git identity."
+                    ),
+                    source=tool_id,
+                )
+            )
+        if bool(committer_name) != bool(committer_email):
+            issues.append(
+                CheckIssue(
+                    severity="warning",
+                    code="tool.workspace_git.partial_committer_identity",
+                    message=(
+                        f"Tool {tool_id!r} should define both committer_name and "
+                        "committer_email together for a complete git identity."
+                    ),
+                    source=tool_id,
+                )
+            )
+        if (token_secret or password_secret) and not username:
+            issues.append(
+                CheckIssue(
+                    severity="warning",
+                    code="tool.workspace_git.missing_username",
+                    message=(
+                        f"Tool {tool_id!r} should define username when token_secret or "
+                        "password_secret is configured for HTTPS git auth."
+                    ),
+                    source=tool_id,
+                )
+            )
+        if token_secret and password_secret:
+            issues.append(
+                CheckIssue(
+                    severity="warning",
+                    code="tool.workspace_git.duplicate_secret",
+                    message=(
+                        f"Tool {tool_id!r} defines both token_secret and password_secret. "
+                        "token_secret will be used first."
+                    ),
+                    source=tool_id,
+                )
+            )
+        has_secret = getattr(secret_broker, "has_secret", None)
+        if callable(has_secret):
+            for secret_name in [token_secret, password_secret]:
+                if secret_name and not has_secret(secret_name, scope_hint="tool"):
+                    issues.append(
+                        CheckIssue(
+                            severity="error",
+                            code="tool.workspace_git.missing_secret",
+                            message=(
+                                f"Tool {tool_id!r} references missing git secret "
+                                f"{secret_name!r}."
+                            ),
+                            source=tool_id,
+                        )
+                    )
+        return issues
+
     def status(
         self,
         arguments: Mapping[str, object],
@@ -508,8 +738,37 @@ class WorkspaceGitToolPlugin(BaseToolPlugin):
         del arguments
         if not context.workspace_manager.is_git_workspace(context.workspace):
             return {"git_repository": False, "status": ""}
-        output = _run_git(["status", "--short"], cwd=context.workspace.root)
+        output = _run_workspace_git(["status", "--short"], context=context)
         return {"git_repository": True, "status": output}
+
+    def run_command(
+        self,
+        arguments: Mapping[str, object],
+        context: ToolExecutionContext,
+    ) -> dict[str, object]:
+        raw_args = arguments.get("args")
+        if not isinstance(raw_args, list) or not raw_args:
+            raise ValueError("workspace.git.run requires a non-empty args array.")
+        args = [str(item) for item in raw_args if isinstance(item, str) and item.strip()]
+        if not args:
+            raise ValueError("workspace.git.run requires a non-empty args array.")
+        if not context.workspace_manager.is_git_workspace(context.workspace):
+            raise ValueError("The current workspace is not a git repository.")
+        command = ["git", *args]
+        if context.dry_run:
+            return {
+                "command": command,
+                "cwd": str(context.workspace.root),
+                "dry_run": True,
+            }
+        process = _run_workspace_git_process(args, context=context)
+        return {
+            "command": command,
+            "cwd": str(context.workspace.root),
+            "exit_code": process.returncode,
+            "stdout": process.stdout,
+            "stderr": process.stderr,
+        }
 
     def diff(
         self,
@@ -522,7 +781,7 @@ class WorkspaceGitToolPlugin(BaseToolPlugin):
         args = ["diff"]
         if isinstance(revision, str) and revision:
             args.append(revision)
-        output = _run_git(args, cwd=context.workspace.root)
+        output = _run_workspace_git(args, context=context)
         return {"git_repository": True, "diff": output}
 
     def restore_path(
@@ -539,9 +798,9 @@ class WorkspaceGitToolPlugin(BaseToolPlugin):
         if not context.workspace_manager.is_git_workspace(context.workspace):
             raise ValueError("The current workspace is not a git repository.")
         relative = str(path.relative_to(context.workspace.root))
-        _run_git(
+        _run_workspace_git(
             ["restore", "--worktree", "--source=HEAD", "--", relative],
-            cwd=context.workspace.root,
+            context=context,
         )
         return {"path": relative, "restored": True}
 
@@ -942,6 +1201,124 @@ def _shell_env(workspace_root: Path) -> dict[str, str]:
     }
 
 
+def _string_config(config: Mapping[str, object], key: str) -> str | None:
+    value = config.get(key)
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _run_workspace_git(
+    args: list[str],
+    *,
+    context: ToolExecutionContext,
+) -> str:
+    process = _run_workspace_git_process(args, context=context)
+    if process.returncode != 0:
+        raise ValueError(process.stderr.strip() or process.stdout.strip())
+    return process.stdout
+
+
+def _run_workspace_git_process(
+    args: list[str],
+    *,
+    context: ToolExecutionContext,
+) -> subprocess.CompletedProcess[str]:
+    env, cleanup_paths = _workspace_git_env(
+        workspace_root=context.workspace.root,
+        config=context.config,
+        secret_broker=context.secret_broker,
+    )
+    try:
+        return subprocess.run(
+            ["git", *args],
+            cwd=context.workspace.root,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    finally:
+        for path in cleanup_paths:
+            with contextlib.suppress(FileNotFoundError):
+                path.unlink()
+
+
+def _workspace_git_env(
+    *,
+    workspace_root: Path,
+    config: Mapping[str, object],
+    secret_broker: object,
+) -> tuple[dict[str, str], list[Path]]:
+    env = _shell_env(workspace_root)
+    cleanup_paths: list[Path] = []
+    author_name = _string_config(config, "author_name")
+    author_email = _string_config(config, "author_email")
+    committer_name = _string_config(config, "committer_name") or author_name
+    committer_email = _string_config(config, "committer_email") or author_email
+    username = _string_config(config, "username")
+    token_secret = _string_config(config, "token_secret")
+    password_secret = _string_config(config, "password_secret")
+    secret_name = token_secret or password_secret
+
+    if author_name:
+        env["GIT_AUTHOR_NAME"] = author_name
+    if author_email:
+        env["GIT_AUTHOR_EMAIL"] = author_email
+    if committer_name:
+        env["GIT_COMMITTER_NAME"] = committer_name
+    if committer_email:
+        env["GIT_COMMITTER_EMAIL"] = committer_email
+
+    if username:
+        env["GIT_CONFIG_COUNT"] = "1"
+        env["GIT_CONFIG_KEY_0"] = "credential.username"
+        env["GIT_CONFIG_VALUE_0"] = username
+
+    if secret_name and hasattr(secret_broker, "resolve_secret"):
+        password = secret_broker.resolve_secret(secret_name, scope_hint="tool")
+        if isinstance(password, str) and password:
+            askpass_path = _write_git_askpass_script()
+            cleanup_paths.append(askpass_path)
+            env["GIT_TERMINAL_PROMPT"] = "0"
+            env["GIT_ASKPASS"] = str(askpass_path)
+            env["SSH_ASKPASS"] = str(askpass_path)
+            env["NAGIENT_GIT_PASSWORD"] = password
+            if username:
+                env["NAGIENT_GIT_USERNAME"] = username
+
+    return env, cleanup_paths
+
+
+def _write_git_askpass_script() -> Path:
+    script = tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        prefix="nagient-git-askpass-",
+        suffix=".sh",
+        delete=False,
+    )
+    try:
+        script.write(
+            "\n".join(
+                [
+                    "#!/bin/sh",
+                    'case "$1" in',
+                    '  *Username*|*username*) printf "%s\\n" "${NAGIENT_GIT_USERNAME:-}" ;;',
+                    '  *) printf "%s\\n" "${NAGIENT_GIT_PASSWORD:-}" ;;',
+                    "esac",
+                    "",
+                ]
+            )
+        )
+    finally:
+        script.close()
+    path = Path(script.name)
+    path.chmod(0o700)
+    return path
+
+
 def _plan_shell_command(
     command: str,
     *,
@@ -1089,11 +1466,11 @@ def _bool_config(value: object, *, default: bool) -> bool:
     return default
 
 
-def _run_git(args: list[str], *, cwd: Path) -> str:
+def _run_git(args: list[str], *, cwd: Path, env: Mapping[str, str] | None = None) -> str:
     process = subprocess.run(
         ["git", *args],
         cwd=cwd,
-        env=_shell_env(cwd),
+        env=dict(env or _shell_env(cwd)),
         capture_output=True,
         text=True,
         check=False,

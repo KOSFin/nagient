@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from dataclasses import dataclass
 from typing import Any
@@ -17,6 +18,10 @@ from nagient.domain.entities.jobs import JobRecord
 from nagient.infrastructure.logging import RuntimeLogger, write_runtime_log
 from nagient.tools.registry import ToolPluginRegistry
 from nagient.workspace.manager import WorkspaceManager
+
+_TOOL_PLACEHOLDER_RE = re.compile(
+    r"\{\{tool:(?P<call_id>[^.}]+)\.(?P<path>[A-Za-z0-9_.-]+)\}\}"
+)
 
 
 @dataclass
@@ -102,15 +107,16 @@ class AgentRuntimeService:
                     error=exc,
                 )
             if assistant_response.message.strip():
-                last_message = assistant_response.message.strip()
-                self.memory_service.append_message(
-                    layout,
-                    session_id=session_id,
-                    transport_id=transport_id,
-                    role="assistant",
-                    content=last_message,
-                    metadata={"turn_index": turn_index},
-                )
+                if not _should_defer_assistant_message(assistant_response):
+                    last_message = assistant_response.message.strip()
+                    self.memory_service.append_message(
+                        layout,
+                        session_id=session_id,
+                        transport_id=transport_id,
+                        role="assistant",
+                        content=last_message,
+                        metadata={"turn_index": turn_index},
+                    )
 
             turn_result = self.agent_turn_service.run_turn(
                 AgentTurnRequest(
@@ -138,6 +144,21 @@ class AgentRuntimeService:
                         metadata={"function_name": result.function_name},
                     )
 
+            deferred_reply = _render_deferred_assistant_message(
+                assistant_response=assistant_response,
+                tool_results=turn_result.tool_results,
+            )
+            if deferred_reply:
+                last_message = deferred_reply
+                self.memory_service.append_message(
+                    layout,
+                    session_id=session_id,
+                    transport_id=transport_id,
+                    role="assistant",
+                    content=deferred_reply,
+                    metadata={"turn_index": turn_index},
+                )
+
             self.logger.info(
                 "agent_runtime.turn_completed",
                 "Completed agent runtime turn step.",
@@ -164,6 +185,8 @@ class AgentRuntimeService:
                 return turn_result.message or last_message
             if not assistant_response.tool_calls:
                 return turn_result.message or last_message
+            if deferred_reply is not None:
+                return deferred_reply
 
             previous_results = [result.to_dict() for result in turn_result.tool_results]
             text = "Continue the task using the latest tool results."
@@ -421,6 +444,8 @@ def _runtime_identity_prompt() -> str:
             "durable notes.",
             "If a user asks what you can do, describe your real runtime capabilities.",
             "If a user asks you to perform an action, prefer tool use over saying you cannot.",
+            "Prefer the dedicated workspace.git tools for git operations when possible so the "
+            "configured git identity and credentials are applied consistently.",
             "Only say that an action is blocked when a tool, policy, missing configuration, or "
             "provider limitation actually prevents it.",
             "Any shell command must be finite and bounded. Prefer forms like `ping -c 4` or "
@@ -468,6 +493,61 @@ def _friendly_provider_error_message(error: Exception) -> str:
             "Retry the request or increase the provider timeout."
         )
     return f"Provider request failed during this turn: {message}"
+
+
+def _should_defer_assistant_message(assistant_response: AssistantResponse) -> bool:
+    if not assistant_response.tool_calls:
+        return False
+    if assistant_response.message_mode == "after_tools":
+        return True
+    return _has_tool_placeholders(assistant_response.message)
+
+
+def _render_deferred_assistant_message(
+    *,
+    assistant_response: AssistantResponse,
+    tool_results: list[object],
+) -> str | None:
+    if not _should_defer_assistant_message(assistant_response):
+        return None
+    message = assistant_response.message.strip()
+    if not message:
+        return None
+    if not _has_tool_placeholders(message):
+        return message
+    call_results = {
+        call.call_id: tool_results[index].to_dict()
+        for index, call in enumerate(assistant_response.tool_calls)
+        if index < len(tool_results) and hasattr(tool_results[index], "to_dict")
+    }
+    rendered_message = message
+    for match in _TOOL_PLACEHOLDER_RE.finditer(message):
+        call_id = match.group("call_id")
+        path = match.group("path")
+        value = _lookup_tool_placeholder_value(call_results.get(call_id), path)
+        if value is None:
+            return None
+        replacement = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+        rendered_message = rendered_message.replace(match.group(0), replacement)
+    return rendered_message.strip()
+
+
+def _has_tool_placeholders(message: str) -> bool:
+    return bool(_TOOL_PLACEHOLDER_RE.search(message))
+
+
+def _lookup_tool_placeholder_value(
+    payload: dict[str, object] | None,
+    path: str,
+) -> object | None:
+    if payload is None:
+        return None
+    current: object = payload
+    for segment in path.split("."):
+        if not isinstance(current, dict) or segment not in current:
+            return None
+        current = current[segment]
+    return current
 
 
 def _summarize_latest_tool_result(result: dict[str, object]) -> str:

@@ -838,13 +838,25 @@ def _build_structured_assistant_prompt(
             "You are running inside the Nagient agent runtime.",
             "Return exactly one JSON object matching this shape:",
             (
-                '{"message":"string","tool_calls":[{"call_id":"string","request":{"tool_id":"string",'
+                '{"message":"string","message_mode":"immediate|after_tools","tool_calls":[{"call_id":"string","request":{"tool_id":"string",'
                 '"function_name":"string","arguments":{},"dry_run":false,"auto_approve":false}}],'
                 '"interaction_requests":[],"approval_requests":[],"notifications":[],"config_mutations":[]}'
             ),
             (
                 "Use tool_calls when a tool can act or verify something. If no tool is "
                 "needed, return an empty tool_calls array."
+            ),
+            (
+                "Use message_mode='after_tools' when the current message should be sent only "
+                "after the listed tool_calls finish. This avoids an extra provider round-trip."
+            ),
+            (
+                "When message_mode='after_tools', you may embed tool result placeholders inside "
+                "message using {{tool:<call_id>.output.<field>}} or {{tool:<call_id>.status}}."
+            ),
+            (
+                "If you still need to inspect tool results before writing the final answer, keep "
+                "message_mode='immediate' and return another tool-free response on the next turn."
             ),
             f"Session id: {session_id}",
             f"Transport id: {transport_id}",

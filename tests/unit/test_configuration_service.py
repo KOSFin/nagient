@@ -22,6 +22,19 @@ class ConfigurationServiceTests(unittest.TestCase):
                     config_updates={"bot_token_secret": "123456:telegram-token"},
                 )
 
+    def test_tool_secret_reference_updates_reject_raw_secret_values(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir) / ".nagient"
+            settings = Settings.from_env({"NAGIENT_HOME": str(home_dir)})
+            container = build_container(settings)
+            container.configuration_service.initialize(force=True)
+
+            with self.assertRaisesRegex(ValueError, "secret name like MY_SECRET"):
+                container.configuration_service.configure_tool(
+                    "workspace_git",
+                    config_updates={"token_secret": "ghp-raw-token"},
+                )
+
     def test_first_enabled_provider_becomes_default_automatically(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             home_dir = Path(temp_dir) / ".nagient"

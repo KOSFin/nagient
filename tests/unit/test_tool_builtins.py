@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+import subprocess
 
 from nagient.app.container import build_container
 from nagient.app.settings import Settings
@@ -86,6 +87,31 @@ class ToolBuiltinsTests(unittest.TestCase):
             self.assertTrue(
                 any("runtime timeout" in note.lower() for note in result.output["notes"])
             )
+
+    def test_workspace_git_run_executes_read_only_subcommand(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            workspace_root = root / "workspace"
+            container = _container_with_workspace(root)
+            subprocess.run(
+                ["git", "init"],
+                cwd=workspace_root,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            result = container.tool_service.invoke(
+                ToolExecutionRequest(
+                    tool_id="workspace_git",
+                    function_name="workspace.git.run",
+                    arguments={"args": ["status", "--short"]},
+                )
+            )
+
+            self.assertEqual(result.status, "success")
+            self.assertEqual(result.output["exit_code"], 0)
+            self.assertIsInstance(result.output["stdout"], str)
 
 
 def _container_with_workspace(root: Path) -> object:

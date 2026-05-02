@@ -21,6 +21,53 @@ from nagient.providers.http import ProviderHttpError
 
 
 class AgentRuntimeServiceTests(unittest.TestCase):
+    def test_runtime_can_send_deferred_tool_reply_without_follow_up(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir) / "home"
+            workspace_root = Path(temp_dir) / "workspace"
+            workspace_root.mkdir(parents=True, exist_ok=True)
+            settings = Settings.from_env({"NAGIENT_HOME": str(home_dir)})
+            container = build_container(settings)
+            container.configuration_service.initialize(force=True)
+            _set_workspace_root(settings.config_file, workspace_root)
+
+            provider_mock = Mock(
+                return_value=AssistantResponse(
+                    message="Вот вывод команды:\n{{tool:call-1.output.stdout}}",
+                    message_mode="after_tools",
+                    tool_calls=[
+                        NormalizedToolCall(
+                            call_id="call-1",
+                            request=ToolExecutionRequest(
+                                tool_id="workspace_shell",
+                                function_name="workspace.shell.run",
+                                arguments={
+                                    "command": "printf done",
+                                    "read_only": True,
+                                },
+                            ),
+                        )
+                    ],
+                )
+            )
+            object.__setattr__(
+                container.provider_service,
+                "generate_assistant_response",
+                provider_mock,
+            )
+
+            reply = container.agent_runtime_service.handle_inbound_event(
+                "console",
+                {
+                    "event_type": "message",
+                    "session_id": "console:demo",
+                    "text": "Покажи лог команды",
+                },
+            )
+
+            self.assertEqual(reply, "Вот вывод команды:\ndone")
+            self.assertEqual(provider_mock.call_count, 1)
+
     def test_runtime_executes_tool_calls_and_returns_follow_up_message(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             home_dir = Path(temp_dir) / "home"
