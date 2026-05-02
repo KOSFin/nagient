@@ -7,6 +7,7 @@ import json
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import TypeVar
 
 from nagient.app.configuration import (
     ProviderInstanceConfig,
@@ -26,6 +27,8 @@ from nagient.providers.manager import ProviderManager
 from nagient.providers.registry import ProviderPluginRegistry
 from nagient.providers.storage import AuthSessionStore, FileCredentialStore
 from nagient.security.broker import SecretBroker
+
+T = TypeVar("T")
 
 
 @dataclass(frozen=True)
@@ -732,9 +735,9 @@ class ProviderService:
 
     def _call_with_captured_provider_output(
         self,
-        operation: Callable[[], object],
+        operation: Callable[[], T],
         runtime_log: Callable[[str], None] | None,
-    ) -> object:
+    ) -> T:
         if runtime_log is None:
             return operation()
         stdout_buffer = io.StringIO()
