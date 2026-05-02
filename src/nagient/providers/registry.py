@@ -252,12 +252,12 @@ def _merge_config_keys(
         if key not in seen:
             merged.append(key)
             seen.add(key)
-    for field in fields:
-        if field.required != required:
+    for config_field in fields:
+        if config_field.required != required:
             continue
-        if field.key not in seen:
-            merged.append(field.key)
-            seen.add(field.key)
+        if config_field.key not in seen:
+            merged.append(config_field.key)
+            seen.add(config_field.key)
     return merged
 
 

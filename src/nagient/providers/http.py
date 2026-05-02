@@ -47,7 +47,7 @@ def build_proxy_json_http_client(
     username: str | None = None,
     password: str | None = None,
     default_timeout: float = 60.0,
-) -> "JsonHttpClient":
+) -> JsonHttpClient:
     target_proxy = _proxy_target(proxy_url, username=username, password=password)
     opener = build_opener(
         ProxyHandler(
