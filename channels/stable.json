@@ -1,0 +1,11 @@
+{
+  "channel": "stable",
+  "latest_version": "0.6.3",
+  "manifest_url": "https://ngnt-in.ruka.me/manifests/0.6.3.json",
+  "published_at": "2026-05-02T03:00:36Z",
+  "supported_installers": [
+    "docker",
+    "shell",
+    "powershell"
+  ]
+}
