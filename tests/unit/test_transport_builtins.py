@@ -44,7 +44,7 @@ class TransportBuiltinsTests(unittest.TestCase):
             ),
         )
 
-        class _TelegramHttpClient:
+        class _UnexpectedTelegramHttpClient:
             def post_json(
                 self,
                 url: str,
@@ -54,19 +54,10 @@ class TransportBuiltinsTests(unittest.TestCase):
                 query: dict[str, str] | None = None,
                 timeout: float | None = None,
             ) -> dict[str, object]:
-                del headers, query, timeout
-                self.seen_url = url
-                self.seen_payload = dict(payload)
-                return {
-                    "ok": True,
-                    "result": {
-                        "id": 1,
-                        "is_bot": True,
-                        "first_name": "Nagient",
-                    },
-                }
+                del url, payload, headers, query, timeout
+                raise AssertionError("Telegram healthcheck should not perform outbound HTTP.")
 
-        plugin.http_client = _TelegramHttpClient()
+        plugin.http_client = _UnexpectedTelegramHttpClient()
 
         issues = plugin.healthcheck(
             "telegram",

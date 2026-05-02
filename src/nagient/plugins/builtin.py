@@ -679,27 +679,9 @@ class TelegramTransportPlugin(BaseTransportPlugin):
         config: Mapping[str, object],
         secrets: Mapping[str, str],
     ) -> list[CheckIssue]:
-        try:
-            self._runtime_secrets = dict(secrets)
-            token = self._resolve_token(config, secrets)
-            self._telegram_request(
-                token,
-                "getMe",
-                {},
-                timeout=_telegram_timeout_seconds(config),
-                config=config,
-            )
-        except Exception as exc:
-            return [
-                CheckIssue(
-                    severity="warning",
-                    code="transport.telegram.remote_check_failed",
-                    message=(
-                        f"Transport {transport_id!r} could not reach Telegram Bot API: {exc}"
-                    ),
-                    source=transport_id,
-                )
-            ]
+        del transport_id
+        self._runtime_secrets = dict(secrets)
+        self._resolve_token(config, secrets)
         return []
 
     def answer_callback(self, payload: dict[str, object]) -> dict[str, object]:
