@@ -9,6 +9,7 @@ from typing import Any
 from nagient.app.configuration import RuntimeConfiguration, load_runtime_configuration
 from nagient.app.settings import Settings
 from nagient.domain.entities.agent_runtime import (
+    AssistantResponse,
     AgentTurnContext,
     AgentTurnRequest,
     ConfigMutationIntent,

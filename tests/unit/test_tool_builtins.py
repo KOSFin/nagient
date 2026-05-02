@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-import subprocess
 
 from nagient.app.container import build_container
 from nagient.app.settings import Settings
