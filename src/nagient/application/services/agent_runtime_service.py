@@ -16,6 +16,7 @@ from nagient.domain.entities.agent_runtime import (
     NotificationIntent,
 )
 from nagient.domain.entities.jobs import JobRecord
+from nagient.domain.entities.tooling import ToolExecutionResult
 from nagient.infrastructure.logging import RuntimeLogger, write_runtime_log
 from nagient.tools.registry import ToolPluginRegistry
 from nagient.workspace.manager import WorkspaceManager
@@ -507,7 +508,7 @@ def _should_defer_assistant_message(assistant_response: AssistantResponse) -> bo
 def _render_deferred_assistant_message(
     *,
     assistant_response: AssistantResponse,
-    tool_results: list[object],
+    tool_results: list[ToolExecutionResult],
 ) -> str | None:
     if not _should_defer_assistant_message(assistant_response):
         return None
@@ -519,7 +520,7 @@ def _render_deferred_assistant_message(
     call_results = {
         call.call_id: tool_results[index].to_dict()
         for index, call in enumerate(assistant_response.tool_calls)
-        if index < len(tool_results) and hasattr(tool_results[index], "to_dict")
+        if index < len(tool_results)
     }
     rendered_message = message
     for match in _TOOL_PLACEHOLDER_RE.finditer(message):
