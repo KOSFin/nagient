@@ -259,7 +259,7 @@ class WebhookTransportPlugin(BaseTransportPlugin):
 
 class TelegramTransportPlugin(BaseTransportPlugin):
     def __init__(self) -> None:
-        self.http_client = JsonHttpClient()
+        self.http_client: JsonHttpClient = JsonHttpClient()
         self._runtime_contexts: dict[str, TransportRuntimeContext] = {}
         self._last_update_ids: dict[str, int] = {}
         self._runtime_secrets: dict[str, str] = {}
@@ -915,7 +915,7 @@ class TelegramTransportPlugin(BaseTransportPlugin):
         except ProviderHttpError as exc:
             raise ValueError(str(exc)) from exc
 
-    def _telegram_http_client(self, config: Mapping[str, object]) -> JsonHttpClient | object:
+    def _telegram_http_client(self, config: Mapping[str, object]) -> JsonHttpClient:
         proxy_url = _string_config(config, "proxy_url")
         if not proxy_url:
             return self.http_client
