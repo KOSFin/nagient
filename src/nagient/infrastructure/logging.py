@@ -101,7 +101,7 @@ class RuntimeLogger:
             with events_path.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(payload.to_dict(), ensure_ascii=False) + "\n")
         component_path = self.settings.log_dir / f"{self.component}.log"
-        line = f"[{created_at}] {level.upper()} {event}: {message}"
+        line = f"[{created_at}] [{self.component}] [{level.upper()}] [{event}] {message}"
         if payload.fields:
             line += f" {json.dumps(payload.fields, ensure_ascii=False, sort_keys=True)}"
         with component_path.open("a", encoding="utf-8") as handle:
@@ -163,8 +163,10 @@ def _utc_now() -> str:
 def append_runtime_log(
     settings: Settings,
     message: str,
+    *,
+    component: str = "runtime",
 ) -> str:
-    line = _runtime_log_line(message)
+    line = _runtime_log_line(message, component=component)
     settings.ensure_directories()
     log_path = settings.log_dir / "runtime.log"
     with log_path.open("a", encoding="utf-8") as handle:
@@ -176,13 +178,15 @@ def write_runtime_log(
     settings: Settings,
     message: str,
     *,
+    component: str = "runtime",
     stream: TextIO | None = None,
 ) -> str:
-    line = append_runtime_log(settings, message)
+    line = append_runtime_log(settings, message, component=component)
     print(line, file=stream or sys.stdout, flush=True)
     return line
 
 
-def _runtime_log_line(message: str) -> str:
+def _runtime_log_line(message: str, *, component: str = "runtime") -> str:
     created_at = _utc_now()
-    return f"[nagient] {created_at} {message}"
+    normalized_component = component.strip() or "runtime"
+    return f"[nagient] {created_at} [{normalized_component}] {message}"

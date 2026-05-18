@@ -142,6 +142,17 @@ GITHUB_TOKEN=
 ~/.nagient/bin/nagient setup tool github_api --enable --set token_secret=GITHUB_TOKEN
 ```
 
+Используйте `github.api.request` для GitHub REST endpoints, для которых пока нет отдельного helper, например для обновления настроек репозитория:
+
+```bash
+~/.nagient/bin/nagient tool invoke github.api.request \
+  --tool-id github_api \
+  --args-json '{"method":"PATCH","path":"/repos/OWNER/REPO","json":{"description":"Updated by Nagient"}}' \
+  --auto-approve
+```
+
+`workspace_git` проверяет только настроенный `[workspace].root`. Если он возвращает `git_repository=false`, проверьте, что workspace root указывает на checkout, смонтированный в runtime: например `@home/workspace` для установленного Docker layout или путь к репозиторию при локальной разработке.
+
 ## 7. Что проверить в первую очередь
 
 - `safe_mode = true` в секции `runtime`

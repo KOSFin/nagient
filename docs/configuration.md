@@ -142,6 +142,17 @@ The `github_api` tool profile is present out of the box and disabled until confi
 ~/.nagient/bin/nagient setup tool github_api --enable --set token_secret=GITHUB_TOKEN
 ```
 
+Use `github.api.request` for GitHub REST endpoints that do not have a dedicated helper yet, for example repository settings updates:
+
+```bash
+~/.nagient/bin/nagient tool invoke github.api.request \
+  --tool-id github_api \
+  --args-json '{"method":"PATCH","path":"/repos/OWNER/REPO","json":{"description":"Updated by Nagient"}}' \
+  --auto-approve
+```
+
+`workspace_git` only inspects the configured `[workspace].root`. If it reports `git_repository=false`, check that the workspace root is the checkout mounted into the runtime, for example `@home/workspace` for the installed Docker layout or your repository path for local development.
+
 ## 7. First checks
 
 - `safe_mode = true` in `runtime`

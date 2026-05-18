@@ -58,6 +58,7 @@ class RuntimeAgent:
         self._log(
             log_path,
             f"Runtime starting (version {self.settings.version}, channel {self.settings.channel}).",
+            component="runtime.lifecycle",
         )
         self._log_activation_summary(log_path, runtime_config, activation_report)
 
@@ -80,6 +81,7 @@ class RuntimeAgent:
                             "Runtime config changed on disk after startup. "
                             "Run `nagient reconcile` and restart the runtime to apply it."
                         ),
+                        component="runtime.config",
                     )
                     reload_warning_emitted = True
 
@@ -96,7 +98,7 @@ class RuntimeAgent:
                 stop_event.wait(timeout=self.settings.heartbeat_interval_seconds)
         finally:
             self._stop_transports(log_path, started_transports)
-            self._log(log_path, "Runtime stopped.")
+            self._log(log_path, "Runtime stopped.", component="runtime.lifecycle")
 
         return 0
 
@@ -169,7 +171,11 @@ class RuntimeAgent:
         activation_report: ActivationReport | None,
     ) -> None:
         if activation_report is None:
-            self._log(log_path, "Activation report is not available yet.")
+            self._log(
+                log_path,
+                "Activation report is not available yet.",
+                component="runtime.activation",
+            )
             return
 
         self._log(
@@ -178,10 +184,12 @@ class RuntimeAgent:
                 f"Activation status: {activation_report.status} "
                 f"(can_activate={'yes' if activation_report.can_activate else 'no'})."
             ),
+            component="runtime.activation",
         )
         self._log(
             log_path,
             f"Default provider: {runtime_config.default_provider or 'none'}.",
+            component="runtime.activation",
         )
 
         enabled_providers = [
@@ -197,9 +205,14 @@ class RuntimeAgent:
                         f"{'yes' if provider.authenticated else 'no'}, "
                         f"model={provider.configured_model or 'none'}."
                     ),
+                    component="provider.activation",
                 )
         else:
-            self._log(log_path, "No provider profiles are enabled.")
+            self._log(
+                log_path,
+                "No provider profiles are enabled.",
+                component="provider.activation",
+            )
 
         enabled_transports = [
             transport for transport in activation_report.transports if transport.enabled
@@ -209,14 +222,20 @@ class RuntimeAgent:
                 self._log(
                     log_path,
                     f"Transport {transport.transport_id}: status={transport.status}.",
+                    component=_transport_component(transport.transport_id),
                 )
         else:
-            self._log(log_path, "No transport profiles are enabled.")
+            self._log(
+                log_path,
+                "No transport profiles are enabled.",
+                component="transport.activation",
+            )
 
         for issue in activation_report.issues[:5]:
             self._log(
                 log_path,
                 f"Issue ({issue.severity}) [{issue.source}] {issue.message}",
+                component="runtime.activation",
             )
 
     def _start_transports(
@@ -233,7 +252,11 @@ class RuntimeAgent:
         started: list[_StartedTransport] = []
 
         for issue in discovered.issues:
-            self._log(log_path, f"Transport discovery issue: {issue.message}")
+            self._log(
+                log_path,
+                f"Transport discovery issue: {issue.message}",
+                component="transport.discovery",
+            )
 
         for transport in runtime_config.transports:
             if not transport.enabled:
@@ -250,6 +273,7 @@ class RuntimeAgent:
                         f"Skipping transport {transport.transport_id}: "
                         f"status is {transport_state.status}."
                     ),
+                    component=_transport_component(transport.transport_id),
                 )
                 continue
 
@@ -261,6 +285,7 @@ class RuntimeAgent:
                         f"Skipping transport {transport.transport_id}: "
                         f"plugin {transport.plugin_id} was not found."
                     ),
+                    component=_transport_component(transport.transport_id),
                 )
                 continue
 
@@ -273,7 +298,11 @@ class RuntimeAgent:
                     *,
                     _transport_id: str = transport.transport_id,
                 ) -> None:
-                    self._log(log_path, self._format_transport_log(_transport_id, message))
+                    self._log(
+                        log_path,
+                        self._format_transport_log(_transport_id, message),
+                        component=_transport_component(_transport_id),
+                    )
 
                 plugin.implementation.bind_runtime(
                     transport.transport_id,
@@ -312,11 +341,13 @@ class RuntimeAgent:
                 self._log(
                     log_path,
                     self._transport_start_message(transport),
+                    component=_transport_component(transport.transport_id),
                 )
             except Exception as exc:
                 self._log(
                     log_path,
                     f"Transport {transport.transport_id} failed to start: {exc}",
+                    component=_transport_component(transport.transport_id),
                 )
 
         return started
@@ -335,11 +366,16 @@ class RuntimeAgent:
                 started_transport.poll_thread.join(timeout=2.0)
             try:
                 implementation.stop(transport.transport_id)
-                self._log(log_path, f"Transport {transport.transport_id} stopped.")
+                self._log(
+                    log_path,
+                    f"Transport {transport.transport_id} stopped.",
+                    component=_transport_component(transport.transport_id),
+                )
             except Exception as exc:
                 self._log(
                     log_path,
                     f"Transport {transport.transport_id} failed to stop cleanly: {exc}",
+                    component=_transport_component(transport.transport_id),
                 )
 
     def _should_spawn_poll_thread(self, implementation: BaseTransportPlugin) -> bool:
@@ -367,11 +403,18 @@ class RuntimeAgent:
                 self._log(
                     log_path,
                     f"Transport {transport.transport_id} poll failed: {exc}",
+                    component=_transport_component(transport.transport_id),
                 )
                 stop_event.wait(timeout=2.0)
                 continue
 
             handled_any = False
+            if raw_events:
+                self._log(
+                    log_path,
+                    f"Transport {transport.transport_id} received {len(raw_events)} raw event(s).",
+                    component=_transport_component(transport.transport_id),
+                )
             for raw_event in raw_events:
                 handled_any = True
                 self._handle_polled_transport_event(
@@ -399,16 +442,40 @@ class RuntimeAgent:
             self._log(
                 log_path,
                 f"Transport {transport.transport_id} failed to normalize inbound event: {exc}",
+                component=_transport_component(transport.transport_id),
             )
             return
 
         event_type = str(normalized.get("event_type", "")).strip().lower()
         if event_type not in {"message", "callback_query", "edited_message"}:
+            if event_type:
+                self._log(
+                    log_path,
+                    (
+                        f"Transport {transport.transport_id} ignored inbound event "
+                        f"type {event_type}."
+                    ),
+                    component=_transport_component(transport.transport_id),
+                )
             return
 
         text = str(normalized.get("text", "")).strip()
         if not text:
+            self._log(
+                log_path,
+                f"Transport {transport.transport_id} ignored empty {event_type} event.",
+                component=_transport_component(transport.transport_id),
+            )
             return
+
+        self._log(
+            log_path,
+            (
+                f"Transport {transport.transport_id} normalized inbound {event_type} "
+                f"for session {normalized.get('session_id', transport.transport_id + ':default')}."
+            ),
+            component=_transport_component(transport.transport_id),
+        )
 
         reply_target = normalized.get("reply_target")
         if not isinstance(reply_target, dict):
@@ -418,6 +485,7 @@ class RuntimeAgent:
                     transport.transport_id,
                     "produced a message event without reply_target.",
                 ),
+                component=_transport_component(transport.transport_id),
             )
             return
 
@@ -428,6 +496,7 @@ class RuntimeAgent:
                     transport.transport_id,
                     "received a message but no handler is configured.",
                 ),
+                component=_transport_component(transport.transport_id),
             )
             return
 
@@ -439,9 +508,15 @@ class RuntimeAgent:
             self._log(
                 log_path,
                 f"Transport {transport.transport_id} handler failed: {_exception_message(exc)}",
+                component=_transport_component(transport.transport_id),
             )
 
         if not reply_text:
+            self._log(
+                log_path,
+                f"Transport {transport.transport_id} handler produced no reply.",
+                component=_transport_component(transport.transport_id),
+            )
             return
 
         reply_payload = dict(reply_target)
@@ -462,10 +537,16 @@ class RuntimeAgent:
 
         try:
             implementation.send_message(reply_payload)
+            self._log(
+                log_path,
+                f"Transport {transport.transport_id} sent reply message.",
+                component=_transport_component(transport.transport_id),
+            )
         except Exception as exc:
             self._log(
                 log_path,
                 f"Transport {transport.transport_id} failed to send a reply: {exc}",
+                component=_transport_component(transport.transport_id),
             )
 
     def _format_transport_log(self, transport_id: str, message: str) -> str:
@@ -495,9 +576,9 @@ class RuntimeAgent:
             return "Transport console loaded as the local fallback transport."
         return f"Transport {transport.transport_id} loaded."
 
-    def _log(self, log_path: Path, message: str) -> None:
+    def _log(self, log_path: Path, message: str, *, component: str = "runtime") -> None:
         del log_path
-        write_runtime_log(self.settings, message)
+        write_runtime_log(self.settings, message, component=component)
 
     def _scheduler_layout(
         self,
@@ -524,12 +605,17 @@ class RuntimeAgent:
                 self.scheduled_job_handler,
             )
         except Exception as exc:
-            self._log(log_path, f"Scheduler failed while running due jobs: {exc}")
+            self._log(
+                log_path,
+                f"Scheduler failed while running due jobs: {exc}",
+                component="scheduler",
+            )
             return
         for job in executed:
             self._log(
                 log_path,
                 f"Scheduler executed job {job.job_id} ({job.trigger}).",
+                component="scheduler",
             )
 
 
@@ -575,6 +661,11 @@ def _exception_message(exc: Exception) -> str:
     if message:
         return message
     return exc.__class__.__name__
+
+
+def _transport_component(transport_id: str) -> str:
+    normalized = transport_id.strip().replace("_", "-") or "unknown"
+    return f"transport.{normalized}"
 
 
 def _transport_scoped_secrets(

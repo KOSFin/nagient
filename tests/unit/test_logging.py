@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from nagient.app.settings import Settings
-from nagient.infrastructure.logging import RuntimeLogger
+from nagient.infrastructure.logging import RuntimeLogger, append_runtime_log
 
 
 class RuntimeLoggerTests(unittest.TestCase):
@@ -23,7 +23,9 @@ class RuntimeLoggerTests(unittest.TestCase):
 
             component_path = settings.log_dir / "runtime-test.log"
             self.assertTrue(component_path.exists())
-            self.assertIn("Hello world.", component_path.read_text(encoding="utf-8"))
+            component_text = component_path.read_text(encoding="utf-8")
+            self.assertIn("Hello world.", component_text)
+            self.assertIn("[runtime-test] [INFO] [runtime.event]", component_text)
             self.assertFalse((settings.log_dir / "events.log").exists())
 
     def test_logger_honors_level_and_json_settings(self) -> None:
@@ -67,6 +69,21 @@ class RuntimeLoggerTests(unittest.TestCase):
             ]
             self.assertEqual(len(payload), 1)
             self.assertEqual(payload[0]["event"], "runtime.warning")
+
+    def test_runtime_log_includes_component_tag(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir)
+            settings = Settings.from_env({"NAGIENT_HOME": str(home_dir)})
+
+            line = append_runtime_log(
+                settings,
+                "Provider demo: hello",
+                component="provider.runtime",
+            )
+
+            self.assertIn("[provider.runtime]", line)
+            runtime_text = (settings.log_dir / "runtime.log").read_text(encoding="utf-8")
+            self.assertIn("[provider.runtime]", runtime_text)
 
 
 if __name__ == "__main__":

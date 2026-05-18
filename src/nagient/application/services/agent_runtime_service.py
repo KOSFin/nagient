@@ -407,7 +407,7 @@ class AgentRuntimeService:
         return reply
 
     def _provider_runtime_log(self, message: str) -> None:
-        append_runtime_log(self.settings, message)
+        append_runtime_log(self.settings, message, component="provider.runtime")
 
     def _log_assistant_response(
         self,
@@ -502,6 +502,9 @@ def _runtime_identity_prompt() -> str:
             "If a user asks you to perform an action, prefer tool use over saying you cannot.",
             "Prefer the dedicated workspace.git tools for git operations when possible so the "
             "configured git identity and credentials are applied consistently.",
+            "Use github.api.request for GitHub API endpoints that are not covered by a more "
+            "specific GitHub tool function, including repository or project settings updates "
+            "when the github_api tool is configured.",
             "Only say that an action is blocked when a tool, policy, missing configuration, or "
             "provider limitation actually prevents it.",
             "Any shell command must be finite and bounded. Prefer forms like `ping -c 4` or "

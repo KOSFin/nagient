@@ -738,10 +738,34 @@ class WorkspaceGitToolPlugin(BaseToolPlugin):
         context: ToolExecutionContext,
     ) -> dict[str, object]:
         del arguments
-        if not context.workspace_manager.is_git_workspace(context.workspace):
-            return {"git_repository": False, "status": ""}
+        git_root = context.workspace_manager.git_root(context.workspace)
+        if git_root is None:
+            _log_tool_debug(
+                context,
+                "workspace_git.status.no_repository",
+                "Workspace root is not inside an allowed git repository.",
+                workspace_root=context.workspace.root,
+            )
+            return {
+                "git_repository": False,
+                "status": "",
+                "workspace_root": str(context.workspace.root),
+            }
         output = _run_workspace_git(["status", "--short"], context=context)
-        return {"git_repository": True, "status": output}
+        _log_tool_debug(
+            context,
+            "workspace_git.status",
+            "Read workspace git status.",
+            workspace_root=context.workspace.root,
+            git_root=git_root,
+            changed_paths=len([line for line in output.splitlines() if line.strip()]),
+        )
+        return {
+            "git_repository": True,
+            "status": output,
+            "workspace_root": str(context.workspace.root),
+            "git_root": str(git_root),
+        }
 
     def run_command(
         self,
@@ -754,19 +778,31 @@ class WorkspaceGitToolPlugin(BaseToolPlugin):
         args = [str(item) for item in raw_args if isinstance(item, str) and item.strip()]
         if not args:
             raise ValueError("workspace.git.run requires a non-empty args array.")
-        if not context.workspace_manager.is_git_workspace(context.workspace):
+        git_root = context.workspace_manager.git_root(context.workspace)
+        if git_root is None:
             raise ValueError("The current workspace is not a git repository.")
         command = ["git", *args]
         if context.dry_run:
             return {
                 "command": command,
                 "cwd": str(context.workspace.root),
+                "workspace_root": str(context.workspace.root),
                 "dry_run": True,
             }
+        _log_tool_info(
+            context,
+            "workspace_git.run",
+            "Running workspace git command.",
+            args=args,
+            workspace_root=context.workspace.root,
+            git_root=git_root,
+        )
         process = _run_workspace_git_process(args, context=context)
         return {
             "command": command,
             "cwd": str(context.workspace.root),
+            "workspace_root": str(context.workspace.root),
+            "git_root": str(git_root),
             "exit_code": process.returncode,
             "stdout": process.stdout,
             "stderr": process.stderr,
@@ -777,14 +813,38 @@ class WorkspaceGitToolPlugin(BaseToolPlugin):
         arguments: Mapping[str, object],
         context: ToolExecutionContext,
     ) -> dict[str, object]:
-        if not context.workspace_manager.is_git_workspace(context.workspace):
-            return {"git_repository": False, "diff": ""}
+        git_root = context.workspace_manager.git_root(context.workspace)
+        if git_root is None:
+            _log_tool_debug(
+                context,
+                "workspace_git.diff.no_repository",
+                "Workspace root is not inside an allowed git repository.",
+                workspace_root=context.workspace.root,
+            )
+            return {
+                "git_repository": False,
+                "diff": "",
+                "workspace_root": str(context.workspace.root),
+            }
         revision = arguments.get("revision")
         args = ["diff"]
         if isinstance(revision, str) and revision:
             args.append(revision)
         output = _run_workspace_git(args, context=context)
-        return {"git_repository": True, "diff": output}
+        _log_tool_debug(
+            context,
+            "workspace_git.diff",
+            "Read workspace git diff.",
+            workspace_root=context.workspace.root,
+            git_root=git_root,
+            revision=revision if isinstance(revision, str) else "",
+        )
+        return {
+            "git_repository": True,
+            "diff": output,
+            "workspace_root": str(context.workspace.root),
+            "git_root": str(git_root),
+        }
 
     def restore_path(
         self,
@@ -797,14 +857,23 @@ class WorkspaceGitToolPlugin(BaseToolPlugin):
         path = context.workspace_manager.guard_path(context.workspace, candidate)
         if context.dry_run:
             return {"path": str(path), "restored": False, "dry_run": True}
-        if not context.workspace_manager.is_git_workspace(context.workspace):
+        git_root = context.workspace_manager.git_root(context.workspace)
+        if git_root is None:
             raise ValueError("The current workspace is not a git repository.")
         relative = str(path.relative_to(context.workspace.root))
+        _log_tool_info(
+            context,
+            "workspace_git.restore_path",
+            "Restoring workspace path from HEAD.",
+            path=relative,
+            workspace_root=context.workspace.root,
+            git_root=git_root,
+        )
         _run_workspace_git(
             ["restore", "--worktree", "--source=HEAD", "--", relative],
             context=context,
         )
-        return {"path": relative, "restored": True}
+        return {"path": relative, "restored": True, "git_root": str(git_root)}
 
 
 class TransportInteractionToolPlugin(BaseToolPlugin):
@@ -1380,6 +1449,16 @@ class GitHubApiToolPlugin(BaseToolPlugin):
         body = arguments.get("json", arguments.get("body"))
         if body is not None and not isinstance(body, (dict, list)):
             raise ValueError("github.api.request body/json must be an object or list.")
+        _log_tool_info(
+            context,
+            "github_api.request",
+            "Preparing GitHub API request.",
+            method=method,
+            path=path,
+            query_keys=sorted(query),
+            has_body=body is not None,
+            dry_run=context.dry_run,
+        )
         if context.dry_run:
             return {
                 "method": method,
@@ -1388,6 +1467,13 @@ class GitHubApiToolPlugin(BaseToolPlugin):
                 "dry_run": True,
             }
         response = self._github_request(context, method, path, query=query, body=body)
+        _log_tool_info(
+            context,
+            "github_api.request.completed",
+            "Completed GitHub API request.",
+            method=method,
+            path=path,
+        )
         return {
             "method": method,
             "path": path,
@@ -1647,6 +1733,48 @@ def _run_workspace_git_process(
         for path in cleanup_paths:
             with contextlib.suppress(FileNotFoundError):
                 path.unlink()
+
+
+def _log_tool_debug(
+    context: ToolExecutionContext,
+    event: str,
+    message: str,
+    **fields: object,
+) -> None:
+    _log_tool(context, "debug", event, message, **fields)
+
+
+def _log_tool_info(
+    context: ToolExecutionContext,
+    event: str,
+    message: str,
+    **fields: object,
+) -> None:
+    _log_tool(context, "info", event, message, **fields)
+
+
+def _log_tool(
+    context: ToolExecutionContext,
+    level: str,
+    event: str,
+    message: str,
+    **fields: object,
+) -> None:
+    logger = context.logger
+    if logger is None:
+        return
+    log_method = getattr(logger, level, None)
+    if not callable(log_method):
+        return
+    log_method(
+        event,
+        message,
+        tool_id=context.tool_id,
+        plugin_id=context.plugin_id,
+        session_id=context.session_id or "",
+        transport_id=context.transport_id or "",
+        **fields,
+    )
 
 
 def _workspace_git_env(

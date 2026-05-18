@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -169,7 +170,30 @@ class WorkspaceManager:
         return self.guard_path(layout, candidate)
 
     def is_git_workspace(self, layout: WorkspaceLayout) -> bool:
-        return (layout.root / ".git").exists()
+        return self.git_root(layout) is not None
+
+    def git_root(self, layout: WorkspaceLayout) -> Path | None:
+        if (layout.root / ".git").exists():
+            return layout.root
+        try:
+            process = subprocess.run(
+                ["git", "rev-parse", "--show-toplevel"],
+                cwd=layout.root,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except (FileNotFoundError, OSError):
+            return None
+        if process.returncode != 0:
+            return None
+        root = process.stdout.strip()
+        if not root:
+            return None
+        candidate = Path(root).expanduser().resolve()
+        if layout.config.mode != "unsafe" and not _is_relative_to(candidate, layout.root):
+            return None
+        return candidate
 
     def _protected_paths(self, workspace_root: Path) -> tuple[Path, ...]:
         protected = [

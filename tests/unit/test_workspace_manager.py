@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -59,6 +60,27 @@ class WorkspaceManagerTests(unittest.TestCase):
             self.assertEqual(manager.guard_path(layout, outside_path), outside_path.resolve())
             with self.assertRaises(PermissionError):
                 manager.guard_path(layout, settings.secrets_file)
+
+    def test_is_git_workspace_uses_git_rev_parse(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir) / "home"
+            workspace_root = Path(temp_dir) / "workspace"
+            workspace_root.mkdir(parents=True, exist_ok=True)
+            settings = Settings.from_env({"NAGIENT_HOME": str(home_dir)})
+            manager = WorkspaceManager(settings)
+            layout = manager.ensure_layout(
+                WorkspaceConfig(root=workspace_root, mode="bounded")
+            )
+            subprocess.run(
+                ["git", "init"],
+                cwd=workspace_root,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            self.assertTrue(manager.is_git_workspace(layout))
+            self.assertEqual(manager.git_root(layout), workspace_root.resolve())
 
 
 if __name__ == "__main__":
