@@ -13,6 +13,8 @@ class RepositoryContractTests(unittest.TestCase):
             "README.ru.md",
             "pyproject.toml",
             "Dockerfile",
+            "src/nagient/bundled_tools/github_api/tool.toml",
+            "src/nagient/bundled_tools/github_api/tool.py",
             ".github/workflows/auto-tag.yml",
             ".github/workflows/ci.yml",
             ".github/workflows/release.yml",

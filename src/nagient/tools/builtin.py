@@ -1530,7 +1530,6 @@ def builtin_tools() -> list[LoadedToolPlugin]:
         SystemBackupToolPlugin(),
         SystemReconcileToolPlugin(),
         SystemJobsToolPlugin(),
-        GitHubApiToolPlugin(),
     ]
     return [
         LoadedToolPlugin(

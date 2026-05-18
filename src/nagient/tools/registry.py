@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import shlex
 import sys
@@ -26,8 +27,24 @@ class ToolPluginRegistry:
         plugins = {plugin.manifest.plugin_id: plugin for plugin in builtin_tools()}
         issues: list[CheckIssue] = []
 
+        bundled_tools_dir = Path(__file__).resolve().parents[1] / "bundled_tools"
+        self._discover_directory(bundled_tools_dir, plugins, issues)
+
         if not tools_dir.exists():
             return ToolDiscovery(plugins=plugins, issues=issues)
+
+        self._discover_directory(tools_dir, plugins, issues)
+
+        return ToolDiscovery(plugins=plugins, issues=issues)
+
+    def _discover_directory(
+        self,
+        tools_dir: Path,
+        plugins: dict[str, LoadedToolPlugin],
+        issues: list[CheckIssue],
+    ) -> None:
+        if not tools_dir.exists():
+            return
 
         for entry in sorted(tools_dir.iterdir()):
             if not entry.is_dir():
@@ -69,8 +86,6 @@ class ToolPluginRegistry:
                 continue
             plugins[plugin_id] = plugin
 
-        return ToolDiscovery(plugins=plugins, issues=issues)
-
     def _load_plugin(self, directory: Path) -> LoadedToolPlugin:
         manifest_path = directory / "tool.toml"
         manifest = self._parse_manifest(manifest_path)
@@ -94,7 +109,7 @@ class ToolPluginRegistry:
         if not module_path.exists():
             raise ValueError(f"Entrypoint file {manifest.entrypoint!r} does not exist.")
 
-        module_name = f"nagient_user_tool_{directory.name.replace('-', '_')}"
+        module_name = _plugin_module_name(directory)
         spec = importlib.util.spec_from_file_location(module_name, module_path)
         if spec is None or spec.loader is None:
             raise ValueError(f"Cannot create import spec for {module_path}.")
@@ -278,6 +293,11 @@ def _runtime_or_default(value: object) -> str:
     if normalized in {"python", "process"}:
         return normalized
     raise ValueError("Tool plugin runtime must be 'python' or 'process'.")
+
+
+def _plugin_module_name(directory: Path) -> str:
+    digest = hashlib.sha256(str(directory.resolve()).encode("utf-8")).hexdigest()[:12]
+    return f"nagient_user_tool_{directory.name.replace('-', '_')}_{digest}"
 
 
 def _process_command(payload: dict[str, object], directory: Path, entrypoint: str) -> list[str]:
