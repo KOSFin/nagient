@@ -685,28 +685,36 @@ def _parse_tools(payload: dict[str, object]) -> list[ToolInstanceConfig]:
     if not isinstance(raw_tools, dict):
         return _default_tools()
 
-    tools: list[ToolInstanceConfig] = []
+    tools_by_id = {tool.tool_id: tool for tool in _default_tools()}
     for tool_id, values in raw_tools.items():
         if not isinstance(tool_id, str) or not isinstance(values, dict):
             continue
-        plugin_id = values.get("plugin", tool_id.replace("_", "."))
+        default_tool = tools_by_id.get(tool_id)
+        plugin_id = values.get(
+            "plugin",
+            default_tool.plugin_id if default_tool is not None else tool_id.replace("_", "."),
+        )
         if not isinstance(plugin_id, str):
             plugin_id = str(plugin_id)
-        enabled = _coerce_bool(values.get("enabled", True))
+        enabled = _coerce_bool(
+            values.get(
+                "enabled",
+                default_tool.enabled if default_tool is not None else True,
+            )
+        )
+        base_config = dict(default_tool.config) if default_tool is not None else {}
         tool_config = {
             str(key): value
             for key, value in values.items()
             if key not in {"plugin", "enabled"}
         }
-        tools.append(
-            ToolInstanceConfig(
-                tool_id=tool_id,
-                plugin_id=plugin_id,
-                enabled=enabled,
-                config=tool_config,
-            )
+        tools_by_id[tool_id] = ToolInstanceConfig(
+            tool_id=tool_id,
+            plugin_id=plugin_id,
+            enabled=enabled,
+            config={**base_config, **tool_config},
         )
-    return tools or _default_tools()
+    return list(tools_by_id.values())
 
 
 def _parse_workspace(

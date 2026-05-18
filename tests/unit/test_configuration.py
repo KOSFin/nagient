@@ -116,6 +116,49 @@ class ConfigurationTests(unittest.TestCase):
             self.assertEqual(runtime_config.providers[0].plugin_id, "builtin.openai")
             self.assertEqual(runtime_config.providers[0].config["model"], "gpt-4.1-mini")
 
+    def test_configuration_merges_partial_tool_overrides_with_default_catalog(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir)
+            config_file = home_dir / "config.toml"
+            config_file.write_text(
+                "\n".join(
+                    [
+                        "[tools.workspace_git]",
+                        'plugin = "workspace.git"',
+                        "enabled = true",
+                        'token_secret = "GIT_CLASSIC_TOKEN"',
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            settings = Settings.from_env(
+                {
+                    "NAGIENT_HOME": str(home_dir),
+                    "NAGIENT_CONFIG": str(config_file),
+                }
+            )
+            runtime_config = load_runtime_configuration(settings)
+
+            self.assertTrue(
+                any(
+                    tool.tool_id == "github_api"
+                    and tool.plugin_id == "github.api"
+                    and tool.enabled
+                    for tool in runtime_config.tools
+                )
+            )
+            self.assertTrue(
+                any(
+                    tool.tool_id == "workspace_git"
+                    and tool.plugin_id == "workspace.git"
+                    and tool.enabled
+                    and tool.config["token_secret"] == "GIT_CLASSIC_TOKEN"
+                    for tool in runtime_config.tools
+                )
+            )
+
     def test_environment_provider_overrides_are_merged(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             home_dir = Path(temp_dir)
