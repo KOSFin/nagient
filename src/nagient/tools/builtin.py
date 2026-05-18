@@ -1518,7 +1518,9 @@ def _github_positive_int(value: object, field_name: str, function_name: str) -> 
 def _github_method(value: object) -> str:
     method = str(value).strip().upper()
     if method not in {"GET", "POST", "PATCH", "PUT", "DELETE", "HEAD"}:
-        raise ValueError("github.api.request method must be GET, POST, PATCH, PUT, DELETE, or HEAD.")
+        raise ValueError(
+            "github.api.request method must be GET, POST, PATCH, PUT, DELETE, or HEAD."
+        )
     return method
 
 

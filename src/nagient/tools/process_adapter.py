@@ -89,7 +89,10 @@ class ExternalProcessToolPlugin(BaseToolPlugin):
         if name.startswith("_"):
             raise AttributeError(name)
 
-        def _binding(arguments: Mapping[str, object], context: ToolExecutionContext) -> dict[str, Any]:
+        def _binding(
+            arguments: Mapping[str, object],
+            context: ToolExecutionContext,
+        ) -> dict[str, Any]:
             return self.execute(name, arguments, context)
 
         return _binding

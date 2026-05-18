@@ -223,7 +223,10 @@ class RenderReleaseAssetsTests(unittest.TestCase):
             self.assertIn("./secrets.env:/opt/nagient/secrets.env", compose_file)
             self.assertNotIn("./secrets.env:/opt/nagient/secrets.env:ro", compose_file)
             self.assertIn("NAGIENT_PROMPTS_DIR: /opt/nagient/prompts", compose_file)
-            self.assertIn("NAGIENT_WORKSPACE_ROOT: ${NAGIENT_WORKSPACE_ROOT:-/workspace}", compose_file)
+            self.assertIn(
+                "NAGIENT_WORKSPACE_ROOT: ${NAGIENT_WORKSPACE_ROOT:-/workspace}",
+                compose_file,
+            )
             self.assertIn(BASE_URL, install_script)
             self.assertIn("NAGIENT_WORKSPACE_ROOT=/workspace", install_script)
             self.assertNotIn("__NAGIENT_UPDATE_BASE_URL__", install_script)

@@ -86,9 +86,16 @@ class TransportPluginRegistryTests(unittest.TestCase):
                         "elif method == 'poll_inbound_events':",
                         "    print(json.dumps({'status': 'success', 'output': []}))",
                         "elif method == 'normalize_inbound_event':",
-                        "    print(json.dumps({'status': 'success', 'output': {'event_type': 'message', 'payload': payload.get('payload')}}))",
+                        (
+                            "    print(json.dumps({'status': 'success', 'output': "
+                            "{'event_type': 'message', 'payload': "
+                            "payload.get('payload')}}))"
+                        ),
                         "else:",
-                        "    print(json.dumps({'status': 'success', 'output': {'method': method, 'payload': payload.get('payload', {})}}))",
+                        (
+                            "    print(json.dumps({'status': 'success', 'output': "
+                            "{'method': method, 'payload': payload.get('payload', {})}}))"
+                        ),
                         "",
                     ]
                 ),

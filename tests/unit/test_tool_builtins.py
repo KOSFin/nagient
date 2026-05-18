@@ -132,9 +132,9 @@ class ToolBuiltinsTests(unittest.TestCase):
                 )
 
         def _opener(request: object, timeout: float = 15.0) -> _Response:
-            seen["url"] = getattr(request, "full_url")
+            seen["url"] = request.full_url
             seen["method"] = request.get_method()
-            seen["data"] = getattr(request, "data")
+            seen["data"] = request.data
             seen["timeout"] = timeout
             return _Response()
 

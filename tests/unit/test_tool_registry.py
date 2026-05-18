@@ -8,10 +8,10 @@ from types import SimpleNamespace
 from nagient.app.configuration import WorkspaceConfig
 from nagient.app.settings import Settings
 from nagient.domain.entities.workspace import WorkspaceMetadata
-from nagient.workspace.manager import WorkspaceLayout
+from nagient.tools.base import ToolExecutionContext
 from nagient.tools.registry import ToolPluginRegistry
 from nagient.tools.scaffold import scaffold_tool_plugin
-from nagient.tools.base import ToolExecutionContext
+from nagient.workspace.manager import WorkspaceLayout
 
 
 class ToolPluginRegistryTests(unittest.TestCase):
@@ -69,7 +69,10 @@ class ToolPluginRegistryTests(unittest.TestCase):
                         "if payload.get('method') == 'selftest':",
                         "    print(json.dumps({'status': 'success', 'issues': []}))",
                         "elif payload.get('method') == 'execute':",
-                        "    print(json.dumps({'status': 'success', 'output': {'echo': payload['arguments']}}))",
+                        (
+                            "    print(json.dumps({'status': 'success', 'output': "
+                            "{'echo': payload['arguments']}}))"
+                        ),
                         "else:",
                         "    print(json.dumps({'status': 'success'}))",
                         "",

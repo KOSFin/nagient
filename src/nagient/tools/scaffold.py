@@ -165,7 +165,10 @@ def _render_readme(plugin_id: str) -> str:
             "Process request shape:",
             "",
             "```json",
-            '{ "protocol": "nagient.process.v1", "method": "execute", "function_name": "your.tool.echo", "arguments": {} }',
+            (
+                '{ "protocol": "nagient.process.v1", "method": "execute", '
+                '"function_name": "your.tool.echo", "arguments": {} }'
+            ),
             "```",
             "",
             "Process response shape:",

@@ -272,7 +272,7 @@ def render_default_config(settings: Settings) -> str:
             "[agent]",
             'default_provider = ""',
             "require_provider = false",
-            f'system_prompt_file = "@prompts/system.md"',
+            'system_prompt_file = "@prompts/system.md"',
             "max_turns = 4",
             "",
             "[agent.memory]",

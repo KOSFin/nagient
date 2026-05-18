@@ -58,9 +58,16 @@ class ProviderPluginRegistryTests(unittest.TestCase):
                         "if method in {'validate_config', 'selftest', 'healthcheck'}:",
                         "    print(json.dumps({'status': 'success', 'issues': []}))",
                         "elif method == 'auth_status':",
-                        "    print(json.dumps({'status': 'success', 'output': {'authenticated': True, 'auth_mode': 'none', 'status': 'ready', 'message': 'ok'}}))",
+                        (
+                            "    print(json.dumps({'status': 'success', 'output': "
+                            "{'authenticated': True, 'auth_mode': 'none', "
+                            "'status': 'ready', 'message': 'ok'}}))"
+                        ),
                         "elif method == 'list_models':",
-                        "    print(json.dumps({'status': 'success', 'output': [{'model_id': 'demo', 'display_name': 'Demo'}]}))",
+                        (
+                            "    print(json.dumps({'status': 'success', 'output': "
+                            "[{'model_id': 'demo', 'display_name': 'Demo'}]}))"
+                        ),
                         "else:",
                         "    print(json.dumps({'status': 'success', 'output': {}}))",
                         "",
