@@ -76,7 +76,7 @@ powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagient.ps1" remove
 
 1. Запустите установщик под вашу платформу.
 2. Запустите `nagient setup`.
-3. Используйте `nagient paths`, чтобы увидеть алиасы вроде `@config` и `@secrets`.
+3. Используйте `nagient paths`, чтобы увидеть алиасы вроде `@config`, `@secrets`, `@prompts` и `@tools`.
 4. Используйте `nagient chat` для прямой CLI-сессии с настроенным provider.
 5. Используйте короткие команды.
 
@@ -95,7 +95,7 @@ powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagient.ps1" remove
 
 ## Полный CLI-набор
 
-- `nagient init`, `nagient paths`, `nagient preflight`, `nagient reconcile`, `nagient serve`
+- `nagient init`, `nagient help`, `nagient paths`, `nagient plugins`, `nagient preflight`, `nagient reconcile`, `nagient serve`
 - `nagient setup`, `nagient chat`
 - `nagient transport list|test|scaffold`
 - `nagient provider list|scaffold|models`

@@ -20,19 +20,29 @@ Nagient is split into a narrow control surface and a centralized release/update 
 Runtime activation now follows a single pipeline regardless of whether the user starts through local CLI, `curl | sh`, PowerShell, Docker image, or Docker Compose:
 
 1. Assemble config from `config.toml`, environment defaults, and `secrets.env`.
-2. Discover built-in and custom Python transport plugins from `plugins/`.
+2. Discover built-in and custom provider, transport, and tool plugins from `@providers`, `@plugins`, and `@tools`.
 3. Run `preflight` checks: config lint, secret reference validation, plugin self-tests, transport health checks.
 4. Run `reconcile` to persist `activation-report.json`, `effective-config.json`, and `last-known-good.json`, and to materialize the visible `.nagient/` workspace layout.
 5. Start the runtime loop only when the activation report is allowed by safe mode.
 
 Safe mode is enabled by default. When it is disabled, the runtime may still start in a degraded state.
 
+## Plugin Runtime Contract
+
+Custom provider, transport, and tool plugins can run as native Python modules or as external processes written in any language.
+
+- Python plugins use `runtime = "python"` and export `build_plugin()` from the configured entrypoint.
+- Process plugins use `runtime = "process"` and run the configured `command` or `entrypoint`.
+- Process calls read one JSON request from stdin and write one JSON response to stdout.
+- Requests include `protocol = "nagient.process.v1"` and a `method` such as `execute`, `send_message`, `list_models`, or `generate_assistant_response`.
+- Successful responses use `{ "status": "success", "output": ... }`; failures use `{ "status": "error", "message": "..." }`.
+
 ## Transport Plugin Contract
 
-Transport plugins are Python components with:
+Transport plugins declare:
 
 - `plugin.toml` for manifest metadata and function bindings
-- `transport.py` with the plugin implementation
+- an entrypoint such as `transport.py`, `transport.sh`, or a custom command
 - `instructions.md` for the agent-facing transport usage contract
 - optional `schema.json` for plugin-local config schema
 

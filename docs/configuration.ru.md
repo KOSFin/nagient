@@ -16,20 +16,23 @@
   .env
   docker-compose.yml
   bin/
+  prompts/
   plugins/
   tools/
   providers/
   credentials/
-  runtime/
+  state/
+  logs/
   releases/
+  workspace/
 ```
 
 ## 2. Минимальный рабочий сценарий
 
 1. Установить Nagient.
-2. Открыть `~/.nagient/config.toml`.
-3. Включить нужного provider.
-4. Добавить секрет в `~/.nagient/secrets.env`.
+2. Запустить `~/.nagient/bin/nagient setup`.
+3. Настроить provider, transport, workspace и секреты через меню setup.
+4. Использовать `~/.nagient/bin/nagient paths`, когда нужны точные пути после раскрытия алиасов.
 5. Выполнить:
 
 ```bash
@@ -38,7 +41,15 @@
 ~/.nagient/bin/nagient status
 ```
 
-## 3. Пример `config.toml`
+## 3. Алиасы путей
+
+Конфиг и setup-подсказки принимают каноничные алиасы:
+
+- `@home`, `@config`, `@secrets`, `@tool_secrets`, `@prompts`
+- `@plugins`, `@tools`, `@providers`, `@credentials`
+- `@state`, `@logs`, `@releases`
+
+## 4. Пример `config.toml`
 
 ```toml
 [updates]
@@ -52,13 +63,26 @@ safe_mode = true
 [docker]
 project_name = "nagient"
 
+[paths]
+secrets_file = "@secrets"
+tool_secrets_file = "@tool_secrets"
+prompts_dir = "@prompts"
+plugins_dir = "@plugins"
+tools_dir = "@tools"
+providers_dir = "@providers"
+credentials_dir = "@credentials"
+state_dir = "@state"
+log_dir = "@logs"
+releases_dir = "@releases"
+
 [workspace]
-root = ""
+root = "@home/workspace"
 mode = "bounded"
 
 [agent]
 default_provider = "openai"
 require_provider = true
+system_prompt_file = "@prompts/system.md"
 
 [providers.openai]
 plugin = "builtin.openai"
@@ -89,7 +113,7 @@ username = "git-user"
 token_secret = "GIT_ACCESS_TOKEN"
 ```
 
-## 4. Секреты
+## 5. Секреты
 
 `secrets.env`:
 
@@ -110,9 +134,18 @@ GIT_PASSWORD=
 GITHUB_TOKEN=
 ```
 
-## 5. Что проверить в первую очередь
+## 6. Встроенный GitHub tool
+
+Профиль `github_api` есть из коробки и выключен до настройки. Он умеет читать репозитории, получать issues, создавать issues, писать комментарии и выполнять общий `github.api.request`. Сохраните токен в `@tool_secrets` как `GITHUB_TOKEN`, затем включите tool:
+
+```bash
+~/.nagient/bin/nagient setup tool github_api --enable --set token_secret=GITHUB_TOKEN
+```
+
+## 7. Что проверить в первую очередь
 
 - `safe_mode = true` в секции `runtime`
 - корректный `updates.base_url`
-- нужный provider включен через `providers.<id>.enabled = true`
-- соответствующий ключ есть в `secrets.env`
+- нужный provider включен через `nagient setup provider ...`
+- соответствующий provider-ключ есть в `secrets.env`
+- соответствующий tool/connector-ключ есть в `tool-secrets.env`

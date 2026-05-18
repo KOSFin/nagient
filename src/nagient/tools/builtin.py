@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, cast
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from nagient.domain.entities.config_fields import ConfigFieldSpec
@@ -1070,6 +1071,36 @@ class GitHubApiToolPlugin(BaseToolPlugin):
             entrypoint="<builtin>",
             capabilities=["github"],
             optional_config=["token_secret", "base_url", "timeout_seconds"],
+            config_fields=[
+                ConfigFieldSpec(
+                    key="token_secret",
+                    label="GitHub token",
+                    help_text=(
+                        "Tool secret name that stores a GitHub personal access token "
+                        "or GitHub App installation token."
+                    ),
+                    value_type="secret",
+                    category="connection",
+                    secret=True,
+                ),
+                ConfigFieldSpec(
+                    key="base_url",
+                    label="GitHub API URL",
+                    help_text=(
+                        "GitHub API base URL. Use https://api.github.com for GitHub.com "
+                        "or your /api/v3 URL for GitHub Enterprise."
+                    ),
+                    value_type="string",
+                    category="connection",
+                ),
+                ConfigFieldSpec(
+                    key="timeout_seconds",
+                    label="Request timeout",
+                    help_text="HTTP timeout for GitHub API requests.",
+                    value_type="integer",
+                    category="advanced",
+                ),
+            ],
             functions=[
                 ToolFunctionManifest(
                     function_name="github.api.get_repository",
@@ -1079,7 +1110,52 @@ class GitHubApiToolPlugin(BaseToolPlugin):
                     output_schema={"type": "object"},
                     permissions=["github.read"],
                     secret_bindings=["token_secret"],
-                )
+                ),
+                ToolFunctionManifest(
+                    function_name="github.api.list_issues",
+                    binding="list_issues",
+                    description="List repository issues through the GitHub API.",
+                    input_schema={"type": "object"},
+                    output_schema={"type": "object"},
+                    permissions=["github.read"],
+                    secret_bindings=["token_secret"],
+                ),
+                ToolFunctionManifest(
+                    function_name="github.api.create_issue",
+                    binding="create_issue",
+                    description="Create a repository issue through the GitHub API.",
+                    input_schema={"type": "object"},
+                    output_schema={"type": "object"},
+                    permissions=["github.write"],
+                    secret_bindings=["token_secret"],
+                    side_effect="external",
+                    approval_policy="required",
+                    dry_run_supported=True,
+                ),
+                ToolFunctionManifest(
+                    function_name="github.api.add_issue_comment",
+                    binding="add_issue_comment",
+                    description="Add a comment to a repository issue through the GitHub API.",
+                    input_schema={"type": "object"},
+                    output_schema={"type": "object"},
+                    permissions=["github.write"],
+                    secret_bindings=["token_secret"],
+                    side_effect="external",
+                    approval_policy="required",
+                    dry_run_supported=True,
+                ),
+                ToolFunctionManifest(
+                    function_name="github.api.request",
+                    binding="request",
+                    description="Send a structured request to the configured GitHub API.",
+                    input_schema={"type": "object"},
+                    output_schema={"type": "object"},
+                    permissions=["github.read", "github.write"],
+                    secret_bindings=["token_secret"],
+                    side_effect="external",
+                    approval_policy="policy",
+                    dry_run_supported=True,
+                ),
             ],
         )
     )
@@ -1115,7 +1191,50 @@ class GitHubApiToolPlugin(BaseToolPlugin):
                         source=tool_id,
                     )
                 )
+        base_url = config.get("base_url")
+        if base_url is not None and (not isinstance(base_url, str) or not base_url.strip()):
+            issues.append(
+                CheckIssue(
+                    severity="error",
+                    code="tool.github.invalid_base_url",
+                    message="github.api base_url must be a non-empty string when provided.",
+                    source=tool_id,
+                )
+            )
+        timeout_seconds = config.get("timeout_seconds")
+        if timeout_seconds is not None and not _github_timeout_is_valid(timeout_seconds):
+            issues.append(
+                CheckIssue(
+                    severity="error",
+                    code="tool.github.invalid_timeout",
+                    message="github.api timeout_seconds must be a positive number.",
+                    source=tool_id,
+                )
+            )
         return issues
+
+    def assess_risk(
+        self,
+        function_name: str,
+        arguments: Mapping[str, object],
+        context: ToolExecutionContext,
+    ) -> ToolRiskDecision:
+        del context
+        if function_name == "github.api.request":
+            try:
+                method = _github_method(arguments.get("method", "GET"))
+            except ValueError:
+                return ToolRiskDecision(approval_policy="required", checkpoint_required=False)
+            if method in {"GET", "HEAD"}:
+                return ToolRiskDecision(approval_policy="never", checkpoint_required=False)
+            return ToolRiskDecision(
+                approval_policy="required",
+                reason=f"Approve GitHub {method} request?",
+                checkpoint_required=False,
+            )
+        if function_name in {"github.api.create_issue", "github.api.add_issue_comment"}:
+            return ToolRiskDecision(approval_policy="required", checkpoint_required=False)
+        return ToolRiskDecision(approval_policy="inherit", checkpoint_required=False)
 
     def get_repository(
         self,
@@ -1129,36 +1248,14 @@ class GitHubApiToolPlugin(BaseToolPlugin):
         if not isinstance(repo, str) or not repo:
             raise ValueError("github.api.get_repository requires repo.")
 
-        base_url = context.config.get("base_url", "https://api.github.com")
-        if not isinstance(base_url, str) or not base_url:
-            base_url = "https://api.github.com"
-        token_secret = context.config.get("token_secret", "GITHUB_TOKEN")
-        if not isinstance(token_secret, str) or not token_secret:
-            token_secret = "GITHUB_TOKEN"
         if context.dry_run:
-            return {"url": f"{base_url.rstrip('/')}/repos/{owner}/{repo}", "dry_run": True}
+            return {
+                "method": "GET",
+                "url": _github_endpoint(context, f"/repos/{owner}/{repo}"),
+                "dry_run": True,
+            }
 
-        token = context.secret_broker.resolve_secret(token_secret, scope_hint="tool")
-        request = Request(
-            f"{base_url.rstrip('/')}/repos/{owner}/{repo}",
-            headers={
-                "Accept": "application/vnd.github+json",
-                "Authorization": f"Bearer {token}",
-                "User-Agent": "nagient",
-            },
-            method="GET",
-        )
-        timeout_seconds = context.config.get("timeout_seconds", 15)
-        if not isinstance(timeout_seconds, int) or timeout_seconds <= 0:
-            timeout_seconds = 15
-        try:
-            with self.opener(request, timeout=timeout_seconds) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-        except HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="replace")[:400]
-            raise ValueError(f"GitHub API returned HTTP {exc.code}: {body}") from exc
-        except URLError as exc:
-            raise ValueError(f"GitHub API request failed: {exc.reason}") from exc
+        payload = self._github_request(context, "GET", f"/repos/{owner}/{repo}")
         if not isinstance(payload, dict):
             raise ValueError("GitHub API returned an unexpected payload.")
         return {
@@ -1168,6 +1265,172 @@ class GitHubApiToolPlugin(BaseToolPlugin):
             "description": payload.get("description"),
             "html_url": payload.get("html_url"),
         }
+
+    def list_issues(
+        self,
+        arguments: Mapping[str, object],
+        context: ToolExecutionContext,
+    ) -> dict[str, object]:
+        owner, repo = _github_owner_repo(arguments, "github.api.list_issues")
+        query = _github_query(
+            {
+                "state": _github_optional_string(arguments.get("state")) or "open",
+                "labels": _github_optional_string(arguments.get("labels")),
+                "since": _github_optional_string(arguments.get("since")),
+                "per_page": arguments.get("per_page", 30),
+            }
+        )
+        path = f"/repos/{owner}/{repo}/issues"
+        if context.dry_run:
+            return {"method": "GET", "url": _github_endpoint(context, path, query), "dry_run": True}
+
+        payload = self._github_request(context, "GET", path, query=query)
+        if not isinstance(payload, list):
+            raise ValueError("GitHub API returned an unexpected issues payload.")
+        issues = [
+            {
+                "number": item.get("number"),
+                "title": item.get("title"),
+                "state": item.get("state"),
+                "html_url": item.get("html_url"),
+                "user": (
+                    item.get("user", {}).get("login")
+                    if isinstance(item.get("user"), dict)
+                    else None
+                ),
+                "pull_request": "pull_request" in item,
+            }
+            for item in payload
+            if isinstance(item, dict)
+        ]
+        return {"issues": issues}
+
+    def create_issue(
+        self,
+        arguments: Mapping[str, object],
+        context: ToolExecutionContext,
+    ) -> dict[str, object]:
+        owner, repo = _github_owner_repo(arguments, "github.api.create_issue")
+        title = _github_required_string(arguments.get("title"), "title", "github.api.create_issue")
+        body = _github_optional_string(arguments.get("body"))
+        payload: dict[str, object] = {"title": title}
+        if body is not None:
+            payload["body"] = body
+        for key in ("labels", "assignees"):
+            values = _github_string_list(arguments.get(key))
+            if values:
+                payload[key] = values
+        path = f"/repos/{owner}/{repo}/issues"
+        if context.dry_run:
+            return {
+                "method": "POST",
+                "url": _github_endpoint(context, path),
+                "body": payload,
+                "dry_run": True,
+            }
+
+        response = self._github_request(context, "POST", path, body=payload)
+        if not isinstance(response, dict):
+            raise ValueError("GitHub API returned an unexpected issue payload.")
+        return _github_issue_summary(response)
+
+    def add_issue_comment(
+        self,
+        arguments: Mapping[str, object],
+        context: ToolExecutionContext,
+    ) -> dict[str, object]:
+        owner, repo = _github_owner_repo(arguments, "github.api.add_issue_comment")
+        issue_number = _github_positive_int(
+            arguments.get("issue_number"),
+            "issue_number",
+            "github.api.add_issue_comment",
+        )
+        body = _github_required_string(
+            arguments.get("body"),
+            "body",
+            "github.api.add_issue_comment",
+        )
+        path = f"/repos/{owner}/{repo}/issues/{issue_number}/comments"
+        request_body = {"body": body}
+        if context.dry_run:
+            return {
+                "method": "POST",
+                "url": _github_endpoint(context, path),
+                "body": request_body,
+                "dry_run": True,
+            }
+
+        response = self._github_request(context, "POST", path, body=request_body)
+        if not isinstance(response, dict):
+            raise ValueError("GitHub API returned an unexpected comment payload.")
+        return {
+            "id": response.get("id"),
+            "html_url": response.get("html_url"),
+            "body": response.get("body"),
+        }
+
+    def request(
+        self,
+        arguments: Mapping[str, object],
+        context: ToolExecutionContext,
+    ) -> dict[str, object]:
+        method = _github_method(arguments.get("method", "GET"))
+        path = _github_required_string(arguments.get("path"), "path", "github.api.request")
+        query = _github_query(arguments.get("query", {}))
+        body = arguments.get("json", arguments.get("body"))
+        if body is not None and not isinstance(body, (dict, list)):
+            raise ValueError("github.api.request body/json must be an object or list.")
+        if context.dry_run:
+            return {
+                "method": method,
+                "url": _github_endpoint(context, path, query),
+                "body": body,
+                "dry_run": True,
+            }
+        response = self._github_request(context, method, path, query=query, body=body)
+        return {
+            "method": method,
+            "path": path,
+            "response": response,
+        }
+
+    def _github_request(
+        self,
+        context: ToolExecutionContext,
+        method: str,
+        path: str,
+        *,
+        query: Mapping[str, object] | None = None,
+        body: object = None,
+    ) -> object:
+        url = _github_endpoint(context, path, query)
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "nagient",
+        }
+        token = _github_token(context)
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        data = None
+        if body is not None:
+            headers["Content-Type"] = "application/json"
+            data = json.dumps(body).encode("utf-8")
+        request = Request(url, data=data, headers=headers, method=method)
+        try:
+            with self.opener(request, timeout=_github_timeout_seconds(context.config)) as response:
+                raw_payload = response.read().decode("utf-8")
+        except HTTPError as exc:
+            error_body = exc.read().decode("utf-8", errors="replace")[:400]
+            raise ValueError(f"GitHub API returned HTTP {exc.code}: {error_body}") from exc
+        except URLError as exc:
+            raise ValueError(f"GitHub API request failed: {exc.reason}") from exc
+        if not raw_payload.strip():
+            return {}
+        try:
+            return json.loads(raw_payload)
+        except json.JSONDecodeError as exc:
+            raise ValueError("GitHub API returned invalid JSON.") from exc
 
 
 def builtin_tools() -> list[LoadedToolPlugin]:
@@ -1208,6 +1471,144 @@ def _string_config(config: Mapping[str, object], key: str) -> str | None:
         return None
     normalized = value.strip()
     return normalized or None
+
+
+def _github_owner_repo(
+    arguments: Mapping[str, object],
+    function_name: str,
+) -> tuple[str, str]:
+    owner = _github_required_string(arguments.get("owner"), "owner", function_name)
+    repo = _github_required_string(arguments.get("repo"), "repo", function_name)
+    return owner, repo
+
+
+def _github_required_string(value: object, field_name: str, function_name: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{function_name} requires {field_name}.")
+    return value.strip()
+
+
+def _github_optional_string(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _github_string_list(value: object) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [item.strip() for item in value.split(",") if item.strip()]
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    raise ValueError("GitHub string list fields must be strings or arrays.")
+
+
+def _github_positive_int(value: object, field_name: str, function_name: str) -> int:
+    if isinstance(value, int) and value > 0:
+        return value
+    if isinstance(value, str) and value.strip().isdigit():
+        parsed = int(value.strip())
+        if parsed > 0:
+            return parsed
+    raise ValueError(f"{function_name} requires positive integer {field_name}.")
+
+
+def _github_method(value: object) -> str:
+    method = str(value).strip().upper()
+    if method not in {"GET", "POST", "PATCH", "PUT", "DELETE", "HEAD"}:
+        raise ValueError("github.api.request method must be GET, POST, PATCH, PUT, DELETE, or HEAD.")
+    return method
+
+
+def _github_base_url(config: Mapping[str, object]) -> str:
+    base_url = config.get("base_url", "https://api.github.com")
+    if not isinstance(base_url, str) or not base_url.strip():
+        return "https://api.github.com"
+    return base_url.strip().rstrip("/")
+
+
+def _github_endpoint(
+    context: ToolExecutionContext,
+    path: str,
+    query: Mapping[str, object] | None = None,
+) -> str:
+    normalized_path = path if path.startswith("/") else f"/{path}"
+    url = f"{_github_base_url(context.config)}{normalized_path}"
+    query_string = urlencode(
+        {
+            str(key): str(value)
+            for key, value in (query or {}).items()
+            if value is not None and str(value).strip()
+        }
+    )
+    if query_string:
+        return f"{url}?{query_string}"
+    return url
+
+
+def _github_query(value: object) -> dict[str, object]:
+    if value is None:
+        return {}
+    if not isinstance(value, Mapping):
+        raise ValueError("GitHub query must be an object.")
+    return {
+        str(key): item
+        for key, item in value.items()
+        if item is not None and str(item).strip()
+    }
+
+
+def _github_token_secret(config: Mapping[str, object]) -> str:
+    token_secret = config.get("token_secret", "GITHUB_TOKEN")
+    if not isinstance(token_secret, str) or not token_secret.strip():
+        return "GITHUB_TOKEN"
+    return token_secret.strip()
+
+
+def _github_token(context: ToolExecutionContext) -> str:
+    secret_name = _github_token_secret(context.config)
+    return context.secret_broker.resolve_secret(secret_name, scope_hint="tool")
+
+
+def _github_timeout_seconds(config: Mapping[str, object]) -> float:
+    value = config.get("timeout_seconds", 15)
+    if isinstance(value, bool):
+        return 15.0
+    if isinstance(value, int | float) and value > 0:
+        return float(value)
+    if isinstance(value, str):
+        try:
+            parsed = float(value.strip())
+        except ValueError:
+            return 0.0
+        if parsed > 0:
+            return parsed
+    return 15.0
+
+
+def _github_timeout_is_valid(value: object) -> bool:
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int | float):
+        return value > 0
+    if isinstance(value, str):
+        try:
+            return float(value.strip()) > 0
+        except ValueError:
+            return False
+    return False
+
+
+def _github_issue_summary(payload: Mapping[str, object]) -> dict[str, object]:
+    return {
+        "number": payload.get("number"),
+        "title": payload.get("title"),
+        "state": payload.get("state"),
+        "html_url": payload.get("html_url"),
+        "body": payload.get("body"),
+    }
 
 
 def _run_workspace_git(

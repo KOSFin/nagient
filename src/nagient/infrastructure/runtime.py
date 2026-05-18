@@ -448,6 +448,10 @@ class RuntimeAgent:
         reply_payload["text"] = reply_text
         reply_payload["_transport_config"] = dict(transport.config)
         reply_payload["_transport_id"] = transport.transport_id
+        reply_payload["_transport_secrets"] = _transport_scoped_secrets(
+            transport.config,
+            secrets,
+        )
         secret_name = transport.config.get("bot_token_secret")
         if (
             transport.plugin_id == "builtin.telegram"
@@ -571,6 +575,26 @@ def _exception_message(exc: Exception) -> str:
     if message:
         return message
     return exc.__class__.__name__
+
+
+def _transport_scoped_secrets(
+    config: dict[str, object],
+    secrets: dict[str, str],
+) -> dict[str, str]:
+    scoped: dict[str, str] = {}
+    for key, value in config.items():
+        if not isinstance(value, str):
+            continue
+        normalized_key = str(key).lower()
+        if not (
+            normalized_key.endswith("_secret")
+            or normalized_key.endswith("_secret_name")
+            or normalized_key in {"secret", "secret_name"}
+        ):
+            continue
+        if value in secrets:
+            scoped[value] = secrets[value]
+    return scoped
 
 
 def _iso_timestamp(raw_timestamp: float) -> str:

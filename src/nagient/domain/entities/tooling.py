@@ -60,6 +60,7 @@ class ToolPluginManifest:
     healthcheck_binding: str | None = None
     selftest_binding: str | None = None
     config_schema_file: str | None = None
+    runtime: str = "python"
 
     @property
     def allowed_config(self) -> set[str]:

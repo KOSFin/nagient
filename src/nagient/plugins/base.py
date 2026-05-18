@@ -35,6 +35,7 @@ class TransportPluginManifest:
     config_fields: list[ConfigFieldSpec] = field(default_factory=list)
     instruction_template: str = ""
     config_schema_file: str | None = None
+    runtime: str = "python"
 
     @property
     def exposed_functions(self) -> list[str]:
@@ -56,6 +57,7 @@ class LoadedTransportPlugin:
     manifest: TransportPluginManifest
     implementation: BaseTransportPlugin
     source: str
+    runtime: str = "python"
 
 
 @dataclass(frozen=True)

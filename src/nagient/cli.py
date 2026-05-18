@@ -19,7 +19,12 @@ from nagient.app.configuration import (
     load_runtime_configuration,
 )
 from nagient.app.container import AppContainer, build_container
-from nagient.app.settings import Settings
+from nagient.app.settings import (
+    Settings,
+    _path_alias_targets,
+    _render_path_reference,
+    _resolve_path_reference,
+)
 from nagient.domain.entities.agent_runtime import AgentTurnRequest
 from nagient.domain.entities.config_fields import ConfigFieldSpec
 from nagient.domain.entities.tooling import ToolExecutionRequest
@@ -134,6 +139,12 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     subparsers.add_parser("version", help="Print the current version")
+    subparsers.add_parser("help", help="Show the CLI help overview")
+    plugins_parser = subparsers.add_parser(
+        "plugins",
+        help="List discovered transport, provider, and tool plugins",
+    )
+    plugins_parser.add_argument("--format", choices=("text", "json"), default="text")
 
     init_parser = subparsers.add_parser("init", help="Write default runtime config files")
     init_parser.add_argument("--force", action="store_true")
@@ -281,6 +292,9 @@ def build_parser() -> argparse.ArgumentParser:
     setup_paths_parser.add_argument("--tools-dir")
     setup_paths_parser.add_argument("--providers-dir")
     setup_paths_parser.add_argument("--credentials-dir")
+    setup_paths_parser.add_argument("--state-dir")
+    setup_paths_parser.add_argument("--log-dir")
+    setup_paths_parser.add_argument("--releases-dir")
     setup_paths_parser.add_argument("--format", choices=("text", "json"), default="text")
 
     chat_parser = subparsers.add_parser(
@@ -495,11 +509,16 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    container = build_container()
 
     if args.command == "version":
         print(__version__)
         return 0
+
+    if args.command == "help":
+        parser.print_help()
+        return 0
+
+    container = build_container()
 
     if args.command == "init":
         payload = container.configuration_service.initialize(force=args.force)
@@ -512,6 +531,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "paths":
         payload = _paths_payload(container)
         return _emit(payload, args.format, view="paths")
+
+    if args.command == "plugins":
+        payload = _plugins_payload(container)
+        return _emit(payload, args.format, view="plugins")
 
     if args.command == "doctor":
         payload = container.status_service.collect()
@@ -686,6 +709,17 @@ def main(argv: list[str] | None = None) -> int:
                         args.credentials_dir, container.settings
                     )
                     if args.credentials_dir
+                    else None,
+                    "state_dir": _resolve_path_alias(args.state_dir, container.settings)
+                    if args.state_dir
+                    else None,
+                    "log_dir": _resolve_path_alias(args.log_dir, container.settings)
+                    if args.log_dir
+                    else None,
+                    "releases_dir": _resolve_path_alias(
+                        args.releases_dir, container.settings
+                    )
+                    if args.releases_dir
                     else None,
                 }.items()
                 if value is not None
@@ -1403,10 +1437,14 @@ def _run_paths_setup_menu(container: AppContainer) -> None:
     configurable_paths = {
         "@secrets": ("secrets_file", container.settings.secrets_file),
         "@tool_secrets": ("tool_secrets_file", container.settings.tool_secrets_file),
+        "@prompts": ("prompts_dir", container.settings.prompts_dir),
         "@plugins": ("plugins_dir", container.settings.plugins_dir),
         "@tools": ("tools_dir", container.settings.tools_dir),
         "@providers": ("providers_dir", container.settings.providers_dir),
         "@credentials": ("credentials_dir", container.settings.credentials_dir),
+        "@state": ("state_dir", container.settings.state_dir),
+        "@logs": ("log_dir", container.settings.log_dir),
+        "@releases": ("releases_dir", container.settings.releases_dir),
     }
     while True:
         selection = _prompt_menu_choice(
@@ -2244,22 +2282,155 @@ def _paths_payload(container: AppContainer) -> dict[str, object]:
     }
 
 
-def _path_aliases(settings: Settings) -> dict[str, str]:
-    prompts_dir = getattr(settings, "prompts_dir", None)
+def _plugins_payload(container: AppContainer) -> dict[str, object]:
+    try:
+        runtime_config = load_runtime_configuration(container.settings)
+    except AttributeError:
+        runtime_config = None
+    transport_discovery = container.plugin_registry.discover(container.settings.plugins_dir)
+    provider_discovery = container.provider_registry.discover(container.settings.providers_dir)
+    tool_payload = container.tool_service.list_tools()
+    tool_plugins = _as_list(tool_payload.get("plugins"))
+    tool_issues = _as_list(tool_payload.get("issues"))
+
+    configured_transports = {
+        item.plugin_id for item in runtime_config.transports
+    } if runtime_config is not None else set()
+    enabled_transports = {
+        item.plugin_id for item in runtime_config.transports if item.enabled
+    } if runtime_config is not None else set()
+    configured_providers = {
+        item.plugin_id for item in runtime_config.providers
+    } if runtime_config is not None else set()
+    enabled_providers = {
+        item.plugin_id for item in runtime_config.providers if item.enabled
+    } if runtime_config is not None else set()
+    configured_tools = {
+        item.plugin_id for item in runtime_config.tools
+    } if runtime_config is not None else set()
+    enabled_tools = {
+        item.plugin_id for item in runtime_config.tools if item.enabled
+    } if runtime_config is not None else set()
+
     return {
-        "@home": str(settings.home_dir),
-        "@config": str(settings.config_file),
-        "@config_dir": str(settings.config_file.parent),
-        "@secrets": str(settings.secrets_file),
-        "@tool_secrets": str(settings.tool_secrets_file),
-        "@prompts": str(prompts_dir) if prompts_dir is not None else str(settings.home_dir),
-        "@plugins": str(settings.plugins_dir),
-        "@providers": str(settings.providers_dir),
-        "@tools": str(settings.tools_dir),
-        "@credentials": str(settings.credentials_dir),
-        "@state": str(settings.state_dir),
-        "@logs": str(settings.log_dir),
-        "@releases": str(settings.releases_dir),
+        "summary": {
+            "transports": len(transport_discovery.plugins),
+            "providers": len(provider_discovery.plugins),
+            "tools": len(tool_plugins),
+            "issues": (
+                len(transport_discovery.issues)
+                + len(provider_discovery.issues)
+                + len(tool_issues)
+            ),
+        },
+        "categories": [
+            {
+                "kind": "transport",
+                "plugins": [
+                    _plugin_catalog_item(
+                        plugin_id=plugin.manifest.plugin_id,
+                        display_name=plugin.manifest.display_name,
+                        source=plugin.source,
+                        namespace=plugin.manifest.namespace,
+                        functions=plugin.manifest.exposed_functions,
+                        custom_functions=plugin.manifest.custom_functions,
+                        config_fields=[
+                            field.to_dict()
+                            for field in _manifest_config_fields(plugin.manifest)
+                        ],
+                        configured=plugin.manifest.plugin_id in configured_transports,
+                        enabled=plugin.manifest.plugin_id in enabled_transports,
+                    )
+                    for plugin in transport_discovery.plugins.values()
+                ],
+                "issues": [issue.to_dict() for issue in transport_discovery.issues],
+            },
+            {
+                "kind": "provider",
+                "plugins": [
+                    _plugin_catalog_item(
+                        plugin_id=plugin.manifest.plugin_id,
+                        display_name=plugin.manifest.display_name,
+                        source=plugin.source,
+                        namespace=plugin.manifest.family,
+                        functions=plugin.manifest.capabilities,
+                        custom_functions=[],
+                        config_fields=[
+                            field.to_dict()
+                            for field in _manifest_config_fields(plugin.manifest)
+                        ],
+                        configured=plugin.manifest.plugin_id in configured_providers,
+                        enabled=plugin.manifest.plugin_id in enabled_providers,
+                    )
+                    for plugin in provider_discovery.plugins.values()
+                ],
+                "issues": [issue.to_dict() for issue in provider_discovery.issues],
+            },
+            {
+                "kind": "tool",
+                "plugins": [
+                    _plugin_catalog_item(
+                        plugin_id=_as_text(_as_dict(plugin).get("plugin_id")),
+                        display_name=_as_text(_as_dict(plugin).get("display_name")),
+                        source=_as_text(_as_dict(plugin).get("source")),
+                        namespace=_as_text(_as_dict(plugin).get("namespace")),
+                        functions=[
+                            _as_text(_as_dict(function).get("function_name"))
+                            for function in _as_list(_as_dict(plugin).get("functions"))
+                        ],
+                        custom_functions=[],
+                        config_fields=[
+                            _as_dict(field)
+                            for field in _as_list(_as_dict(plugin).get("config_fields"))
+                        ],
+                        configured=(
+                            _as_text(_as_dict(plugin).get("plugin_id")) in configured_tools
+                        ),
+                        enabled=(
+                            _as_text(_as_dict(plugin).get("plugin_id")) in enabled_tools
+                        ),
+                    )
+                    for plugin in tool_plugins
+                ],
+                "issues": tool_issues,
+            },
+        ],
+    }
+
+
+def _plugin_catalog_item(
+    *,
+    plugin_id: str,
+    display_name: str,
+    source: str,
+    namespace: str,
+    functions: Sequence[str],
+    custom_functions: Sequence[str],
+    config_fields: Sequence[dict[str, object]],
+    configured: bool,
+    enabled: bool,
+) -> dict[str, object]:
+    return {
+        "plugin_id": plugin_id,
+        "display_name": display_name,
+        "source": source,
+        "namespace": namespace,
+        "configured": configured,
+        "enabled": enabled,
+        "functions": [item for item in functions if item],
+        "custom_functions": [item for item in custom_functions if item],
+        "config_fields": list(config_fields),
+    }
+
+
+def _path_aliases(settings: Settings) -> dict[str, str]:
+    return {
+        alias: str(path)
+        for alias, path in _path_alias_targets(
+            settings.home_dir,
+            settings.config_file,
+            include_legacy=False,
+        ).items()
     }
 
 
@@ -2267,38 +2438,22 @@ def _resolve_path_alias(raw_value: str, settings: Settings) -> str:
     value = raw_value.strip()
     if not value:
         return value
-    aliases = _path_aliases(settings)
-    file_aliases = {"@config", "@secrets", "@tool_secrets"}
-    for alias, resolved_path in aliases.items():
-        if value == alias:
-            return resolved_path
-        for separator in ("/", os.sep):
-            prefix = f"{alias}{separator}"
-            if value.startswith(prefix):
-                suffix = value[len(prefix) :]
-                base = Path(resolved_path)
-                if alias in file_aliases:
-                    base = base.parent
-                return str((base / suffix).expanduser())
-    return str(Path(value).expanduser())
+    return str(
+        _resolve_path_reference(
+            value,
+            home_dir=settings.home_dir,
+            config_file=settings.config_file,
+            fallback=Path.cwd(),
+        )
+    )
 
 
 def _render_path_value(path: str, settings: Settings) -> str:
-    aliases = _path_aliases(settings)
-    normalized = str(Path(path).expanduser())
-    sorted_aliases = sorted(
-        aliases.items(),
-        key=lambda item: len(item[1]),
-        reverse=True,
+    return _render_path_reference(
+        path,
+        home_dir=settings.home_dir,
+        config_file=settings.config_file,
     )
-    for alias, resolved_path in sorted_aliases:
-        if normalized == resolved_path:
-            return alias
-        prefix = resolved_path.rstrip("/\\") + os.sep
-        if normalized.startswith(prefix):
-            suffix = normalized[len(resolved_path.rstrip("/\\")) :].lstrip("/\\")
-            return f"{alias}/{suffix}"
-    return normalized
 
 
 def _provider_field_help(provider_id: str, field_name: str) -> str:
@@ -3060,6 +3215,8 @@ def _render_text(payload: Mapping[str, object], *, view: str, verbose: bool) -> 
         return _render_update_check(payload_dict)
     if view == "paths":
         return _render_paths_summary(payload_dict)
+    if view == "plugins":
+        return _render_plugins_summary(payload_dict)
     if view == "chat":
         return _render_chat_summary(payload_dict)
     if view == "transport_test":
@@ -3085,6 +3242,69 @@ def _render_paths_summary(payload: dict[str, object]) -> str:
         path = _as_text(alias_payload.get("path"))
         if alias:
             _append_key_value(lines, alias, path)
+    return "\n".join(lines)
+
+
+def _render_plugins_summary(payload: dict[str, object]) -> str:
+    colors = _supports_color()
+    lines = [_heading("Nagient Plugins", colors)]
+    summary = _as_dict(payload.get("summary"))
+
+    _append_section(lines, "Summary", colors)
+    _append_key_value(lines, "Transports", _as_text(summary.get("transports")))
+    _append_key_value(lines, "Providers", _as_text(summary.get("providers")))
+    _append_key_value(lines, "Tools", _as_text(summary.get("tools")))
+    issue_count = _as_int(summary.get("issues"))
+    if issue_count:
+        _append_key_value(lines, "Issues", str(issue_count))
+
+    for category in _as_list(payload.get("categories")):
+        category_payload = _as_dict(category)
+        kind = _as_text(category_payload.get("kind"))
+        title = {
+            "transport": "Transports",
+            "provider": "Providers",
+            "tool": "Tools",
+        }.get(kind, kind.title() if kind else "Plugins")
+        _append_section(lines, title, colors)
+        plugins = _as_list(category_payload.get("plugins"))
+        if not plugins:
+            _append_line(lines, "No plugins discovered.")
+        for plugin in plugins:
+            plugin_payload = _as_dict(plugin)
+            plugin_id = _as_text(plugin_payload.get("plugin_id"))
+            if not plugin_id:
+                continue
+            status = (
+                "enabled"
+                if _as_bool(plugin_payload.get("enabled"))
+                else "configured"
+                if _as_bool(plugin_payload.get("configured"))
+                else "available"
+            )
+            details = [
+                _format_status(status, colors=colors),
+                _as_text(plugin_payload.get("display_name")),
+            ]
+            function_count = len(_as_list(plugin_payload.get("functions")))
+            custom_count = len(_as_list(plugin_payload.get("custom_functions")))
+            if function_count:
+                details.append(f"functions {function_count}")
+            if custom_count:
+                details.append(f"custom {custom_count}")
+            _append_line(
+                lines,
+                _join_parts(
+                    plugin_id,
+                    ", ".join(item for item in details if item),
+                    separator="  ",
+                ),
+            )
+        issues = _as_list(category_payload.get("issues"))
+        if issues:
+            _append_line(lines, "Issues:")
+            _append_issue_block(lines, issues, colors=colors)
+
     return "\n".join(lines)
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import shlex
 import sys
 import tomllib
 from dataclasses import dataclass, field
@@ -15,6 +16,7 @@ from nagient.providers.base import (
     ProviderPluginManifest,
 )
 from nagient.providers.builtin import builtin_providers
+from nagient.providers.process_adapter import ExternalProcessProviderPlugin
 
 
 @dataclass(frozen=True)
@@ -78,7 +80,23 @@ class ProviderPluginRegistry:
         return ProviderDiscovery(plugins=plugins, issues=issues)
 
     def _load_plugin(self, directory: Path) -> LoadedProviderPlugin:
-        manifest = self._parse_manifest(directory / "provider.toml")
+        manifest_path = directory / "provider.toml"
+        manifest = self._parse_manifest(manifest_path)
+        payload = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
+        runtime = _runtime_or_default(payload.get("runtime"))
+        if runtime == "process":
+            implementation = ExternalProcessProviderPlugin(
+                command=_process_command(payload, directory, manifest.entrypoint),
+                cwd=directory,
+                timeout_seconds=_positive_int(payload.get("process_timeout_seconds"), 30),
+            )
+            return LoadedProviderPlugin(
+                manifest=manifest,
+                implementation=implementation,
+                source=str(directory),
+                runtime=runtime,
+            )
+
         module_path = directory / manifest.entrypoint
         if not module_path.exists():
             raise ValueError(f"Entrypoint file {manifest.entrypoint!r} does not exist.")
@@ -105,6 +123,7 @@ class ProviderPluginRegistry:
             manifest=manifest,
             implementation=implementation,
             source=str(directory),
+            runtime=runtime,
         )
 
     def _parse_manifest(self, manifest_path: Path) -> ProviderPluginManifest:
@@ -154,6 +173,7 @@ class ProviderPluginRegistry:
             credential_fields=_require_string_list(payload.get("credential_fields")),
             config_fields=config_fields,
             config_schema_file=config_schema_file,
+            runtime=_runtime_or_default(payload.get("runtime")),
         )
 
     def _validate_plugin(self, plugin: LoadedProviderPlugin) -> list[CheckIssue]:
@@ -238,6 +258,49 @@ def _optional_string(value: object) -> str:
     if isinstance(value, str):
         return value
     return ""
+
+
+def _runtime_or_default(value: object) -> str:
+    if not isinstance(value, str) or not value.strip():
+        return "python"
+    normalized = value.strip().lower().replace("_", "-")
+    if normalized in {"python", "process"}:
+        return normalized
+    raise ValueError("Provider plugin runtime must be 'python' or 'process'.")
+
+
+def _process_command(payload: dict[str, object], directory: Path, entrypoint: str) -> list[str]:
+    raw_command = payload.get("command")
+    if isinstance(raw_command, list) and all(isinstance(item, str) for item in raw_command):
+        return [str(item) for item in raw_command]
+    if isinstance(raw_command, str) and raw_command.strip():
+        return shlex.split(raw_command)
+
+    entrypoint_path = directory / entrypoint
+    if not entrypoint_path.exists():
+        raise ValueError(f"Process entrypoint file {entrypoint!r} does not exist.")
+    if _is_executable(entrypoint_path):
+        return [str(entrypoint_path)]
+    suffix = entrypoint_path.suffix.lower()
+    if suffix == ".py":
+        return [sys.executable, str(entrypoint_path)]
+    if suffix in {".sh", ".bash"}:
+        return ["sh", str(entrypoint_path)]
+    return [str(entrypoint_path)]
+
+
+def _is_executable(path: Path) -> bool:
+    return path.exists() and path.is_file() and path.stat().st_mode & 0o111 != 0
+
+
+def _positive_int(value: object, default: int) -> int:
+    if isinstance(value, int) and value > 0:
+        return value
+    if isinstance(value, str) and value.strip().isdigit():
+        parsed = int(value.strip())
+        if parsed > 0:
+            return parsed
+    return default
 
 
 def _merge_config_keys(

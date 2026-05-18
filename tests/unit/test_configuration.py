@@ -279,6 +279,38 @@ class ConfigurationTests(unittest.TestCase):
                 (home_dir / "prompts" / "custom.md").resolve(),
             )
 
+    def test_workspace_and_prompt_paths_accept_aliases(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir)
+            config_file = home_dir / "config.toml"
+            config_file.write_text(
+                "\n".join(
+                    [
+                        "[workspace]",
+                        'root = "@home/project"',
+                        "",
+                        "[agent]",
+                        'system_prompt_file = "@prompts/custom-system.md"',
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            settings = Settings.from_env(
+                {
+                    "NAGIENT_HOME": str(home_dir),
+                    "NAGIENT_CONFIG": str(config_file),
+                }
+            )
+
+            runtime_config = load_runtime_configuration(settings)
+
+            self.assertEqual(runtime_config.workspace.root, (home_dir / "project").resolve())
+            self.assertEqual(
+                runtime_config.agent.system_prompt_file,
+                (home_dir / "prompts" / "custom-system.md").resolve(),
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

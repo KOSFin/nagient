@@ -359,7 +359,7 @@ class AgentRuntimeServiceTests(unittest.TestCase):
 
 def _set_workspace_root(config_file: Path, workspace_root: Path) -> None:
     config = config_file.read_text(encoding="utf-8").replace(
-        'root = ""',
+        'root = "@home/workspace"',
         f'root = "{workspace_root}"',
     )
     config_file.write_text(config, encoding="utf-8")

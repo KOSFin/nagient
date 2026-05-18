@@ -7,12 +7,13 @@ SECRETS_PATH="${NAGIENT_SECRETS_FILE:-/opt/nagient/secrets.env}"
 SECRETS_DIR="$(dirname "${SECRETS_PATH}")"
 TOOL_SECRETS_PATH="${NAGIENT_TOOL_SECRETS_FILE:-/opt/nagient/tool-secrets.env}"
 TOOL_SECRETS_DIR="$(dirname "${TOOL_SECRETS_PATH}")"
+PROMPTS_DIR="${NAGIENT_PROMPTS_DIR:-/opt/nagient/prompts}"
 PLUGINS_DIR="${NAGIENT_PLUGINS_DIR:-/opt/nagient/plugins}"
 TOOLS_DIR="${NAGIENT_TOOLS_DIR:-/opt/nagient/tools}"
 PROVIDERS_DIR="${NAGIENT_PROVIDERS_DIR:-/opt/nagient/providers}"
 CREDENTIALS_DIR="${NAGIENT_CREDENTIALS_DIR:-/opt/nagient/credentials}"
 
-mkdir -p "${CONFIG_DIR}" "${SECRETS_DIR}" "${TOOL_SECRETS_DIR}" "${PLUGINS_DIR}" "${TOOLS_DIR}" "${PROVIDERS_DIR}" "${CREDENTIALS_DIR}" "${NAGIENT_STATE_DIR:-/opt/nagient/state}" "${NAGIENT_LOG_DIR:-/opt/nagient/logs}" "${NAGIENT_RELEASES_DIR:-/opt/nagient/releases}"
+mkdir -p "${CONFIG_DIR}" "${SECRETS_DIR}" "${TOOL_SECRETS_DIR}" "${PROMPTS_DIR}" "${PLUGINS_DIR}" "${TOOLS_DIR}" "${PROVIDERS_DIR}" "${CREDENTIALS_DIR}" "${NAGIENT_STATE_DIR:-/opt/nagient/state}" "${NAGIENT_LOG_DIR:-/opt/nagient/logs}" "${NAGIENT_RELEASES_DIR:-/opt/nagient/releases}"
 
 if [ ! -f "${CONFIG_PATH}" ] && [ -f "/etc/nagient/config.toml" ]; then
   cp /etc/nagient/config.toml "${CONFIG_PATH}"

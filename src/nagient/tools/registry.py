@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import shlex
 import sys
 import tomllib
 from dataclasses import dataclass, field
@@ -11,6 +12,7 @@ from nagient.domain.entities.system_state import CheckIssue
 from nagient.domain.entities.tooling import ToolFunctionManifest, ToolPluginManifest
 from nagient.tools.base import BaseToolPlugin, LoadedToolPlugin
 from nagient.tools.builtin import builtin_tools
+from nagient.tools.process_adapter import ExternalProcessToolPlugin
 
 
 @dataclass(frozen=True)
@@ -70,7 +72,24 @@ class ToolPluginRegistry:
         return ToolDiscovery(plugins=plugins, issues=issues)
 
     def _load_plugin(self, directory: Path) -> LoadedToolPlugin:
-        manifest = self._parse_manifest(directory / "tool.toml")
+        manifest_path = directory / "tool.toml"
+        manifest = self._parse_manifest(manifest_path)
+        payload = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
+        runtime = _runtime_or_default(payload.get("runtime"))
+        if runtime == "process":
+            command = _process_command(payload, directory, manifest.entrypoint)
+            implementation = ExternalProcessToolPlugin(
+                command=command,
+                cwd=directory,
+                timeout_seconds=_positive_int(payload.get("process_timeout_seconds"), 30),
+            )
+            return LoadedToolPlugin(
+                manifest=manifest,
+                implementation=implementation,
+                source=str(directory),
+                runtime=runtime,
+            )
+
         module_path = directory / manifest.entrypoint
         if not module_path.exists():
             raise ValueError(f"Entrypoint file {manifest.entrypoint!r} does not exist.")
@@ -95,6 +114,7 @@ class ToolPluginRegistry:
             manifest=manifest,
             implementation=implementation,
             source=str(directory),
+            runtime=runtime,
         )
 
     def _parse_manifest(self, manifest_path: Path) -> ToolPluginManifest:
@@ -171,6 +191,7 @@ class ToolPluginRegistry:
             healthcheck_binding=_optional_string(payload.get("healthcheck_binding")),
             selftest_binding=_optional_string(payload.get("selftest_binding")),
             config_schema_file=config_schema_file,
+            runtime=_runtime_or_default(payload.get("runtime")),
         )
 
     def _validate_plugin(self, plugin: LoadedToolPlugin) -> list[CheckIssue]:
@@ -247,6 +268,49 @@ def _require_mapping(value: object) -> dict[str, object]:
 def _string_or_default(value: object, default: str) -> str:
     if isinstance(value, str) and value.strip():
         return value
+    return default
+
+
+def _runtime_or_default(value: object) -> str:
+    if not isinstance(value, str) or not value.strip():
+        return "python"
+    normalized = value.strip().lower().replace("_", "-")
+    if normalized in {"python", "process"}:
+        return normalized
+    raise ValueError("Tool plugin runtime must be 'python' or 'process'.")
+
+
+def _process_command(payload: dict[str, object], directory: Path, entrypoint: str) -> list[str]:
+    raw_command = payload.get("command")
+    if isinstance(raw_command, list) and all(isinstance(item, str) for item in raw_command):
+        return [str(item) for item in raw_command]
+    if isinstance(raw_command, str) and raw_command.strip():
+        return shlex.split(raw_command)
+
+    entrypoint_path = directory / entrypoint
+    if not entrypoint_path.exists():
+        raise ValueError(f"Process entrypoint file {entrypoint!r} does not exist.")
+    if os_access_executable(entrypoint_path):
+        return [str(entrypoint_path)]
+    suffix = entrypoint_path.suffix.lower()
+    if suffix == ".py":
+        return [sys.executable, str(entrypoint_path)]
+    if suffix in {".sh", ".bash"}:
+        return ["sh", str(entrypoint_path)]
+    return [str(entrypoint_path)]
+
+
+def os_access_executable(path: Path) -> bool:
+    return path.exists() and path.is_file() and path.stat().st_mode & 0o111 != 0
+
+
+def _positive_int(value: object, default: int) -> int:
+    if isinstance(value, int) and value > 0:
+        return value
+    if isinstance(value, str) and value.strip().isdigit():
+        parsed = int(value.strip())
+        if parsed > 0:
+            return parsed
     return default
 
 

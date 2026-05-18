@@ -35,7 +35,7 @@ class CliToolRuntimeFlowsTests(unittest.TestCase):
             config_file = home_dir / "config.toml"
             config_file.write_text(
                 config_file.read_text(encoding="utf-8").replace(
-                    'root = ""',
+                    'root = "@home/workspace"',
                     f'root = "{workspace_root}"',
                 ),
                 encoding="utf-8",

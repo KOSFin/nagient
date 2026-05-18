@@ -45,6 +45,8 @@ nagient <command> [subcommand] [options]
 
 - `nagient version`
 - `nagient init [--force] [--format text|json]`
+- `nagient help`
+- `nagient plugins [--format text|json]`
 - `nagient status [--format text|json]`
 - `nagient doctor [--format text|json]`
 - `nagient paths [--format text|json]`
@@ -56,7 +58,9 @@ nagient <command> [subcommand] [options]
 
 `nagient setup` открывает интерактивный мастер настройки. Во всех меню `0` возвращает назад или завершает setup.
 
-`nagient paths` показывает алиасы путей: `@home`, `@config`, `@secrets`, `@plugins`, `@providers` и другие. Эти алиасы можно использовать в setup и path-параметрах CLI.
+`nagient plugins` показывает установленные provider, transport и tool plugins со статусом configured/enabled.
+
+`nagient paths` показывает алиасы путей: `@home`, `@config`, `@secrets`, `@tool_secrets`, `@prompts`, `@plugins`, `@tools`, `@providers`, `@credentials`, `@state`, `@logs`, `@releases`. Эти алиасы можно использовать в setup и path-параметрах CLI.
 
 `nagient chat` — это консольная точка входа для общения из CLI. Команда использует выбранный provider или `[agent].default_provider`, если `--provider` не передан.
 
@@ -66,7 +70,7 @@ nagient <command> [subcommand] [options]
 - `nagient setup transport <transport_id> ...`
 - `nagient setup tool <tool_id> ...`
 - `nagient setup workspace [--root <path-or-alias>] [--mode bounded|unsafe]`
-- `nagient setup paths [--secrets-file <path-or-alias>] [--tool-secrets-file <path-or-alias>] [--plugins-dir <path-or-alias>] [--tools-dir <path-or-alias>] [--providers-dir <path-or-alias>] [--credentials-dir <path-or-alias>]`
+- `nagient setup paths [--secrets-file <path-or-alias>] [--tool-secrets-file <path-or-alias>] [--prompts-dir <path-or-alias>] [--plugins-dir <path-or-alias>] [--tools-dir <path-or-alias>] [--providers-dir <path-or-alias>] [--credentials-dir <path-or-alias>] [--state-dir <path-or-alias>] [--log-dir <path-or-alias>] [--releases-dir <path-or-alias>]`
 
 ### 2.2 Transport
 

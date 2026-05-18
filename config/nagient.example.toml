@@ -13,22 +13,25 @@ safe_mode = true
 project_name = "nagient"
 
 [paths]
-secrets_file = "/var/lib/nagient/secrets.env"
-tool_secrets_file = "/var/lib/nagient/tool-secrets.env"
-prompts_dir = "/var/lib/nagient/prompts"
-plugins_dir = "/var/lib/nagient/plugins"
-tools_dir = "/var/lib/nagient/tools"
-providers_dir = "/var/lib/nagient/providers"
-credentials_dir = "/var/lib/nagient/credentials"
+secrets_file = "@secrets"
+tool_secrets_file = "@tool_secrets"
+prompts_dir = "@prompts"
+plugins_dir = "@plugins"
+tools_dir = "@tools"
+providers_dir = "@providers"
+credentials_dir = "@credentials"
+state_dir = "@state"
+log_dir = "@logs"
+releases_dir = "@releases"
 
 [workspace]
-root = ""
+root = "@home/workspace"
 mode = "bounded"
 
 [agent]
 default_provider = ""
 require_provider = false
-system_prompt_file = "/var/lib/nagient/prompts/system.md"
+system_prompt_file = "@prompts/system.md"
 max_turns = 4
 
 [agent.memory]
@@ -153,3 +156,5 @@ enabled = true
 plugin = "github.api"
 enabled = false
 token_secret = "GITHUB_TOKEN"
+base_url = "https://api.github.com"
+timeout_seconds = 15

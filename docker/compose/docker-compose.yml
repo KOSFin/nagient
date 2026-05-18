@@ -13,6 +13,7 @@ services:
       NAGIENT_CONFIG: /opt/nagient/config.toml
       NAGIENT_SECRETS_FILE: /opt/nagient/secrets.env
       NAGIENT_TOOL_SECRETS_FILE: /opt/nagient/tool-secrets.env
+      NAGIENT_PROMPTS_DIR: /opt/nagient/prompts
       NAGIENT_PLUGINS_DIR: /opt/nagient/plugins
       NAGIENT_TOOLS_DIR: /opt/nagient/tools
       NAGIENT_PROVIDERS_DIR: /opt/nagient/providers
@@ -35,6 +36,7 @@ services:
       - ./config.toml:/opt/nagient/config.toml
       - ./secrets.env:/opt/nagient/secrets.env
       - ./tool-secrets.env:/opt/nagient/tool-secrets.env
+      - ./prompts:/opt/nagient/prompts
       - ./plugins:/opt/nagient/plugins
       - ./tools:/opt/nagient/tools
       - ./providers:/opt/nagient/providers

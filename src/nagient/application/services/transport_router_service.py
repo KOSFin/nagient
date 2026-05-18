@@ -230,6 +230,10 @@ class TransportRouterService:
     ) -> dict[str, object]:
         payload.setdefault("_transport_config", dict(transport.config))
         payload.setdefault("_transport_id", transport.transport_id)
+        payload.setdefault(
+            "_transport_secrets",
+            _transport_scoped_secrets(transport.config, runtime_config.secrets),
+        )
         if transport.plugin_id == "builtin.telegram":
             secret_name = transport.config.get("bot_token_secret")
             if isinstance(secret_name, str) and secret_name in runtime_config.secrets:
@@ -276,3 +280,23 @@ class TransportRouterService:
                 "the local console chat."
             )
         return ""
+
+
+def _transport_scoped_secrets(
+    config: dict[str, object],
+    secrets: dict[str, str],
+) -> dict[str, str]:
+    scoped: dict[str, str] = {}
+    for key, value in config.items():
+        if not isinstance(value, str):
+            continue
+        normalized_key = str(key).lower()
+        if not (
+            normalized_key.endswith("_secret")
+            or normalized_key.endswith("_secret_name")
+            or normalized_key in {"secret", "secret_name"}
+        ):
+            continue
+        if value in secrets:
+            scoped[value] = secrets[value]
+    return scoped

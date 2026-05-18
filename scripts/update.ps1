@@ -17,8 +17,11 @@ $UpdateBaseUrl = if ($env:NAGIENT_UPDATE_BASE_URL) {
 $ComposeFile = Join-Path $NagientHome "docker-compose.yml"
 $EnvFile = Join-Path $NagientHome ".env"
 $CurrentManifest = Join-Path $NagientHome "releases/current.json"
+$WorkspaceDir = if ($env:NAGIENT_WORKSPACE_DIR) { $env:NAGIENT_WORKSPACE_DIR } else { Join-Path $NagientHome "workspace" }
+$PromptsDir = Join-Path $NagientHome "prompts"
+$SafeMode = if ($env:NAGIENT_SAFE_MODE) { $env:NAGIENT_SAFE_MODE } else { "true" }
 
-New-Item -ItemType Directory -Force -Path (Join-Path $NagientHome "bin"), (Join-Path $NagientHome "releases") | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $NagientHome "bin"), (Join-Path $NagientHome "releases"), $PromptsDir, $WorkspaceDir | Out-Null
 
 function Test-UnrenderedUpdateBaseUrl {
   param([string]$Value)
@@ -50,6 +53,25 @@ function Get-JsonField {
     $current = $current.$chunk
   }
   return $current
+}
+
+function Get-CurrentVersionOrDefault {
+  if (Test-Path $CurrentManifest) {
+    try {
+      $version = Get-JsonField -Path $CurrentManifest -Field "version"
+      if (-not [string]::IsNullOrWhiteSpace([string]$version)) {
+        return [string]$version
+      }
+    } catch {
+      Write-Step "Current release metadata is unreadable; repairing it during this update."
+    }
+  } else {
+    Write-Step "Current release metadata is missing; repairing it during this update."
+  }
+  if ($env:NAGIENT_CURRENT_VERSION) {
+    return $env:NAGIENT_CURRENT_VERSION
+  }
+  return "0.0.0"
 }
 
 function Get-ArtifactUrl {
@@ -308,14 +330,10 @@ function Invoke-ComposeUpdateStep {
   }
 }
 
-if (-not (Test-Path $CurrentManifest)) {
-  throw "Current release manifest is missing."
-}
-
 $channelPayload = Join-Path ([System.IO.Path]::GetTempPath()) "nagient-channel.json"
 $manifestPayload = Join-Path ([System.IO.Path]::GetTempPath()) "nagient-manifest.json"
 
-$currentVersion = Get-JsonField -Path $CurrentManifest -Field "version"
+$currentVersion = Get-CurrentVersionOrDefault
 Write-Step "Resolving update channel metadata"
 Invoke-WebRequest -UseBasicParsing -Uri "$($UpdateBaseUrl.TrimEnd('/'))/channels/$Channel.json" -OutFile $channelPayload
 $manifestUrl = Get-JsonField -Path $channelPayload -Field "manifest_url"
@@ -345,6 +363,8 @@ NAGIENT_CHANNEL=$Channel
 NAGIENT_UPDATE_BASE_URL=$UpdateBaseUrl
 NAGIENT_CONTAINER_NAME=nagient
 NAGIENT_DOCKER_PROJECT_NAME=nagient
+NAGIENT_SAFE_MODE=$SafeMode
+NAGIENT_WORKSPACE_ROOT=/workspace
 "@ | Set-Content -Path $EnvFile -Encoding utf8
 
 Write-Step "Pulling Docker image $image"

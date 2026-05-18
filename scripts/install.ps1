@@ -19,6 +19,7 @@ $EnvFile = Join-Path $NagientHome ".env"
 $ConfigFile = Join-Path $NagientHome "config.toml"
 $SecretsFile = Join-Path $NagientHome "secrets.env"
 $ToolSecretsFile = Join-Path $NagientHome "tool-secrets.env"
+$PromptsDir = Join-Path $NagientHome "prompts"
 $PluginsDir = Join-Path $NagientHome "plugins"
 $ToolsDir = Join-Path $NagientHome "tools"
 $ProvidersDir = Join-Path $NagientHome "providers"
@@ -331,7 +332,7 @@ function Invoke-ComposeInstallStep {
   }
 }
 
-New-Item -ItemType Directory -Force -Path $NagientHome, $ReleasesDir, $BinDir, $PluginsDir, $ToolsDir, $ProvidersDir, $CredentialsDir, $StateDir, $LogDir, $WorkspaceDir | Out-Null
+New-Item -ItemType Directory -Force -Path $NagientHome, $ReleasesDir, $BinDir, $PromptsDir, $PluginsDir, $ToolsDir, $ProvidersDir, $CredentialsDir, $StateDir, $LogDir, $WorkspaceDir | Out-Null
 
 $channelPayload = Join-Path ([System.IO.Path]::GetTempPath()) "nagient-channel.json"
 $manifestPayload = Join-Path ([System.IO.Path]::GetTempPath()) "nagient-manifest.json"
@@ -370,16 +371,38 @@ safe_mode = true
 project_name = "nagient"
 
 [paths]
-secrets_file = "$SecretsFile"
-tool_secrets_file = "$ToolSecretsFile"
-plugins_dir = "$PluginsDir"
-tools_dir = "$ToolsDir"
-providers_dir = "$ProvidersDir"
-credentials_dir = "$CredentialsDir"
+secrets_file = "@secrets"
+tool_secrets_file = "@tool_secrets"
+prompts_dir = "@prompts"
+plugins_dir = "@plugins"
+tools_dir = "@tools"
+providers_dir = "@providers"
+credentials_dir = "@credentials"
+state_dir = "@state"
+log_dir = "@logs"
+releases_dir = "@releases"
+
+[workspace]
+root = "@home/workspace"
+mode = "bounded"
 
 [agent]
 default_provider = ""
 require_provider = false
+system_prompt_file = "@prompts/system.md"
+max_turns = 4
+
+[agent.memory]
+hard_message_limit = 100
+dynamic_focus_enabled = true
+dynamic_focus_messages = 10
+summary_trigger_messages = 20
+retrieval_max_results = 8
+
+[agent.logging]
+level = "info"
+json_logs = false
+log_events = true
 
 [transports.console]
 plugin = "builtin.console"
@@ -441,6 +464,58 @@ enabled = false
 auth = "none"
 base_url = "http://127.0.0.1:11434"
 model = "llama3.1:8b"
+
+[tools.workspace_fs]
+plugin = "workspace.fs"
+enabled = true
+
+[tools.workspace_shell]
+plugin = "workspace.shell"
+enabled = true
+timeout_seconds = 15
+max_output_chars = 8000
+default_ping_count = 4
+normalize_infinite_commands = true
+enforce_finite_commands = true
+
+[tools.workspace_git]
+plugin = "workspace.git"
+enabled = true
+# author_name = "Nagient Agent"
+# author_email = "agent@example.com"
+# username = "git-user"
+# token_secret = "GIT_ACCESS_TOKEN"
+
+[tools.transport_interaction]
+plugin = "transport.interaction"
+enabled = true
+
+[tools.transport_router]
+plugin = "transport.router"
+enabled = true
+
+[tools.agent_memory]
+plugin = "agent.memory"
+enabled = true
+
+[tools.system_backup]
+plugin = "system.backup"
+enabled = true
+
+[tools.system_reconcile]
+plugin = "system.reconcile"
+enabled = true
+
+[tools.system_jobs]
+plugin = "system.jobs"
+enabled = true
+
+[tools.github_api]
+plugin = "github.api"
+enabled = false
+token_secret = "GITHUB_TOKEN"
+base_url = "https://api.github.com"
+timeout_seconds = 15
 "@ | Set-Content -Path $ConfigFile -Encoding utf8
 }
 
@@ -459,7 +534,10 @@ if (-not (Test-Path $SecretsFile)) {
 
 if (-not (Test-Path $ToolSecretsFile)) {
   @"
-# Add tool-scoped secrets here when needed.
+# Secrets for tool and connector integrations.
+# GIT_ACCESS_TOKEN=
+# GIT_PASSWORD=
+# GITHUB_TOKEN=
 "@ | Set-Content -Path $ToolSecretsFile -Encoding utf8
 }
 
@@ -470,6 +548,7 @@ NAGIENT_UPDATE_BASE_URL=$UpdateBaseUrl
 NAGIENT_CONTAINER_NAME=nagient
 NAGIENT_DOCKER_PROJECT_NAME=nagient
 NAGIENT_SAFE_MODE=true
+NAGIENT_WORKSPACE_ROOT=/workspace
 "@ | Set-Content -Path $EnvFile -Encoding utf8
 
 Write-Step "Pulling Docker image $image"

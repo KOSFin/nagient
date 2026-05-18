@@ -76,7 +76,7 @@ To remove all local runtime data, set `NAGIENT_PURGE=true` before running uninst
 
 1. Run installer for your platform.
 2. Run `nagient setup`.
-3. Use `nagient paths` to inspect aliases such as `@config` and `@secrets`.
+3. Use `nagient paths` to inspect aliases such as `@config`, `@secrets`, `@prompts`, and `@tools`.
 4. Use `nagient chat` for a direct CLI console session with the configured provider.
 5. Run short commands:
 
@@ -95,7 +95,7 @@ To remove all local runtime data, set `NAGIENT_PURGE=true` before running uninst
 
 ## Full CLI Surface
 
-- `nagient init`, `nagient paths`, `nagient preflight`, `nagient reconcile`, `nagient serve`
+- `nagient init`, `nagient help`, `nagient paths`, `nagient plugins`, `nagient preflight`, `nagient reconcile`, `nagient serve`
 - `nagient setup`, `nagient chat`
 - `nagient transport list|test|scaffold`
 - `nagient provider list|scaffold|models`

@@ -15,6 +15,7 @@ refresh_paths() {
   NAGIENT_ENV_FILE="${NAGIENT_HOME}/.env"
   NAGIENT_BIN_DIR="${NAGIENT_HOME}/bin"
   NAGIENT_RELEASES_DIR="${NAGIENT_HOME}/releases"
+  NAGIENT_PROMPTS_DIR="${NAGIENT_HOME}/prompts"
   CURRENT_MANIFEST="${NAGIENT_RELEASES_DIR}/current.json"
   if [ -z "${NAGIENT_WORKSPACE_DIR:-}" ]; then
     NAGIENT_WORKSPACE_DIR="${NAGIENT_HOME}/workspace"
@@ -65,7 +66,7 @@ done
 
 refresh_paths
 
-mkdir -p "${NAGIENT_BIN_DIR}" "${NAGIENT_RELEASES_DIR}"
+mkdir -p "${NAGIENT_BIN_DIR}" "${NAGIENT_RELEASES_DIR}" "${NAGIENT_PROMPTS_DIR}" "${NAGIENT_WORKSPACE_DIR}"
 
 log_step() {
   printf '[nagient] %s\n' "$1"
@@ -222,6 +223,19 @@ print(current)
 PY
 }
 
+current_version_or_default() {
+  if [ -f "$CURRENT_MANIFEST" ]; then
+    if version="$(json_field version "$CURRENT_MANIFEST" 2>/dev/null)" && [ -n "$version" ]; then
+      printf '%s\n' "$version"
+      return 0
+    fi
+    log_step "Current release metadata is unreadable; repairing it during this update."
+  else
+    log_step "Current release metadata is missing; repairing it during this update."
+  fi
+  printf '%s\n' "${NAGIENT_CURRENT_VERSION:-0.0.0}"
+}
+
 artifact_url() {
   local artifact_name="$1"
   local payload_file="$2"
@@ -239,9 +253,9 @@ raise SystemExit(f"Artifact not found: {artifact_name}")
 PY
 }
 
-write_nagientctl() {
+write_nagient_launcher() {
   local target="${NAGIENT_HOME}/bin/nagient"
-  cat >"$target" <<'NAGIENTCTL'
+  cat >"$target" <<'NAGIENT_LAUNCHER'
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -1341,7 +1355,7 @@ run_cli_command() {
 }
 
 run_cli_command "$@"
-NAGIENTCTL
+NAGIENT_LAUNCHER
   chmod +x "$target"
   rm -f "${NAGIENT_HOME}/bin/nagientctl" 2>/dev/null || true
 }
@@ -1369,7 +1383,7 @@ channel_payload="$(mktemp)"
 manifest_payload="$(mktemp)"
 trap 'rm -f "$channel_payload" "$manifest_payload"' EXIT
 
-current_version="$(json_field version "$CURRENT_MANIFEST")"
+current_version="$(current_version_or_default)"
 log_step "Resolving update channel metadata"
 fetch_url "${NAGIENT_UPDATE_BASE_URL%/}/channels/${NAGIENT_CHANNEL}.json" >"$channel_payload"
 manifest_url="$(json_field manifest_url "$channel_payload")"
@@ -1394,7 +1408,7 @@ cp "$manifest_payload" "${NAGIENT_RELEASES_DIR}/${target_version}.json"
 fetch_url "$update_url" >"${NAGIENT_HOME}/bin/nagient-update"
 fetch_url "$uninstall_url" >"${NAGIENT_HOME}/bin/nagient-uninstall"
 chmod +x "${NAGIENT_HOME}/bin/nagient-update" "${NAGIENT_HOME}/bin/nagient-uninstall"
-write_nagientctl
+write_nagient_launcher
 
 cat >"$NAGIENT_ENV_FILE" <<EOF
 NAGIENT_IMAGE=${image}
@@ -1402,6 +1416,8 @@ NAGIENT_CHANNEL=${NAGIENT_CHANNEL}
 NAGIENT_UPDATE_BASE_URL=${NAGIENT_UPDATE_BASE_URL}
 NAGIENT_CONTAINER_NAME=nagient
 NAGIENT_DOCKER_PROJECT_NAME=nagient
+NAGIENT_SAFE_MODE=${NAGIENT_SAFE_MODE:-true}
+NAGIENT_WORKSPACE_ROOT=/workspace
 EOF
 
 log_step "Pulling Docker image ${image}"

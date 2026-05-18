@@ -12,13 +12,6 @@ def _expand_path(value: str) -> Path:
     return Path(value).expanduser().resolve()
 
 
-def _expand_config_relative_path(value: str, base_dir: Path) -> Path:
-    candidate = Path(value).expanduser()
-    if not candidate.is_absolute():
-        candidate = (base_dir / candidate).resolve()
-    return candidate.resolve()
-
-
 def _parse_bool(value: str) -> bool:
     normalized = value.strip().lower()
     if normalized in {"1", "true", "yes", "on"}:
@@ -27,6 +20,120 @@ def _parse_bool(value: str) -> bool:
         return False
     msg = f"Cannot parse boolean value from {value!r}."
     raise ValueError(msg)
+
+
+def _path_alias_targets(
+    home_dir: Path,
+    config_file: Path,
+    *,
+    include_legacy: bool,
+) -> dict[str, Path]:
+    aliases = {
+        "@home": home_dir.resolve(),
+        "@config": config_file.resolve(),
+        "@secrets": (home_dir / "secrets.env").resolve(),
+        "@tool_secrets": (home_dir / "tool-secrets.env").resolve(),
+        "@prompts": (home_dir / "prompts").resolve(),
+        "@plugins": (home_dir / "plugins").resolve(),
+        "@tools": (home_dir / "tools").resolve(),
+        "@providers": (home_dir / "providers").resolve(),
+        "@credentials": (home_dir / "credentials").resolve(),
+        "@state": (home_dir / "state").resolve(),
+        "@logs": (home_dir / "logs").resolve(),
+        "@releases": (home_dir / "releases").resolve(),
+    }
+    if include_legacy:
+        aliases["@config_dir"] = config_file.parent.resolve()
+    return aliases
+
+
+def _resolve_path_reference(
+    raw_value: str,
+    *,
+    home_dir: Path,
+    config_file: Path,
+    fallback: Path,
+) -> Path:
+    value = raw_value.strip()
+    if not value:
+        return fallback.resolve()
+
+    aliases = _path_alias_targets(home_dir, config_file, include_legacy=True)
+    file_aliases = {"@config", "@secrets", "@tool_secrets"}
+    for alias, target in aliases.items():
+        if value == alias:
+            return target.resolve()
+        for separator in ("/", os.sep):
+            prefix = f"{alias}{separator}"
+            if value.startswith(prefix):
+                suffix = value[len(prefix) :]
+                base = target.parent if alias in file_aliases else target
+                return (base / suffix).expanduser().resolve()
+
+    candidate = Path(value).expanduser()
+    if not candidate.is_absolute():
+        candidate = (config_file.parent / candidate).resolve()
+    return candidate.resolve()
+
+
+def _render_path_reference(
+    path: str,
+    *,
+    home_dir: Path,
+    config_file: Path,
+) -> str:
+    resolved = Path(path).expanduser().resolve()
+    aliases = _path_alias_targets(home_dir, config_file, include_legacy=False)
+    file_aliases = {"@config", "@secrets", "@tool_secrets"}
+    for alias, target in aliases.items():
+        if resolved == target:
+            return alias
+    sorted_directory_aliases = sorted(
+        [
+            (alias, target)
+            for alias, target in aliases.items()
+            if alias not in file_aliases
+        ],
+        key=lambda item: len(str(item[1])),
+        reverse=True,
+    )
+    for alias, target in sorted_directory_aliases:
+        base = target
+        try:
+            suffix = resolved.relative_to(base)
+        except ValueError:
+            continue
+        if not suffix.parts:
+            return alias
+        return f"{alias}/{suffix.as_posix()}"
+    return str(resolved)
+
+
+def _resolve_configured_path(
+    env: dict[str, str],
+    file_values: dict[str, str],
+    *,
+    env_key: str,
+    file_key: str,
+    home_dir: Path,
+    config_file: Path,
+    default_path: Path,
+) -> Path:
+    if env_key in env:
+        return _resolve_path_reference(
+            env[env_key],
+            home_dir=home_dir,
+            config_file=config_file,
+            fallback=default_path,
+        )
+    if file_key in file_values:
+        return _resolve_path_reference(
+            file_values[file_key],
+            home_dir=home_dir,
+            config_file=config_file,
+            fallback=default_path,
+        )
+    return default_path.resolve()
 
 
 @dataclass(frozen=True)
@@ -56,73 +163,96 @@ class Settings:
         home_dir = _expand_path(env.get("NAGIENT_HOME", "~/.nagient"))
         config_file = _expand_path(env.get("NAGIENT_CONFIG", str(home_dir / "config.toml")))
         file_values = _read_config(config_file)
-        if "NAGIENT_SECRETS_FILE" in env:
-            secrets_file = _expand_path(env["NAGIENT_SECRETS_FILE"])
-        elif "secrets_file" in file_values:
-            secrets_file = _expand_config_relative_path(
-                file_values["secrets_file"],
-                config_file.parent,
-            )
-        else:
-            secrets_file = _expand_path(str(home_dir / "secrets.env"))
-
-        if "NAGIENT_PLUGINS_DIR" in env:
-            plugins_dir = _expand_path(env["NAGIENT_PLUGINS_DIR"])
-        elif "plugins_dir" in file_values:
-            plugins_dir = _expand_config_relative_path(
-                file_values["plugins_dir"],
-                config_file.parent,
-            )
-        else:
-            plugins_dir = _expand_path(str(home_dir / "plugins"))
-        if "NAGIENT_PROMPTS_DIR" in env:
-            prompts_dir = _expand_path(env["NAGIENT_PROMPTS_DIR"])
-        elif "prompts_dir" in file_values:
-            prompts_dir = _expand_config_relative_path(
-                file_values["prompts_dir"],
-                config_file.parent,
-            )
-        else:
-            prompts_dir = _expand_path(str(home_dir / "prompts"))
-        if "NAGIENT_TOOLS_DIR" in env:
-            tools_dir = _expand_path(env["NAGIENT_TOOLS_DIR"])
-        elif "tools_dir" in file_values:
-            tools_dir = _expand_config_relative_path(
-                file_values["tools_dir"],
-                config_file.parent,
-            )
-        else:
-            tools_dir = _expand_path(str(home_dir / "tools"))
-        if "NAGIENT_PROVIDERS_DIR" in env:
-            providers_dir = _expand_path(env["NAGIENT_PROVIDERS_DIR"])
-        elif "providers_dir" in file_values:
-            providers_dir = _expand_config_relative_path(
-                file_values["providers_dir"],
-                config_file.parent,
-            )
-        else:
-            providers_dir = _expand_path(str(home_dir / "providers"))
-        if "NAGIENT_CREDENTIALS_DIR" in env:
-            credentials_dir = _expand_path(env["NAGIENT_CREDENTIALS_DIR"])
-        elif "credentials_dir" in file_values:
-            credentials_dir = _expand_config_relative_path(
-                file_values["credentials_dir"],
-                config_file.parent,
-            )
-        else:
-            credentials_dir = _expand_path(str(home_dir / "credentials"))
-        if "NAGIENT_TOOL_SECRETS_FILE" in env:
-            tool_secrets_file = _expand_path(env["NAGIENT_TOOL_SECRETS_FILE"])
-        elif "tool_secrets_file" in file_values:
-            tool_secrets_file = _expand_config_relative_path(
-                file_values["tool_secrets_file"],
-                config_file.parent,
-            )
-        else:
-            tool_secrets_file = _expand_path(str(home_dir / "tool-secrets.env"))
-        state_dir = _expand_path(env.get("NAGIENT_STATE_DIR", str(home_dir / "state")))
-        log_dir = _expand_path(env.get("NAGIENT_LOG_DIR", str(home_dir / "logs")))
-        releases_dir = _expand_path(env.get("NAGIENT_RELEASES_DIR", str(home_dir / "releases")))
+        secrets_file = _resolve_configured_path(
+            env,
+            file_values,
+            env_key="NAGIENT_SECRETS_FILE",
+            file_key="secrets_file",
+            home_dir=home_dir,
+            config_file=config_file,
+            default_path=home_dir / "secrets.env",
+        )
+        tool_secrets_file = _resolve_configured_path(
+            env,
+            file_values,
+            env_key="NAGIENT_TOOL_SECRETS_FILE",
+            file_key="tool_secrets_file",
+            home_dir=home_dir,
+            config_file=config_file,
+            default_path=home_dir / "tool-secrets.env",
+        )
+        prompts_dir = _resolve_configured_path(
+            env,
+            file_values,
+            env_key="NAGIENT_PROMPTS_DIR",
+            file_key="prompts_dir",
+            home_dir=home_dir,
+            config_file=config_file,
+            default_path=home_dir / "prompts",
+        )
+        plugins_dir = _resolve_configured_path(
+            env,
+            file_values,
+            env_key="NAGIENT_PLUGINS_DIR",
+            file_key="plugins_dir",
+            home_dir=home_dir,
+            config_file=config_file,
+            default_path=home_dir / "plugins",
+        )
+        tools_dir = _resolve_configured_path(
+            env,
+            file_values,
+            env_key="NAGIENT_TOOLS_DIR",
+            file_key="tools_dir",
+            home_dir=home_dir,
+            config_file=config_file,
+            default_path=home_dir / "tools",
+        )
+        providers_dir = _resolve_configured_path(
+            env,
+            file_values,
+            env_key="NAGIENT_PROVIDERS_DIR",
+            file_key="providers_dir",
+            home_dir=home_dir,
+            config_file=config_file,
+            default_path=home_dir / "providers",
+        )
+        credentials_dir = _resolve_configured_path(
+            env,
+            file_values,
+            env_key="NAGIENT_CREDENTIALS_DIR",
+            file_key="credentials_dir",
+            home_dir=home_dir,
+            config_file=config_file,
+            default_path=home_dir / "credentials",
+        )
+        state_dir = _resolve_configured_path(
+            env,
+            file_values,
+            env_key="NAGIENT_STATE_DIR",
+            file_key="state_dir",
+            home_dir=home_dir,
+            config_file=config_file,
+            default_path=home_dir / "state",
+        )
+        log_dir = _resolve_configured_path(
+            env,
+            file_values,
+            env_key="NAGIENT_LOG_DIR",
+            file_key="log_dir",
+            home_dir=home_dir,
+            config_file=config_file,
+            default_path=home_dir / "logs",
+        )
+        releases_dir = _resolve_configured_path(
+            env,
+            file_values,
+            env_key="NAGIENT_RELEASES_DIR",
+            file_key="releases_dir",
+            home_dir=home_dir,
+            config_file=config_file,
+            default_path=home_dir / "releases",
+        )
 
         return cls(
             version=env.get("NAGIENT_VERSION", __version__),
@@ -242,4 +372,10 @@ def _read_config(config_file: Path) -> dict[str, str]:
             values["providers_dir"] = str(paths["providers_dir"])
         if isinstance(paths.get("credentials_dir"), str):
             values["credentials_dir"] = str(paths["credentials_dir"])
+        if isinstance(paths.get("state_dir"), str):
+            values["state_dir"] = str(paths["state_dir"])
+        if isinstance(paths.get("log_dir"), str):
+            values["log_dir"] = str(paths["log_dir"])
+        if isinstance(paths.get("releases_dir"), str):
+            values["releases_dir"] = str(paths["releases_dir"])
     return values

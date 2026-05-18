@@ -17,6 +17,7 @@ refresh_paths() {
   NAGIENT_CONFIG_FILE="${NAGIENT_HOME}/config.toml"
   NAGIENT_SECRETS_FILE="${NAGIENT_HOME}/secrets.env"
   NAGIENT_TOOL_SECRETS_FILE="${NAGIENT_HOME}/tool-secrets.env"
+  NAGIENT_PROMPTS_DIR="${NAGIENT_HOME}/prompts"
   NAGIENT_PLUGINS_DIR="${NAGIENT_HOME}/plugins"
   NAGIENT_TOOLS_DIR="${NAGIENT_HOME}/tools"
   NAGIENT_PROVIDERS_DIR="${NAGIENT_HOME}/providers"
@@ -419,8 +420,8 @@ EOF
   echo "  Updater: ${quick_start_command} update"
 }
 
-write_nagientctl() {
-  cat >"${NAGIENT_BIN_DIR}/nagient" <<'NAGIENTCTL'
+write_nagient_launcher() {
+  cat >"${NAGIENT_BIN_DIR}/nagient" <<'NAGIENT_LAUNCHER'
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -1536,7 +1537,7 @@ run_cli_command() {
 }
 
 run_cli_command "$@"
-NAGIENTCTL
+NAGIENT_LAUNCHER
   chmod +x "${NAGIENT_BIN_DIR}/nagient"
   rm -f "${NAGIENT_BIN_DIR}/nagientctl" 2>/dev/null || true
 }
@@ -1544,7 +1545,7 @@ NAGIENTCTL
 require_cmd docker
 require_docker_runtime
 ensure_release_defaults
-mkdir -p "$NAGIENT_HOME" "$NAGIENT_RELEASES_DIR" "$NAGIENT_BIN_DIR" "$NAGIENT_PLUGINS_DIR" "$NAGIENT_TOOLS_DIR" "$NAGIENT_PROVIDERS_DIR" "$NAGIENT_CREDENTIALS_DIR" "$NAGIENT_STATE_DIR" "$NAGIENT_LOG_DIR" "$NAGIENT_WORKSPACE_DIR"
+mkdir -p "$NAGIENT_HOME" "$NAGIENT_RELEASES_DIR" "$NAGIENT_BIN_DIR" "$NAGIENT_PROMPTS_DIR" "$NAGIENT_PLUGINS_DIR" "$NAGIENT_TOOLS_DIR" "$NAGIENT_PROVIDERS_DIR" "$NAGIENT_CREDENTIALS_DIR" "$NAGIENT_STATE_DIR" "$NAGIENT_LOG_DIR" "$NAGIENT_WORKSPACE_DIR"
 sync_codex_mountpoint
 
 channel_payload="$(mktemp)"
@@ -1567,7 +1568,7 @@ log_step "Writing runtime assets into ${NAGIENT_HOME}"
 download_artifact "$compose_url" "$NAGIENT_COMPOSE_FILE"
 download_artifact "$update_url" "${NAGIENT_BIN_DIR}/nagient-update"
 download_artifact "$uninstall_url" "${NAGIENT_BIN_DIR}/nagient-uninstall"
-write_nagientctl
+write_nagient_launcher
 cp "$manifest_payload" "${NAGIENT_RELEASES_DIR}/current.json"
 cp "$manifest_payload" "${NAGIENT_RELEASES_DIR}/${version}.json"
 
@@ -1585,16 +1586,38 @@ safe_mode = true
 project_name = "nagient"
 
 [paths]
-secrets_file = "${NAGIENT_SECRETS_FILE}"
-tool_secrets_file = "${NAGIENT_TOOL_SECRETS_FILE}"
-plugins_dir = "${NAGIENT_PLUGINS_DIR}"
-tools_dir = "${NAGIENT_TOOLS_DIR}"
-providers_dir = "${NAGIENT_PROVIDERS_DIR}"
-credentials_dir = "${NAGIENT_CREDENTIALS_DIR}"
+secrets_file = "@secrets"
+tool_secrets_file = "@tool_secrets"
+prompts_dir = "@prompts"
+plugins_dir = "@plugins"
+tools_dir = "@tools"
+providers_dir = "@providers"
+credentials_dir = "@credentials"
+state_dir = "@state"
+log_dir = "@logs"
+releases_dir = "@releases"
+
+[workspace]
+root = "@home/workspace"
+mode = "bounded"
 
 [agent]
 default_provider = ""
 require_provider = false
+system_prompt_file = "@prompts/system.md"
+max_turns = 4
+
+[agent.memory]
+hard_message_limit = 100
+dynamic_focus_enabled = true
+dynamic_focus_messages = 10
+summary_trigger_messages = 20
+retrieval_max_results = 8
+
+[agent.logging]
+level = "info"
+json_logs = false
+log_events = true
 
 [transports.console]
 plugin = "builtin.console"
@@ -1656,6 +1679,58 @@ enabled = false
 auth = "none"
 base_url = "http://127.0.0.1:11434"
 model = "llama3.1:8b"
+
+[tools.workspace_fs]
+plugin = "workspace.fs"
+enabled = true
+
+[tools.workspace_shell]
+plugin = "workspace.shell"
+enabled = true
+timeout_seconds = 15
+max_output_chars = 8000
+default_ping_count = 4
+normalize_infinite_commands = true
+enforce_finite_commands = true
+
+[tools.workspace_git]
+plugin = "workspace.git"
+enabled = true
+# author_name = "Nagient Agent"
+# author_email = "agent@example.com"
+# username = "git-user"
+# token_secret = "GIT_ACCESS_TOKEN"
+
+[tools.transport_interaction]
+plugin = "transport.interaction"
+enabled = true
+
+[tools.transport_router]
+plugin = "transport.router"
+enabled = true
+
+[tools.agent_memory]
+plugin = "agent.memory"
+enabled = true
+
+[tools.system_backup]
+plugin = "system.backup"
+enabled = true
+
+[tools.system_reconcile]
+plugin = "system.reconcile"
+enabled = true
+
+[tools.system_jobs]
+plugin = "system.jobs"
+enabled = true
+
+[tools.github_api]
+plugin = "github.api"
+enabled = false
+token_secret = "GITHUB_TOKEN"
+base_url = "https://api.github.com"
+timeout_seconds = 15
 EOF
 fi
 
@@ -1674,7 +1749,10 @@ fi
 
 if [ ! -f "$NAGIENT_TOOL_SECRETS_FILE" ]; then
   cat >"$NAGIENT_TOOL_SECRETS_FILE" <<'EOF'
-# Add tool-scoped secrets here when needed.
+# Secrets for tool and connector integrations.
+# GIT_ACCESS_TOKEN=
+# GIT_PASSWORD=
+# GITHUB_TOKEN=
 EOF
 fi
 
@@ -1685,6 +1763,7 @@ NAGIENT_UPDATE_BASE_URL=${NAGIENT_UPDATE_BASE_URL}
 NAGIENT_CONTAINER_NAME=nagient
 NAGIENT_DOCKER_PROJECT_NAME=nagient
 NAGIENT_SAFE_MODE=true
+NAGIENT_WORKSPACE_ROOT=/workspace
 EOF
 
 log_step "Pulling Docker image ${image}"

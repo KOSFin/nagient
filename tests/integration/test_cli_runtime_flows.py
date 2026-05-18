@@ -304,6 +304,7 @@ class CliRuntimeFlowsTests(unittest.TestCase):
                 "NAGIENT_CONFIG": str(root / "config.toml"),
                 "NAGIENT_SECRETS_FILE": str(root / "secrets.env"),
                 "NAGIENT_TOOL_SECRETS_FILE": str(root / "tool-secrets.env"),
+                "NAGIENT_PROMPTS_DIR": str(root / "prompts"),
                 "NAGIENT_PLUGINS_DIR": str(root / "plugins"),
                 "NAGIENT_TOOLS_DIR": str(root / "tools"),
                 "NAGIENT_PROVIDERS_DIR": str(root / "providers"),
@@ -408,7 +409,7 @@ class CliRuntimeFlowsTests(unittest.TestCase):
             )
             self.assertIn("Nagient Setup", setup_process.stdout)
             config_text = (home_dir / "config.toml").read_text(encoding="utf-8")
-            self.assertIn(f'root = "{(home_dir / "project").resolve()}"', config_text)
+            self.assertIn('root = "@home/project"', config_text)
 
     def test_auth_login_status_and_provider_models_flow(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -622,7 +623,10 @@ class CliRuntimeFlowsTests(unittest.TestCase):
                 check=True,
             )
             workspace_payload = json.loads(workspace_process.stdout)
-            self.assertEqual(workspace_payload["workspace"]["root"], "/tmp/project")
+            self.assertEqual(
+                workspace_payload["workspace"]["root"],
+                str(Path("/tmp/project").resolve()),
+            )
             self.assertEqual(workspace_payload["workspace"]["mode"], "unsafe")
 
             agent_process = subprocess.run(
@@ -671,7 +675,7 @@ class CliRuntimeFlowsTests(unittest.TestCase):
             self.assertIn("listen_port = 9090", config_text)
             self.assertIn('path = "/hook"', config_text)
             self.assertIn("[workspace]", config_text)
-            self.assertIn('root = "/tmp/project"', config_text)
+            self.assertIn(f'root = "{Path("/tmp/project").resolve()}"', config_text)
             self.assertIn('system_prompt_file = "', config_text)
             self.assertIn("max_turns = 6", config_text)
             self.assertIn("[agent.memory]", config_text)

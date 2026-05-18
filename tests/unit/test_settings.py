@@ -32,6 +32,9 @@ class SettingsTests(unittest.TestCase):
                         'plugins_dir = "./custom-plugins"',
                         'providers_dir = "./custom-providers"',
                         'credentials_dir = "./custom-credentials"',
+                        'state_dir = "./custom-state"',
+                        'log_dir = "./custom-logs"',
+                        'releases_dir = "./custom-releases"',
                         "",
                     ]
                 ),
@@ -58,6 +61,48 @@ class SettingsTests(unittest.TestCase):
                 settings.credentials_dir,
                 (home_dir / "custom-credentials").resolve(),
             )
+            self.assertEqual(settings.state_dir, (home_dir / "custom-state").resolve())
+            self.assertEqual(settings.log_dir, (home_dir / "custom-logs").resolve())
+            self.assertEqual(settings.releases_dir, (home_dir / "custom-releases").resolve())
+
+    def test_settings_resolve_path_aliases_from_toml(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir)
+            config_file = home_dir / "config.toml"
+            config_file.write_text(
+                "\n".join(
+                    [
+                        "[paths]",
+                        'secrets_file = "@secrets"',
+                        'tool_secrets_file = "@tool_secrets"',
+                        'prompts_dir = "@prompts"',
+                        'plugins_dir = "@plugins/custom"',
+                        'state_dir = "@state"',
+                        'log_dir = "@logs"',
+                        'releases_dir = "@releases"',
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            settings = Settings.from_env(
+                {
+                    "NAGIENT_HOME": str(home_dir),
+                    "NAGIENT_CONFIG": str(config_file),
+                }
+            )
+
+            self.assertEqual(settings.secrets_file, (home_dir / "secrets.env").resolve())
+            self.assertEqual(
+                settings.tool_secrets_file,
+                (home_dir / "tool-secrets.env").resolve(),
+            )
+            self.assertEqual(settings.prompts_dir, (home_dir / "prompts").resolve())
+            self.assertEqual(settings.plugins_dir, (home_dir / "plugins" / "custom").resolve())
+            self.assertEqual(settings.state_dir, (home_dir / "state").resolve())
+            self.assertEqual(settings.log_dir, (home_dir / "logs").resolve())
+            self.assertEqual(settings.releases_dir, (home_dir / "releases").resolve())
 
     def test_environment_overrides_file_values(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

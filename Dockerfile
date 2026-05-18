@@ -5,7 +5,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     NAGIENT_HOME=/opt/nagient \
     NAGIENT_CONFIG=/opt/nagient/config.toml \
     NAGIENT_SECRETS_FILE=/opt/nagient/secrets.env \
+    NAGIENT_TOOL_SECRETS_FILE=/opt/nagient/tool-secrets.env \
+    NAGIENT_PROMPTS_DIR=/opt/nagient/prompts \
     NAGIENT_PLUGINS_DIR=/opt/nagient/plugins \
+    NAGIENT_TOOLS_DIR=/opt/nagient/tools \
     NAGIENT_PROVIDERS_DIR=/opt/nagient/providers \
     NAGIENT_CREDENTIALS_DIR=/opt/nagient/credentials \
     NAGIENT_STATE_DIR=/opt/nagient/state \
@@ -34,7 +37,7 @@ RUN apt-get update \
     && python -m pip install --no-cache-dir .
 
 RUN chmod +x /usr/local/bin/nagient-entrypoint \
-    && mkdir -p /opt/nagient/plugins /opt/nagient/providers /opt/nagient/credentials /opt/nagient/state /opt/nagient/logs /opt/nagient/releases
+    && mkdir -p /opt/nagient/prompts /opt/nagient/plugins /opt/nagient/tools /opt/nagient/providers /opt/nagient/credentials /opt/nagient/state /opt/nagient/logs /opt/nagient/releases
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD python -m nagient doctor --format json || exit 1

@@ -42,6 +42,7 @@ class ProviderPluginManifest:
     credential_fields: list[str] = field(default_factory=list)
     config_fields: list[ConfigFieldSpec] = field(default_factory=list)
     config_schema_file: str | None = None
+    runtime: str = "python"
 
     @property
     def allowed_config(self) -> set[str]:
@@ -59,6 +60,7 @@ class LoadedProviderPlugin:
     manifest: ProviderPluginManifest
     implementation: BaseProviderPlugin
     source: str
+    runtime: str = "python"
 
 
 @dataclass(frozen=True)

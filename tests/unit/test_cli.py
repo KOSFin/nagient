@@ -397,11 +397,15 @@ class CliTests(unittest.TestCase):
         )
         self.assertEqual(
             cli._resolve_path_alias("@home/cache", cast(Any, settings)),
-            "/tmp/nagient/cache",
+            str(Path("/tmp/nagient/cache").resolve()),
         )
         self.assertEqual(
             cli._render_path_value("/tmp/nagient/plugins/custom", cast(Any, settings)),
             "@plugins/custom",
+        )
+        self.assertEqual(
+            cli._render_path_value("/tmp/nagient/config.toml", cast(Any, settings)),
+            "@config",
         )
 
     def test_prompt_for_model_selection(self) -> None:
@@ -671,6 +675,7 @@ class CliTests(unittest.TestCase):
                 config_file=Path("/tmp/nagient/config.toml"),
                 secrets_file=Path("/tmp/nagient/secrets.env"),
                 tool_secrets_file=Path("/tmp/nagient/tool-secrets.env"),
+                prompts_dir=Path("/tmp/nagient/prompts"),
                 plugins_dir=Path("/tmp/nagient/plugins"),
                 providers_dir=Path("/tmp/nagient/providers"),
                 tools_dir=Path("/tmp/nagient/tools"),
@@ -848,6 +853,12 @@ class CliTests(unittest.TestCase):
         exit_code, output = _run_main(["version"], container=container)
         self.assertEqual(exit_code, 0)
         self.assertIn(nagient_version, output)
+        container.configuration_service.initialize.assert_not_called()
+
+        exit_code, output = _run_main(["help"], container=container)
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Nagient control plane CLI", output)
+        container.configuration_service.initialize.assert_not_called()
 
         exit_code, output = _run_main(["init", "--format", "json"], container=container)
         self.assertEqual(exit_code, 0)
@@ -861,6 +872,15 @@ class CliTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertIn("Nagient Paths", output)
         self.assertIn("@config", output)
+
+        exit_code, output = _run_main(["plugins"], container=container)
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Nagient Plugins", output)
+        self.assertIn("builtin.console", output)
+
+        exit_code, output = _run_main(["plugins", "--format", "json"], container=container)
+        self.assertEqual(exit_code, 0)
+        self.assertIn('"categories"', output)
 
         exit_code, output = _run_main(["doctor", "--verbose"], container=container)
         self.assertEqual(exit_code, 0)
@@ -980,6 +1000,8 @@ class CliTests(unittest.TestCase):
                 "paths",
                 "--secrets-file",
                 "/tmp/secrets.env",
+                "--state-dir",
+                "@home/runtime-state",
                 "--format",
                 "json",
             ],
@@ -987,6 +1009,12 @@ class CliTests(unittest.TestCase):
         )
         self.assertEqual(exit_code, 0)
         self.assertIn('"component": "paths"', output)
+        container.configuration_service.configure_paths.assert_called_with(
+            {
+                "secrets_file": str(Path("/tmp/secrets.env").resolve()),
+                "state_dir": str(Path("/tmp/nagient/runtime-state").resolve()),
+            }
+        )
 
         exit_code, output = _run_main(
             ["transport", "list", "--format", "json"],

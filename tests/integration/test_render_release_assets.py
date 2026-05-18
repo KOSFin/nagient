@@ -216,12 +216,16 @@ class RenderReleaseAssetsTests(unittest.TestCase):
             self.assertIn("./state:/opt/nagient/state", compose_file)
             self.assertIn("./logs:/opt/nagient/logs", compose_file)
             self.assertIn("./releases:/opt/nagient/releases", compose_file)
+            self.assertIn("./prompts:/opt/nagient/prompts", compose_file)
             self.assertIn("./.codex-host:/root/.codex:ro", compose_file)
             self.assertIn("./config.toml:/opt/nagient/config.toml", compose_file)
             self.assertNotIn("./config.toml:/opt/nagient/config.toml:ro", compose_file)
             self.assertIn("./secrets.env:/opt/nagient/secrets.env", compose_file)
             self.assertNotIn("./secrets.env:/opt/nagient/secrets.env:ro", compose_file)
+            self.assertIn("NAGIENT_PROMPTS_DIR: /opt/nagient/prompts", compose_file)
+            self.assertIn("NAGIENT_WORKSPACE_ROOT: ${NAGIENT_WORKSPACE_ROOT:-/workspace}", compose_file)
             self.assertIn(BASE_URL, install_script)
+            self.assertIn("NAGIENT_WORKSPACE_ROOT=/workspace", install_script)
             self.assertNotIn("__NAGIENT_UPDATE_BASE_URL__", install_script)
             self.assertIn(DOCKER_IMAGE, compose_file)
             self.assertNotIn("__NAGIENT_DOCKER_IMAGE__", compose_file)
@@ -269,6 +273,10 @@ class RenderReleaseAssetsTests(unittest.TestCase):
                 f"NAGIENT_UPDATE_BASE_URL={BASE_URL}",
                 (runtime_root / ".env").read_text(encoding="utf-8"),
             )
+            self.assertIn(
+                "NAGIENT_WORKSPACE_ROOT=/workspace",
+                (runtime_root / ".env").read_text(encoding="utf-8"),
+            )
             self.assertTrue((runtime_root / "releases" / "current.json").exists())
 
     def test_rendered_release_updater_runs_with_mocked_dependencies(self) -> None:
@@ -311,6 +319,10 @@ class RenderReleaseAssetsTests(unittest.TestCase):
             self.assertIn("Nagient upgraded: 9.9.8 -> 9.9.9", process.stdout)
             self.assertIn(
                 f"NAGIENT_UPDATE_BASE_URL={BASE_URL}",
+                (runtime_root / ".env").read_text(encoding="utf-8"),
+            )
+            self.assertIn(
+                "NAGIENT_WORKSPACE_ROOT=/workspace",
                 (runtime_root / ".env").read_text(encoding="utf-8"),
             )
             self.assertIn(

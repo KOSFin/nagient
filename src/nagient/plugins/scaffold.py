@@ -61,6 +61,7 @@ def _render_plugin_manifest(plugin_id: str, namespace: str) -> str:
             'version = "0.1.0"',
             f'display_name = "{plugin_id}"',
             f'namespace = "{namespace}"',
+            'runtime = "python"',
             'entrypoint = "transport.py"',
             'instructions_file = "instructions.md"',
             'config_schema_file = "schema.json"',
@@ -140,6 +141,20 @@ def _render_instructions(plugin_id: str, namespace: str) -> str:
             (
                 "You do not have to implement a raw webhook bridge unless that matches the "
                 "transport you are targeting."
+            ),
+            (
+                "For any-language transports, set `runtime = \"process\"` in plugin.toml and "
+                "make the entrypoint read one JSON request from stdin and write one JSON object "
+                "to stdout."
+            ),
+            (
+                "The request always contains `protocol = nagient.process.v1`, a `method` such "
+                "as `send_message`, `poll_inbound_events`, or a custom binding name, plus the "
+                "same payload/config/secrets objects used by Python transports."
+            ),
+            (
+                "Return `{ \"status\": \"success\", \"output\": ... }`; return "
+                "`{ \"status\": \"error\", \"message\": \"...\" }` to fail the call."
             ),
             "",
             "Always normalize inbound payloads before passing them to the core agent runtime.",
@@ -285,6 +300,10 @@ def _render_readme(plugin_id: str) -> str:
             (
                 "Edit `plugin.toml` to describe the transport contract and "
                 "`transport.py` to implement it."
+            ),
+            (
+                "Use `runtime = \"process\"` when the implementation is a binary or script "
+                "written in another language; keep the same function names and JSON protocol."
             ),
             (
                 "Then configure the plugin in `config.toml` and run "

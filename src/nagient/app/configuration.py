@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from nagient.app.settings import Settings
+from nagient.app.settings import Settings, _resolve_path_reference
 
 
 @dataclass(frozen=True)
@@ -172,7 +172,7 @@ def load_runtime_configuration(
         ]
     providers = _parse_providers(raw_config)
     tools = _parse_tools(raw_config)
-    workspace = _parse_workspace(raw_config, env)
+    workspace = _parse_workspace(raw_config, env, settings)
     default_provider = _resolve_default_provider(raw_config, providers)
     require_provider = _parse_require_provider(raw_config)
     agent_config = _parse_agent_config(
@@ -239,7 +239,7 @@ def load_secrets(secrets_file: Path) -> dict[str, str]:
 
 
 def render_default_config(settings: Settings) -> str:
-    default_prompt_file = default_system_prompt_file(settings)
+    home_alias = "@home"
     return "\n".join(
         [
             "[updates]",
@@ -254,22 +254,25 @@ def render_default_config(settings: Settings) -> str:
             f'project_name = "{settings.docker_project_name}"',
             "",
             "[paths]",
-            f'secrets_file = "{settings.secrets_file}"',
-            f'tool_secrets_file = "{settings.tool_secrets_file}"',
-            f'prompts_dir = "{settings.prompts_dir}"',
-            f'plugins_dir = "{settings.plugins_dir}"',
-            f'tools_dir = "{settings.tools_dir}"',
-            f'providers_dir = "{settings.providers_dir}"',
-            f'credentials_dir = "{settings.credentials_dir}"',
+            'secrets_file = "@secrets"',
+            'tool_secrets_file = "@tool_secrets"',
+            'prompts_dir = "@prompts"',
+            'plugins_dir = "@plugins"',
+            'tools_dir = "@tools"',
+            'providers_dir = "@providers"',
+            'credentials_dir = "@credentials"',
+            'state_dir = "@state"',
+            'log_dir = "@logs"',
+            'releases_dir = "@releases"',
             "",
             "[workspace]",
-            'root = ""',
+            f'root = "{home_alias}/workspace"',
             'mode = "bounded"',
             "",
             "[agent]",
             'default_provider = ""',
             "require_provider = false",
-            f'system_prompt_file = "{default_prompt_file}"',
+            f'system_prompt_file = "@prompts/system.md"',
             "max_turns = 4",
             "",
             "[agent.memory]",
@@ -394,6 +397,8 @@ def render_default_config(settings: Settings) -> str:
             'plugin = "github.api"',
             "enabled = false",
             'token_secret = "GITHUB_TOKEN"',
+            'base_url = "https://api.github.com"',
+            "timeout_seconds = 15",
             "",
         ]
     ) + "\n"
@@ -465,9 +470,25 @@ def render_plugins_readme() -> str:
             "",
             "Each plugin lives in its own directory and must contain at least:",
             "- `plugin.toml`",
-            "- `transport.py`",
+            "- the entrypoint file named by `entrypoint`",
             "- `instructions.md`",
             "- `schema.json`",
+            "",
+            "Python transports export `build_plugin()` from the configured entrypoint.",
+            (
+                "Any-language transports can set `runtime = \"process\"` and expose a "
+                "program that reads one JSON request from stdin and writes one JSON object "
+                "to stdout."
+            ),
+            (
+                "The request always contains `protocol = nagient.process.v1`, `method`, "
+                "`transport_id`, `config`, `secrets`, and method-specific payload fields."
+            ),
+            (
+                "Default transport methods keep the same names across transports: "
+                "`send_message`, `send_notification`, `normalize_inbound_event`, "
+                "`poll_inbound_events`, `healthcheck`, `selftest`, `start`, and `stop`."
+            ),
             "",
             "Generate a new template with:",
             "",
@@ -486,8 +507,25 @@ def render_providers_readme() -> str:
             "",
             "Each provider lives in its own directory and must contain at least:",
             "- `provider.toml`",
-            "- `provider.py`",
+            "- the entrypoint file named by `entrypoint`",
             "- `schema.json`",
+            "",
+            "Python providers export `build_plugin()` from the configured entrypoint.",
+            (
+                "Any-language providers can set `runtime = \"process\"` and expose a "
+                "program that reads one JSON request from stdin and writes one JSON object "
+                "to stdout."
+            ),
+            (
+                "The request always contains `protocol = nagient.process.v1`, `method`, "
+                "`provider_id`, `config`, `secrets`, and the current credential object "
+                "when one exists."
+            ),
+            (
+                "Core provider methods are stable: `auth_status`, `begin_login`, "
+                "`complete_login`, `logout`, `list_models`, `generate_message`, and "
+                "`generate_assistant_response`."
+            ),
             "",
             "Generate a new template with:",
             "",
@@ -506,14 +544,43 @@ def render_tools_readme() -> str:
             "",
             "Each tool plugin lives in its own directory and must contain at least:",
             "- `tool.toml`",
-            "- `tool.py`",
+            "- the entrypoint file named by `entrypoint`",
             "- `schema.json`",
+            "",
+            "Python tools export `build_plugin()` from the configured entrypoint.",
+            (
+                "Any-language tools can set `runtime = \"process\"` and expose a program "
+                "that reads one JSON request from stdin and writes one JSON object to stdout."
+            ),
+            (
+                "The request always contains `protocol = nagient.process.v1`, `method`, "
+                "`tool_id`, `plugin_id`, `function_name`, `arguments`, `config`, and "
+                "workspace/session context."
+            ),
+            (
+                "Return `{ \"status\": \"success\", \"output\": { ... } }` for successful "
+                "tool calls or `{ \"status\": \"error\", \"message\": \"...\" }` for failures."
+            ),
             "",
             "Generate a new template with:",
             "",
             "```bash",
             "nagient tool scaffold --plugin-id your.tool.id",
             "```",
+            "",
+        ]
+    )
+
+
+def render_prompts_readme() -> str:
+    return "\n".join(
+        [
+            "# Nagient prompts",
+            "",
+            "This directory stores editable prompt files used by the agent runtime.",
+            "",
+            "The default config points `[agent].system_prompt_file` at `@prompts/system.md`.",
+            "Use `nagient setup agent --system-prompt-file @prompts/<file>.md` to switch it.",
             "",
         ]
     )
@@ -645,6 +712,7 @@ def _parse_tools(payload: dict[str, object]) -> list[ToolInstanceConfig]:
 def _parse_workspace(
     payload: dict[str, object],
     environ: dict[str, str],
+    settings: Settings,
 ) -> WorkspaceConfig:
     raw_workspace = payload.get("workspace")
     root_value = environ.get("NAGIENT_WORKSPACE_ROOT", "")
@@ -655,9 +723,16 @@ def _parse_workspace(
         if not mode_value and isinstance(raw_workspace.get("mode"), str):
             mode_value = str(raw_workspace["mode"])
 
-    resolved_root = Path(root_value).expanduser() if root_value.strip() else Path.cwd()
-    if not resolved_root.is_absolute():
-        resolved_root = (Path.cwd() / resolved_root).resolve()
+    resolved_root = (
+        _resolve_path_reference(
+            root_value,
+            home_dir=settings.home_dir,
+            config_file=settings.config_file,
+            fallback=Path.cwd(),
+        )
+        if root_value.strip()
+        else Path.cwd().resolve()
+    )
     mode = mode_value.strip().lower() or "bounded"
     if mode not in {"bounded", "unsafe"}:
         mode = "bounded"
@@ -721,7 +796,7 @@ def _parse_agent_config(
 
     system_prompt_file = _resolve_optional_path(
         agent.get("system_prompt_file"),
-        base_dir=settings.config_file.parent,
+        settings=settings,
         fallback=default_system_prompt_file(settings),
     )
     max_turns = _positive_int(agent.get("max_turns"), default=4)
@@ -770,6 +845,16 @@ def _default_tools() -> list[ToolInstanceConfig]:
         ToolInstanceConfig("transport_router", "transport.router", True, {}),
         ToolInstanceConfig("agent_memory", "agent.memory", True, {}),
         ToolInstanceConfig("system_jobs", "system.jobs", True, {}),
+        ToolInstanceConfig(
+            "github_api",
+            "github.api",
+            False,
+            {
+                "token_secret": "GITHUB_TOKEN",
+                "base_url": "https://api.github.com",
+                "timeout_seconds": 15,
+            },
+        ),
     ]
 
 
@@ -958,15 +1043,17 @@ def _normalize_log_level(value: object) -> str:
 def _resolve_optional_path(
     raw_value: object,
     *,
-    base_dir: Path,
+    settings: Settings,
     fallback: Path,
 ) -> Path:
     if not isinstance(raw_value, str) or not raw_value.strip():
         return fallback.resolve()
-    candidate = Path(raw_value).expanduser()
-    if not candidate.is_absolute():
-        candidate = (base_dir / candidate).resolve()
-    return candidate.resolve()
+    return _resolve_path_reference(
+        raw_value,
+        home_dir=settings.home_dir,
+        config_file=settings.config_file,
+        fallback=fallback,
+    )
 
 
 def default_system_prompt_file(settings: Settings) -> Path:

@@ -58,6 +58,7 @@ def _render_manifest(plugin_id: str) -> str:
             'version = "0.1.0"',
             f'display_name = "{plugin_id}"',
             'family = "custom"',
+            'runtime = "python"',
             'entrypoint = "provider.py"',
             'config_schema_file = "schema.json"',
             "",
@@ -373,6 +374,18 @@ def _render_readme(plugin_id: str) -> str:
                 "Then configure the provider profile in `config.toml` and run "
                 "`nagient preflight`, `nagient auth status`, or `nagient provider models`."
             ),
+            "",
+            "Python providers export `build_plugin()` from `provider.py`.",
+            "Any-language providers may set `runtime = \"process\"` in `provider.toml`",
+            "and use the Nagient JSON process protocol on stdin/stdout.",
+            "",
+            "Process requests contain `protocol = nagient.process.v1`, `method`, `provider_id`,",
+            "`config`, `secrets`, and optional `credential` fields. For chat turns, methods such",
+            "as `generate_message` and `generate_assistant_response` also receive prompt/catalog",
+            "payloads.",
+            "",
+            "Return `{ \"status\": \"success\", \"output\": ... }`; return",
+            "`{ \"status\": \"error\", \"message\": \"...\" }` to fail the call.",
             "",
         ]
     )

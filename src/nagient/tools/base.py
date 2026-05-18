@@ -19,6 +19,7 @@ class LoadedToolPlugin:
     manifest: ToolPluginManifest
     implementation: BaseToolPlugin
     source: str
+    runtime: str = "python"
 
 
 @dataclass(frozen=True)

@@ -17,11 +17,12 @@ from nagient.app.configuration import (
     render_default_system_prompt,
     render_default_tool_secrets,
     render_plugins_readme,
+    render_prompts_readme,
     render_providers_readme,
     render_tools_readme,
     write_raw_config,
 )
-from nagient.app.settings import Settings
+from nagient.app.settings import Settings, _render_path_reference
 from nagient.plugins.scaffold import ScaffoldResult, scaffold_transport_plugin
 from nagient.tools.scaffold import ScaffoldResult as ToolScaffoldResult
 from nagient.tools.scaffold import scaffold_tool_plugin
@@ -46,6 +47,7 @@ class ConfigurationService:
             self.settings.secrets_file: render_default_secrets(),
             self.settings.tool_secrets_file: render_default_tool_secrets(),
             default_system_prompt_file(self.settings): render_default_system_prompt(),
+            self.settings.prompts_dir / "README.md": render_prompts_readme(),
             self.settings.plugins_dir / "README.md": render_plugins_readme(),
             self.settings.tools_dir / "README.md": render_tools_readme(),
             self.settings.providers_dir / "README.md": render_providers_readme(),
@@ -68,6 +70,9 @@ class ConfigurationService:
             "tools_dir": str(self.settings.tools_dir),
             "providers_dir": str(self.settings.providers_dir),
             "credentials_dir": str(self.settings.credentials_dir),
+            "state_dir": str(self.settings.state_dir),
+            "log_dir": str(self.settings.log_dir),
+            "releases_dir": str(self.settings.releases_dir),
             "force": force,
             "written_files": written_files,
         }
@@ -300,7 +305,7 @@ class ConfigurationService:
         raw_config = read_raw_config(self.settings.config_file)
         workspace = _ensure_mapping(raw_config, "workspace")
         if root is not None:
-            workspace["root"] = root
+            workspace["root"] = self._render_path_value(root)
         if mode is not None:
             workspace["mode"] = mode
         write_raw_config(self.settings.config_file, raw_config)
@@ -347,6 +352,9 @@ class ConfigurationService:
             "tools_dir",
             "providers_dir",
             "credentials_dir",
+            "state_dir",
+            "log_dir",
+            "releases_dir",
         }
         self._validate_component_updates(
             kind="paths",
@@ -357,9 +365,18 @@ class ConfigurationService:
         raw_config = read_raw_config(self.settings.config_file)
         paths = _ensure_mapping(raw_config, "paths")
         for key, value in updates.items():
-            paths[key] = value
+            paths[key] = self._render_path_value(value)
         write_raw_config(self.settings.config_file, raw_config)
         return {"component": "paths", "paths": dict(paths)}
+
+    def _render_path_value(self, value: object) -> object:
+        if not isinstance(value, str) or not value.strip():
+            return value
+        return _render_path_reference(
+            value,
+            home_dir=self.settings.home_dir,
+            config_file=self.settings.config_file,
+        )
 
     def select_provider_model(
         self,

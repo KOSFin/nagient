@@ -55,6 +55,38 @@ class ConfigurationServiceTests(unittest.TestCase):
             config_text = settings.config_file.read_text(encoding="utf-8")
             self.assertIn('default_provider = "openai"', config_text)
 
+    def test_configure_paths_accepts_runtime_dirs_and_writes_aliases(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir) / ".nagient"
+            settings = Settings.from_env({"NAGIENT_HOME": str(home_dir)})
+            container = build_container(settings)
+            container.configuration_service.initialize(force=True)
+
+            payload = container.configuration_service.configure_paths(
+                {
+                    "state_dir": str(home_dir / "state"),
+                    "log_dir": str(home_dir / "logs"),
+                    "releases_dir": str(home_dir / "releases" / "stable"),
+                }
+            )
+
+            self.assertEqual(payload["paths"]["state_dir"], "@state")
+            self.assertEqual(payload["paths"]["log_dir"], "@logs")
+            self.assertEqual(payload["paths"]["releases_dir"], "@releases/stable")
+
+    def test_configure_workspace_writes_aliases(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir) / ".nagient"
+            settings = Settings.from_env({"NAGIENT_HOME": str(home_dir)})
+            container = build_container(settings)
+            container.configuration_service.initialize(force=True)
+
+            payload = container.configuration_service.configure_workspace(
+                root=str(home_dir / "workspace"),
+            )
+
+            self.assertEqual(payload["workspace"]["root"], "@home/workspace")
+
 
 if __name__ == "__main__":
     unittest.main()
