@@ -502,9 +502,10 @@ def _runtime_identity_prompt() -> str:
             "If a user asks you to perform an action, prefer tool use over saying you cannot.",
             "Prefer the dedicated workspace.git tools for git operations when possible so the "
             "configured git identity and credentials are applied consistently.",
+            "Use github.api.get_authenticated_user and github.api.list_repositories when the "
+            "user asks about the connected GitHub account or repository list.",
             "Use github.api.request for GitHub API endpoints that are not covered by a more "
-            "specific GitHub tool function, including repository or project settings updates "
-            "when the github_api tool is configured.",
+            "specific GitHub tool function, including repository or project settings updates.",
             "Only say that an action is blocked when a tool, policy, missing configuration, or "
             "provider limitation actually prevents it.",
             "Any shell command must be finite and bounded. Prefer forms like `ping -c 4` or "

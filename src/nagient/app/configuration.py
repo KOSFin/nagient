@@ -395,7 +395,7 @@ def render_default_config(settings: Settings) -> str:
             "",
             "[tools.github_api]",
             'plugin = "github.api"',
-            "enabled = false",
+            "enabled = true",
             'token_secret = "GITHUB_TOKEN"',
             'base_url = "https://api.github.com"',
             "timeout_seconds = 15",
@@ -848,7 +848,7 @@ def _default_tools() -> list[ToolInstanceConfig]:
         ToolInstanceConfig(
             "github_api",
             "github.api",
-            False,
+            True,
             {
                 "token_secret": "GITHUB_TOKEN",
                 "base_url": "https://api.github.com",

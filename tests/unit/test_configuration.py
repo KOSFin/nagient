@@ -19,6 +19,14 @@ class ConfigurationTests(unittest.TestCase):
             self.assertTrue(runtime_config.safe_mode)
             self.assertEqual(len(runtime_config.transports), 1)
             self.assertEqual(runtime_config.transports[0].plugin_id, "builtin.console")
+            self.assertTrue(
+                any(
+                    tool.tool_id == "github_api"
+                    and tool.plugin_id == "github.api"
+                    and tool.enabled
+                    for tool in runtime_config.tools
+                )
+            )
             self.assertEqual(runtime_config.secrets, {})
 
     def test_configuration_loads_transport_definitions_and_secret_keys(self) -> None:

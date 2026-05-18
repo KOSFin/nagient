@@ -136,10 +136,10 @@ GITHUB_TOKEN=
 
 ## 6. Встроенный GitHub tool
 
-Профиль `github_api` есть из коробки и выключен до настройки. Он умеет читать репозитории, получать issues, создавать issues, писать комментарии и выполнять общий `github.api.request`. Сохраните токен в `@tool_secrets` как `GITHUB_TOKEN`, затем включите tool:
+Профиль `github_api` есть из коробки и включен по умолчанию, чтобы агент видел GitHub-возможности в каталоге tools. Он умеет получать подключенного пользователя, список репозиториев, читать репозитории, получать issues, создавать issues, писать комментарии и выполнять общий `github.api.request`. Сохраните токен в `@tool_secrets` как `GITHUB_TOKEN`:
 
 ```bash
-~/.nagient/bin/nagient setup tool github_api --enable --set token_secret=GITHUB_TOKEN
+~/.nagient/bin/nagient setup tool github_api --set token_secret=GITHUB_TOKEN
 ```
 
 Используйте `github.api.request` для GitHub REST endpoints, для которых пока нет отдельного helper, например для обновления настроек репозитория:

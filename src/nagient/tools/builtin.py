@@ -1181,6 +1181,28 @@ class GitHubApiToolPlugin(BaseToolPlugin):
                     secret_bindings=["token_secret"],
                 ),
                 ToolFunctionManifest(
+                    function_name="github.api.get_authenticated_user",
+                    binding="get_authenticated_user",
+                    description=(
+                        "Fetch the authenticated GitHub user for the configured token."
+                    ),
+                    input_schema={"type": "object"},
+                    output_schema={"type": "object"},
+                    permissions=["github.read"],
+                    secret_bindings=["token_secret"],
+                ),
+                ToolFunctionManifest(
+                    function_name="github.api.list_repositories",
+                    binding="list_repositories",
+                    description=(
+                        "List repositories visible to the authenticated GitHub user."
+                    ),
+                    input_schema={"type": "object"},
+                    output_schema={"type": "object"},
+                    permissions=["github.read"],
+                    secret_bindings=["token_secret"],
+                ),
+                ToolFunctionManifest(
                     function_name="github.api.list_issues",
                     binding="list_issues",
                     description="List repository issues through the GitHub API.",
@@ -1334,6 +1356,72 @@ class GitHubApiToolPlugin(BaseToolPlugin):
             "description": payload.get("description"),
             "html_url": payload.get("html_url"),
         }
+
+    def get_authenticated_user(
+        self,
+        arguments: Mapping[str, object],
+        context: ToolExecutionContext,
+    ) -> dict[str, object]:
+        del arguments
+        if context.dry_run:
+            return {
+                "method": "GET",
+                "url": _github_endpoint(context, "/user"),
+                "dry_run": True,
+            }
+
+        payload = self._github_request(context, "GET", "/user")
+        if not isinstance(payload, dict):
+            raise ValueError("GitHub API returned an unexpected user payload.")
+        return {
+            "login": payload.get("login"),
+            "id": payload.get("id"),
+            "name": payload.get("name"),
+            "html_url": payload.get("html_url"),
+            "type": payload.get("type"),
+            "site_admin": payload.get("site_admin"),
+        }
+
+    def list_repositories(
+        self,
+        arguments: Mapping[str, object],
+        context: ToolExecutionContext,
+    ) -> dict[str, object]:
+        query = _github_query(
+            {
+                "visibility": _github_optional_string(arguments.get("visibility")),
+                "affiliation": _github_optional_string(arguments.get("affiliation")),
+                "type": _github_optional_string(arguments.get("type")),
+                "sort": _github_optional_string(arguments.get("sort")),
+                "direction": _github_optional_string(arguments.get("direction")),
+                "per_page": arguments.get("per_page", 30),
+                "page": arguments.get("page"),
+            }
+        )
+        if context.dry_run:
+            return {
+                "method": "GET",
+                "url": _github_endpoint(context, "/user/repos", query),
+                "dry_run": True,
+            }
+
+        payload = self._github_request(context, "GET", "/user/repos", query=query)
+        if not isinstance(payload, list):
+            raise ValueError("GitHub API returned an unexpected repositories payload.")
+        repositories = [
+            {
+                "full_name": item.get("full_name"),
+                "private": item.get("private"),
+                "default_branch": item.get("default_branch"),
+                "description": item.get("description"),
+                "html_url": item.get("html_url"),
+                "archived": item.get("archived"),
+                "fork": item.get("fork"),
+            }
+            for item in payload
+            if isinstance(item, dict)
+        ]
+        return {"repositories": repositories}
 
     def list_issues(
         self,

@@ -138,6 +138,38 @@ class AgentRuntimeServiceTests(unittest.TestCase):
             self.assertIn("route outbound messages", system_prompt)
             self.assertIn("Any shell command must be finite and bounded", system_prompt)
 
+    def test_runtime_tool_catalog_includes_workspace_git_and_github_api_by_default(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir) / "home"
+            settings = Settings.from_env({"NAGIENT_HOME": str(home_dir)})
+            container = build_container(settings)
+            container.configuration_service.initialize(force=True)
+            runtime_config = load_runtime_configuration(settings)
+
+            catalog = container.agent_runtime_service._tool_catalog(  # noqa: SLF001
+                runtime_config
+            )
+            functions = {
+                str(item["function_name"]): item
+                for item in catalog
+                if isinstance(item.get("function_name"), str)
+            }
+
+            self.assertEqual(
+                functions["workspace.git.status"]["tool_id"],
+                "workspace_git",
+            )
+            self.assertEqual(
+                functions["github.api.get_authenticated_user"]["tool_id"],
+                "github_api",
+            )
+            self.assertEqual(
+                functions["github.api.list_repositories"]["tool_id"],
+                "github_api",
+            )
+
     def test_runtime_handles_edited_messages_and_dispatches_notifications(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             home_dir = Path(temp_dir) / "home"

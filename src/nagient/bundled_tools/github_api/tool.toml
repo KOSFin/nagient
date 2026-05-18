@@ -40,6 +40,24 @@ input_schema = { type = "object" }
 output_schema = { type = "object" }
 
 [[functions]]
+name = "github.api.get_authenticated_user"
+binding = "get_authenticated_user"
+description = "Fetch the authenticated GitHub user for the configured token."
+permissions = ["github.read"]
+secret_bindings = ["token_secret"]
+input_schema = { type = "object" }
+output_schema = { type = "object" }
+
+[[functions]]
+name = "github.api.list_repositories"
+binding = "list_repositories"
+description = "List repositories visible to the authenticated GitHub user."
+permissions = ["github.read"]
+secret_bindings = ["token_secret"]
+input_schema = { type = "object" }
+output_schema = { type = "object" }
+
+[[functions]]
 name = "github.api.list_issues"
 binding = "list_issues"
 description = "List repository issues through the GitHub API."

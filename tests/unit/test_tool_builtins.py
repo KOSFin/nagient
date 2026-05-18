@@ -117,6 +117,20 @@ class ToolBuiltinsTests(unittest.TestCase):
 
     def test_github_api_tool_uses_structured_requests(self) -> None:
         seen: dict[str, object] = {}
+        responses = [
+            (
+                b'{"number": 7, "title": "Bug", "state": "open", '
+                b'"html_url": "https://github.test/acme/repo/issues/7"}'
+            ),
+            (
+                b'{"login": "octo", "id": 42, "name": "Octo", '
+                b'"html_url": "https://github.test/octo", "type": "User"}'
+            ),
+            (
+                b'[{"full_name": "octo/repo", "private": false, '
+                b'"default_branch": "main", "html_url": "https://github.test/octo/repo"}]'
+            ),
+        ]
 
         class _Response:
             def __enter__(self) -> object:
@@ -126,10 +140,7 @@ class ToolBuiltinsTests(unittest.TestCase):
                 return None
 
             def read(self) -> bytes:
-                return (
-                    b'{"number": 7, "title": "Bug", "state": "open", '
-                    b'"html_url": "https://github.test/acme/repo/issues/7"}'
-                )
+                return responses.pop(0)
 
         def _opener(request: object, timeout: float = 15.0) -> _Response:
             seen["url"] = request.full_url
@@ -163,6 +174,18 @@ class ToolBuiltinsTests(unittest.TestCase):
         self.assertEqual(seen["url"], "https://github.test/api/v3/repos/acme/repo/issues")
         self.assertEqual(seen["timeout"], 3.0)
         self.assertIn(b'"title": "Bug"', seen["data"])
+
+        user = plugin.get_authenticated_user({}, context)
+        self.assertEqual(user["login"], "octo")
+        self.assertEqual(seen["method"], "GET")
+        self.assertEqual(seen["url"], "https://github.test/api/v3/user")
+
+        repositories = plugin.list_repositories({"per_page": 1}, context)
+        self.assertEqual(repositories["repositories"][0]["full_name"], "octo/repo")
+        self.assertEqual(
+            seen["url"],
+            "https://github.test/api/v3/user/repos?per_page=1",
+        )
 
         dry_run = plugin.add_issue_comment(
             {

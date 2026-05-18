@@ -136,10 +136,10 @@ GITHUB_TOKEN=
 
 ## 6. Built-in GitHub tool
 
-The `github_api` tool profile is present out of the box and disabled until configured. It supports repository lookup, issue listing, issue creation, comments, and a generic `github.api.request` function. Store the token in `@tool_secrets` as `GITHUB_TOKEN`, then enable it with:
+The `github_api` tool profile is present and enabled out of the box so the agent can see the GitHub capability in its tool catalog. It supports authenticated user lookup, repository listing, repository lookup, issue listing, issue creation, comments, and a generic `github.api.request` function. Store the token in `@tool_secrets` as `GITHUB_TOKEN`:
 
 ```bash
-~/.nagient/bin/nagient setup tool github_api --enable --set token_secret=GITHUB_TOKEN
+~/.nagient/bin/nagient setup tool github_api --set token_secret=GITHUB_TOKEN
 ```
 
 Use `github.api.request` for GitHub REST endpoints that do not have a dedicated helper yet, for example repository settings updates:
