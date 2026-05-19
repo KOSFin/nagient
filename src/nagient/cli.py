@@ -3154,11 +3154,29 @@ def _maybe_capture_secret_value(
         return
 
     colors = _supports_color()
+    secret_file = (
+        container.settings.secrets_file
+        if scope == "core"
+        else container.settings.tool_secrets_file
+    )
     value = secret_value
     if value is None:
-        value = _read_secret_input(
-            f"Secret value for {secret_name} (leave empty to skip for now): "
-        )
+        secret_exists = secret_broker.has_secret(secret_name, scope_hint=scope)
+        if secret_exists:
+            print(
+                _paint(
+                    (
+                        f"Secret {secret_name} is already stored in {secret_file}. "
+                        "Press Enter to keep it, or paste a new value to overwrite."
+                    ),
+                    "2",
+                    colors=colors,
+                )
+            )
+            prompt = f"Secret value for {secret_name}: "
+        else:
+            prompt = f"Secret value for {secret_name} (leave empty to skip for now): "
+        value = _read_secret_input(prompt)
         if value is None:
             return
 
@@ -3181,6 +3199,14 @@ def _maybe_capture_secret_value(
             _paint(
                 f"Stored secret {secret_name} in {secret_file}.",
                 "32",
+                colors=colors,
+            )
+        )
+    elif secret_broker.has_secret(secret_name, scope_hint=scope):
+        print(
+            _paint(
+                f"Kept existing secret {secret_name} in {secret_file}.",
+                "2",
                 colors=colors,
             )
         )

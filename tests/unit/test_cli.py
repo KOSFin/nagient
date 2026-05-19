@@ -439,6 +439,7 @@ class CliTests(unittest.TestCase):
     def test_run_generic_field_editor_stores_secret_values_for_secret_fields(self) -> None:
         container = SimpleNamespace(
             secret_broker=SimpleNamespace(
+                has_secret=Mock(return_value=False),
                 store_secret=Mock(),
                 bind_secret=Mock(),
             ),
@@ -481,6 +482,7 @@ class CliTests(unittest.TestCase):
     def test_run_generic_field_editor_accepts_raw_secret_value_for_secret_fields(self) -> None:
         container = SimpleNamespace(
             secret_broker=SimpleNamespace(
+                has_secret=Mock(return_value=False),
                 store_secret=Mock(),
                 bind_secret=Mock(),
             ),
@@ -524,6 +526,7 @@ class CliTests(unittest.TestCase):
     def test_run_generic_field_editor_treats_github_pat_as_raw_secret_value(self) -> None:
         container = SimpleNamespace(
             secret_broker=SimpleNamespace(
+                has_secret=Mock(return_value=False),
                 store_secret=Mock(),
                 bind_secret=Mock(),
             ),
@@ -565,6 +568,40 @@ class CliTests(unittest.TestCase):
             scope_hint="tool",
         )
         self.assertIn("Detected a raw secret value", stdout.getvalue())
+
+    def test_maybe_capture_secret_value_reuses_existing_secret_without_prompting(self) -> None:
+        container = SimpleNamespace(
+            secret_broker=SimpleNamespace(
+                has_secret=Mock(return_value=True),
+                store_secret=Mock(),
+                bind_secret=Mock(),
+            ),
+            settings=SimpleNamespace(
+                secrets_file=Path("/tmp/nagient/secrets.env"),
+                tool_secrets_file=Path("/tmp/nagient/tool-secrets.env"),
+            ),
+        )
+
+        with patch("nagient.cli._read_secret_input", return_value=""):
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                cli._maybe_capture_secret_value(
+                    container,
+                    secret_name="GIT_CLASSIC_TOKEN",
+                    scope="tool",
+                    target_kind="tool",
+                    target_id="workspace_git",
+                )
+
+        container.secret_broker.store_secret.assert_not_called()
+        container.secret_broker.bind_secret.assert_called_once_with(
+            "GIT_CLASSIC_TOKEN",
+            target_kind="tool",
+            target_id="workspace_git",
+            scope_hint="tool",
+        )
+        self.assertIn("already stored in", stdout.getvalue())
+        self.assertIn("Press Enter to keep it", stdout.getvalue())
 
     def test_interactive_chat_session_exits_cleanly(self) -> None:
         container = SimpleNamespace(
