@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import UTC, datetime
 
+from nagient.app.configuration import read_raw_config, write_raw_config
 from nagient.application.services.scheduler_service import SchedulerService, run_at_after
 from nagient.application.services.session_memory_service import SessionMemoryService
 from nagient.application.services.transport_router_service import TransportRouterService
@@ -364,6 +365,63 @@ class SystemJobsToolPlugin(BaseToolPlugin):
                 side_effect="system",
             ),
             ToolFunctionManifest(
+                function_name="system.jobs.schedule_message",
+                binding="schedule_message",
+                description=(
+                    "Schedule a direct outbound message without waking the model again."
+                ),
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "run_at": {"type": "string"},
+                        "delay_seconds": {"type": "integer", "minimum": 1},
+                        "text": {"type": "string"},
+                        "name": {"type": "string"},
+                        "notes": {"type": "string"},
+                        "session_id": {"type": "string"},
+                        "transport_id": {"type": "string"},
+                        "reply_target": {"type": "object"},
+                    },
+                    "required": ["text"],
+                    "additionalProperties": False,
+                },
+                output_schema={"type": "object"},
+                permissions=["jobs.write", "transport.send"],
+                side_effect="system",
+                approval_policy="required",
+            ),
+            ToolFunctionManifest(
+                function_name="system.jobs.schedule_tool",
+                binding="schedule_tool",
+                description=(
+                    "Schedule an exact tool invocation without waking the model again."
+                ),
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "run_at": {"type": "string"},
+                        "delay_seconds": {"type": "integer", "minimum": 1},
+                        "tool_id": {"type": "string"},
+                        "function_name": {"type": "string"},
+                        "arguments": {"type": "object"},
+                        "dry_run": {"type": "boolean"},
+                        "name": {"type": "string"},
+                        "notes": {"type": "string"},
+                        "session_id": {"type": "string"},
+                        "transport_id": {"type": "string"},
+                        "reply_target": {"type": "object"},
+                        "success_message": {"type": "string"},
+                        "error_message": {"type": "string"},
+                    },
+                    "required": ["function_name"],
+                    "additionalProperties": False,
+                },
+                output_schema={"type": "object"},
+                permissions=["jobs.write", "tool.invoke"],
+                side_effect="system",
+                approval_policy="required",
+            ),
+            ToolFunctionManifest(
                 function_name="system.jobs.schedule_interval",
                 binding="schedule_interval",
                 description="Schedule a recurring self-wake message for the agent runtime.",
@@ -428,6 +486,54 @@ class SystemJobsToolPlugin(BaseToolPlugin):
             context.workspace,
             run_at=run_at,
             payload=_wake_payload(arguments, context, message),
+            name=name,
+            notes=str(arguments.get("notes")) if "notes" in arguments else None,
+        )
+        return job.to_dict()
+
+    def schedule_message(
+        self,
+        arguments: Mapping[str, object],
+        context: ToolExecutionContext,
+    ) -> dict[str, object]:
+        scheduler = _require_scheduler_service(context)
+        run_at = _run_at_argument(arguments)
+        text = _require_string(arguments, "text")
+        name = str(arguments.get("name", "scheduled message")).strip() or "scheduled message"
+        job = scheduler.schedule_once(
+            context.workspace,
+            run_at=run_at,
+            payload=_scheduled_message_payload(arguments, context, text),
+            name=name,
+            notes=str(arguments.get("notes")) if "notes" in arguments else None,
+        )
+        return job.to_dict()
+
+    def schedule_tool(
+        self,
+        arguments: Mapping[str, object],
+        context: ToolExecutionContext,
+    ) -> dict[str, object]:
+        scheduler = _require_scheduler_service(context)
+        run_at = _run_at_argument(arguments)
+        function_name = _require_string(arguments, "function_name")
+        tool_id = str(arguments.get("tool_id", "")).strip()
+        tool_arguments = arguments.get("arguments", {})
+        if not isinstance(tool_arguments, dict):
+            raise ValueError("system.jobs.schedule_tool arguments must be an object.")
+        name = str(arguments.get("name", f"scheduled {function_name}")).strip()
+        if not name:
+            name = f"scheduled {function_name}"
+        job = scheduler.schedule_once(
+            context.workspace,
+            run_at=run_at,
+            payload=_scheduled_tool_payload(
+                arguments,
+                context,
+                tool_id=tool_id,
+                function_name=function_name,
+                tool_arguments={str(key): value for key, value in tool_arguments.items()},
+            ),
             name=name,
             notes=str(arguments.get("notes")) if "notes" in arguments else None,
         )
@@ -502,6 +608,63 @@ def _wake_payload(
     }
 
 
+def _scheduled_message_payload(
+    arguments: Mapping[str, object],
+    context: ToolExecutionContext,
+    text: str,
+) -> dict[str, object]:
+    session_id = str(arguments.get("session_id", context.session_id or "system")).strip()
+    transport_id = str(
+        arguments.get("transport_id", context.transport_id or "console")
+    ).strip()
+    payload: dict[str, object] = {
+        "action_type": "transport.send_message",
+        "session_id": session_id,
+        "transport_id": transport_id,
+        "text": text,
+    }
+    reply_target = arguments.get("reply_target")
+    if isinstance(reply_target, dict):
+        payload["reply_target"] = {str(key): value for key, value in reply_target.items()}
+    return payload
+
+
+def _scheduled_tool_payload(
+    arguments: Mapping[str, object],
+    context: ToolExecutionContext,
+    *,
+    tool_id: str,
+    function_name: str,
+    tool_arguments: dict[str, object],
+) -> dict[str, object]:
+    session_id = str(arguments.get("session_id", context.session_id or "system")).strip()
+    transport_id = str(
+        arguments.get("transport_id", context.transport_id or "console")
+    ).strip()
+    payload: dict[str, object] = {
+        "action_type": "tool.invoke",
+        "session_id": session_id,
+        "transport_id": transport_id,
+        "tool_request": {
+            "tool_id": tool_id,
+            "function_name": function_name,
+            "arguments": tool_arguments,
+            "dry_run": bool(arguments.get("dry_run", False)),
+            "session_id": session_id,
+            "transport_id": transport_id,
+            "auto_approve": True,
+        },
+    }
+    reply_target = arguments.get("reply_target")
+    if isinstance(reply_target, dict):
+        payload["reply_target"] = {str(key): value for key, value in reply_target.items()}
+    for key in ("success_message", "error_message"):
+        value = arguments.get(key)
+        if isinstance(value, str) and value.strip():
+            payload[key] = value.strip()
+    return payload
+
+
 def _run_at_argument(arguments: Mapping[str, object]) -> str:
     delay_seconds = arguments.get("delay_seconds")
     if isinstance(delay_seconds, bool):
@@ -557,6 +720,102 @@ def _require_mapping(arguments: Mapping[str, object], key: str) -> dict[str, obj
     if not isinstance(value, dict):
         raise ValueError(f"Argument {key!r} must be an object.")
     return {str(item_key): item_value for item_key, item_value in value.items()}
+
+
+class SystemConfigToolPlugin(BaseToolPlugin):
+    manifest = ToolPluginManifest(
+        plugin_id="system.config",
+        display_name="System Config",
+        version=__version__,
+        namespace="system.config",
+        entrypoint="<builtin>",
+        capabilities=["config"],
+        functions=[
+            ToolFunctionManifest(
+                function_name="system.config.read",
+                binding="read_config",
+                description="Read the runtime config file as structured TOML data.",
+                input_schema={
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": False,
+                },
+                output_schema={"type": "object"},
+                permissions=["config.read"],
+            ),
+            ToolFunctionManifest(
+                function_name="system.config.patch",
+                binding="patch_config",
+                description="Patch one runtime config path after approval.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                        "value": {},
+                    },
+                    "required": ["path", "value"],
+                    "additionalProperties": False,
+                },
+                output_schema={"type": "object"},
+                permissions=["config.write"],
+                side_effect="system",
+                approval_policy="required",
+                dry_run_supported=True,
+            ),
+        ],
+    )
+
+    def read_config(
+        self,
+        arguments: Mapping[str, object],
+        context: ToolExecutionContext,
+    ) -> dict[str, object]:
+        del arguments
+        return {
+            "config_file": str(context.settings.config_file),
+            "config": read_raw_config(context.settings.config_file),
+        }
+
+    def patch_config(
+        self,
+        arguments: Mapping[str, object],
+        context: ToolExecutionContext,
+    ) -> dict[str, object]:
+        dotted_path = _require_string(arguments, "path")
+        value = arguments.get("value")
+        if context.dry_run:
+            return {
+                "config_file": str(context.settings.config_file),
+                "path": dotted_path,
+                "value": value,
+                "dry_run": True,
+            }
+        payload = read_raw_config(context.settings.config_file)
+        _patch_nested_config_value(payload, dotted_path, value)
+        write_raw_config(context.settings.config_file, payload)
+        return {
+            "config_file": str(context.settings.config_file),
+            "path": dotted_path,
+            "updated": True,
+        }
+
+
+def _patch_nested_config_value(
+    payload: dict[str, object],
+    dotted_path: str,
+    value: object,
+) -> None:
+    parts = [part.strip() for part in dotted_path.split(".") if part.strip()]
+    if not parts:
+        raise ValueError("system.config.patch path must not be empty.")
+    current = payload
+    for part in parts[:-1]:
+        nested = current.get(part)
+        if not isinstance(nested, dict):
+            nested = {}
+            current[part] = nested
+        current = nested
+    current[parts[-1]] = value
 
 
 def _optional_int(arguments: Mapping[str, object], key: str, *, default: int) -> int:

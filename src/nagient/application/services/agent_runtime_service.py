@@ -15,7 +15,7 @@ from nagient.domain.entities.agent_runtime import (
     NotificationIntent,
 )
 from nagient.domain.entities.jobs import JobRecord
-from nagient.domain.entities.tooling import ToolExecutionResult
+from nagient.domain.entities.tooling import ToolExecutionRequest, ToolExecutionResult
 from nagient.infrastructure.logging import RuntimeLogger, append_runtime_log
 from nagient.tools.registry import ToolPluginRegistry
 from nagient.workspace.manager import WorkspaceManager
@@ -152,6 +152,13 @@ class AgentRuntimeService:
                         role="assistant",
                         content=last_message,
                         metadata={"turn_index": turn_index},
+                    )
+                    self._maybe_send_progress_message(
+                        runtime_config=runtime_config,
+                        transport_id=transport_id,
+                        event=event,
+                        message=last_message,
+                        assistant_response=assistant_response,
                     )
 
             turn_result = self.agent_turn_service.run_turn(
@@ -568,6 +575,10 @@ class AgentRuntimeService:
 
     def handle_scheduled_job(self, job: JobRecord) -> str | None:
         action_type = str(job.payload.get("action_type", "")).strip()
+        if action_type == "transport.send_message":
+            return self._handle_scheduled_message(job)
+        if action_type == "tool.invoke":
+            return self._handle_scheduled_tool(job)
         if action_type != "agent.wake":
             self.logger.warning(
                 "agent_runtime.skip_job",
@@ -594,6 +605,68 @@ class AgentRuntimeService:
             event,
         )
         if reply and self._maybe_send_scheduled_reply(
+            transport_id=transport_id,
+            reply_target=reply_target,
+            reply=reply,
+            job_id=job.job_id,
+        ):
+            return None
+        return reply
+
+    def _handle_scheduled_message(self, job: JobRecord) -> str | None:
+        transport_id = str(job.payload.get("transport_id", "console")).strip() or "console"
+        session_id = str(job.payload.get("session_id", "system")).strip() or "system"
+        text = str(job.payload.get("text", "")).strip()
+        if not text:
+            return None
+        reply_target = _scheduled_reply_target(job.payload, transport_id, session_id)
+        if self._maybe_send_scheduled_reply(
+            transport_id=transport_id,
+            reply_target=reply_target,
+            reply=text,
+            job_id=job.job_id,
+        ):
+            return None
+        return text
+
+    def _handle_scheduled_tool(self, job: JobRecord) -> str | None:
+        raw_request = job.payload.get("tool_request")
+        if not isinstance(raw_request, dict):
+            self.logger.warning(
+                "agent_runtime.scheduled_tool_invalid",
+                "Skipped scheduled tool job without a valid tool_request.",
+                job_id=job.job_id,
+            )
+            return None
+        tool_service = getattr(self.agent_turn_service, "tool_service", None)
+        if tool_service is None:
+            self.logger.warning(
+                "agent_runtime.scheduled_tool_unavailable",
+                "Skipped scheduled tool job because tool service is unavailable.",
+                job_id=job.job_id,
+            )
+            return None
+        transport_id = str(job.payload.get("transport_id", "console")).strip() or "console"
+        session_id = str(job.payload.get("session_id", "system")).strip() or "system"
+        request_payload = {str(key): value for key, value in raw_request.items()}
+        request_payload.setdefault("session_id", session_id)
+        request_payload.setdefault("transport_id", transport_id)
+        request_payload["auto_approve"] = True
+        result = tool_service.invoke(ToolExecutionRequest.from_dict(request_payload))
+        result_payload = result.to_dict()
+        append_runtime_log(
+            self.settings,
+            (
+                f"Scheduled tool job {job.job_id} executed "
+                f"{result.function_name} with status={result.status}."
+            ),
+            component="agent.runtime",
+        )
+        reply = _scheduled_tool_message(job.payload, result_payload)
+        if not reply:
+            return None
+        reply_target = _scheduled_reply_target(job.payload, transport_id, session_id)
+        if self._maybe_send_scheduled_reply(
             transport_id=transport_id,
             reply_target=reply_target,
             reply=reply,
@@ -772,6 +845,48 @@ class AgentRuntimeService:
                 transport_id=transport_id,
                 error=str(exc),
             )
+
+    def _maybe_send_progress_message(
+        self,
+        *,
+        runtime_config: RuntimeConfiguration,
+        transport_id: str,
+        event: dict[str, object],
+        message: str,
+        assistant_response: AssistantResponse,
+    ) -> bool:
+        if (
+            not runtime_config.agent.progress.enabled
+            or self.transport_router is None
+            or transport_id == "console"
+            or not assistant_response.tool_calls
+            or _should_defer_assistant_message(assistant_response)
+        ):
+            return False
+        reply_target = event.get("reply_target")
+        if not isinstance(reply_target, dict) or not reply_target:
+            return False
+        payload = {str(key): value for key, value in reply_target.items()}
+        payload["text"] = message
+        try:
+            self.transport_router.send_message(
+                transport_id=transport_id,
+                payload=payload,
+            )
+        except Exception as exc:
+            self.logger.debug(
+                "agent_runtime.progress_message_failed",
+                "Could not send progress message through transport.",
+                transport_id=transport_id,
+                error=str(exc),
+            )
+            return False
+        append_runtime_log(
+            self.settings,
+            f"Sent progress message through {transport_id}.",
+            component="agent.runtime",
+        )
+        return True
 
     def _finalize_provider_failure(
         self,
@@ -1132,6 +1247,21 @@ def _scheduled_reply_target(
     return {}
 
 
+def _scheduled_tool_message(
+    job_payload: dict[str, object],
+    result_payload: dict[str, object],
+) -> str:
+    status = str(result_payload.get("status", ""))
+    override_key = "success_message" if status == "success" else "error_message"
+    override = job_payload.get(override_key)
+    if isinstance(override, str) and override.strip():
+        return override.strip()
+    return _summarize_single_tool_result(
+        result_payload,
+        heading="Scheduled tool result",
+    )
+
+
 def _runtime_identity_prompt() -> str:
     return "\n".join(
         [
@@ -1148,6 +1278,9 @@ def _runtime_identity_prompt() -> str:
             "If a user asks you to perform an action, prefer tool use over saying you cannot.",
             "Prefer the dedicated workspace.git tools for git operations when possible so the "
             "configured git identity and credentials are applied consistently.",
+            "For repository commit/push workflows, use workspace.git.run with git subcommands "
+            "instead of GitHub REST requests unless the user specifically asks for a GitHub API "
+            "operation.",
             "Use github.api.get_authenticated_user and github.api.list_repositories when the "
             "user asks about the connected GitHub account or repository list.",
             "Use github.api.request for GitHub API endpoints that are not covered by a more "
@@ -1163,6 +1296,13 @@ def _runtime_identity_prompt() -> str:
             "Use `on_success_message` for a final user-facing message that can be sent after "
             "approval without another model call; use `on_error='resume_model'` when failures "
             "should be sent back to the model.",
+            "For delayed plain messages, use system.jobs.schedule_message so the runtime sends "
+            "the prepared text directly without waking the model again.",
+            "For delayed exact actions, use system.jobs.schedule_tool so the approval decision "
+            "happens when scheduling and the stored tool request runs directly when due.",
+            "Use agent.wake jobs only when the future task genuinely needs fresh model reasoning.",
+            "Use system.config.read to inspect runtime configuration and system.config.patch "
+            "to request approved config edits.",
             "When useful, explain briefly what you are doing before or after tool use.",
         ]
     )

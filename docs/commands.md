@@ -69,6 +69,7 @@ nagient <command> [subcommand] [options]
 - `nagient setup provider <provider_id> ...`
 - `nagient setup transport <transport_id> ...`
 - `nagient setup tool <tool_id> ...`
+- `nagient setup agent [--progress|--no-progress]`
 - `nagient setup workspace [--root <path-or-alias>] [--mode bounded|unsafe]`
 - `nagient setup paths [--secrets-file <path-or-alias>] [--tool-secrets-file <path-or-alias>] [--prompts-dir <path-or-alias>] [--plugins-dir <path-or-alias>] [--tools-dir <path-or-alias>] [--providers-dir <path-or-alias>] [--credentials-dir <path-or-alias>] [--state-dir <path-or-alias>] [--log-dir <path-or-alias>] [--releases-dir <path-or-alias>]`
 

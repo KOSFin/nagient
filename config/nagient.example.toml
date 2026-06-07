@@ -46,6 +46,9 @@ level = "info"
 json_logs = false
 log_events = true
 
+[agent.progress]
+enabled = false
+
 [transports.console]
 plugin = "builtin.console"
 enabled = true
@@ -150,6 +153,10 @@ enabled = true
 
 [tools.system_jobs]
 plugin = "system.jobs"
+enabled = true
+
+[tools.system_config]
+plugin = "system.config"
 enabled = true
 
 [tools.github_api]

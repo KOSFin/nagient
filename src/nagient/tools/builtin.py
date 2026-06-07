@@ -22,6 +22,7 @@ from nagient.domain.entities.system_state import CheckIssue
 from nagient.domain.entities.tooling import ToolFunctionManifest, ToolPluginManifest
 from nagient.tools.agent_builtin import (
     AgentMemoryToolPlugin,
+    SystemConfigToolPlugin,
     SystemJobsToolPlugin,
     TransportRouterToolPlugin,
 )
@@ -1618,6 +1619,7 @@ def builtin_tools() -> list[LoadedToolPlugin]:
         SystemBackupToolPlugin(),
         SystemReconcileToolPlugin(),
         SystemJobsToolPlugin(),
+        SystemConfigToolPlugin(),
     ]
     return [
         LoadedToolPlugin(

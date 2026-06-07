@@ -130,7 +130,10 @@ def _can_auto_approve_expected_action(
         "transport.router.send_notification",
         "transport.router.send_typing",
         "system.jobs.schedule_once",
+        "system.jobs.schedule_message",
+        "system.jobs.schedule_tool",
         "system.jobs.schedule_interval",
+        "system.config.patch",
     }:
         return True
 

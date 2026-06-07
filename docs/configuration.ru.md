@@ -84,6 +84,9 @@ default_provider = "openai"
 require_provider = true
 system_prompt_file = "@prompts/system.md"
 
+[agent.progress]
+enabled = false
+
 [providers.openai]
 plugin = "builtin.openai"
 enabled = true
@@ -111,6 +114,10 @@ author_name = "Nagient Agent"
 author_email = "agent@example.com"
 username = "git-user"
 token_secret = "GIT_ACCESS_TOKEN"
+
+[tools.system_config]
+plugin = "system.config"
+enabled = true
 ```
 
 ## 5. Секреты
@@ -152,6 +159,12 @@ nagient tool invoke github.api.request \
 ```
 
 `workspace_git` проверяет только настроенный `[workspace].root`. Если он возвращает `git_repository=false`, проверьте, что workspace root указывает на checkout, смонтированный в runtime: например `@home/workspace` для установленного Docker layout или путь к репозиторию при локальной разработке.
+
+`workspace_git` применяет `author_name`, `author_email`, `committer_*`, `username` и token/password secrets только к git-процессу, который запускает сам. Он не пишет глобальный git config на хосте. Token/password auth передается через временный askpass helper для HTTPS remotes; SSH remotes по-прежнему требуют обычный SSH key access.
+
+У отложенных задач есть два helper для прямых действий. Используйте `system.jobs.schedule_message` для готового исходящего текста и `system.jobs.schedule_tool` для точного сохраненного tool request; оба не будят модель заново, когда job наступает. `system.jobs.schedule_once` оставляйте для self-wake задач, где действительно нужно свежее рассуждение модели.
+
+`system_config` предоставляет `system.config.read` и требующий approval `system.config.patch`, чтобы агент мог смотреть свой runtime config и запрашивать явные изменения конфигурации.
 
 ## 7. Что проверить в первую очередь
 

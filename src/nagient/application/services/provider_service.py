@@ -863,6 +863,19 @@ def _build_structured_assistant_prompt(
                 "transport.router.send_message with just transport_id and payload.text unless "
                 "you need to override that default target explicitly."
             ),
+            (
+                "For delayed plain messages, prefer system.jobs.schedule_message. For delayed "
+                "exact tool actions, prefer system.jobs.schedule_tool. Use agent.wake only when "
+                "the future step needs fresh model reasoning."
+            ),
+            (
+                "For git commit/push workflows, prefer workspace.git.run. Use github.api.request "
+                "for GitHub REST operations such as repository metadata or settings endpoints."
+            ),
+            (
+                "Use system.config.read to inspect runtime configuration and system.config.patch "
+                "to request approved config edits."
+            ),
             f"Session id: {session_id}",
             f"Transport id: {transport_id}",
             "Prompt context JSON:",

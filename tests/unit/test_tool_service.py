@@ -98,6 +98,49 @@ class ToolServiceTests(unittest.TestCase):
             self.assertTrue(result.output["dry_run"])
             self.assertEqual(container.workflow_service.list_approvals(), [])
 
+    def test_system_config_patch_requires_or_uses_expected_approval_context(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir) / "home"
+            workspace_root = Path(temp_dir) / "workspace"
+            workspace_root.mkdir(parents=True, exist_ok=True)
+            settings = Settings.from_env({"NAGIENT_HOME": str(home_dir)})
+            container = build_container(settings)
+            container.configuration_service.initialize(force=True)
+            _set_workspace_root(settings.config_file, workspace_root)
+
+            blocked = container.tool_service.invoke(
+                ToolExecutionRequest(
+                    tool_id="system_config",
+                    function_name="system.config.patch",
+                    dry_run=True,
+                    arguments={
+                        "path": "agent.progress.enabled",
+                        "value": True,
+                    },
+                )
+            )
+
+            self.assertEqual(blocked.status, "approval_required")
+
+            approved = container.tool_service.invoke(
+                ToolExecutionRequest(
+                    tool_id="system_config",
+                    function_name="system.config.patch",
+                    dry_run=True,
+                    arguments={
+                        "path": "agent.progress.enabled",
+                        "value": True,
+                        "approval_context": {
+                            "expected_by_user": True,
+                            "reason": "User asked to enable progress broadcasts.",
+                        },
+                    },
+                )
+            )
+
+            self.assertEqual(approved.status, "success")
+            self.assertTrue(approved.output["dry_run"])
+
     def test_secure_interaction_submission_stores_tool_secret(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             home_dir = Path(temp_dir) / "home"

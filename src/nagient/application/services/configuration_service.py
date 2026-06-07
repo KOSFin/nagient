@@ -322,6 +322,7 @@ class ConfigurationService:
             "max_turns",
             "memory",
             "logging",
+            "progress",
         }
         self._validate_component_updates(
             kind="agent",
@@ -332,7 +333,7 @@ class ConfigurationService:
         raw_config = read_raw_config(self.settings.config_file)
         agent = _ensure_mapping(raw_config, "agent")
         for key, value in updates.items():
-            if key in {"memory", "logging"} and isinstance(value, dict):
+            if key in {"memory", "logging", "progress"} and isinstance(value, dict):
                 nested = agent.get(key)
                 if not isinstance(nested, dict):
                     nested = {}

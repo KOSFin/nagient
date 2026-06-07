@@ -206,11 +206,32 @@ class AgentRuntimeServiceTests(unittest.TestCase):
                 functions["github.api.list_repositories"]["tool_id"],
                 "github_api",
             )
+            self.assertEqual(
+                functions["system.config.read"]["tool_id"],
+                "system_config",
+            )
+            self.assertEqual(
+                functions["system.config.patch"]["tool_id"],
+                "system_config",
+            )
+            self.assertEqual(
+                functions["system.jobs.schedule_message"]["tool_id"],
+                "system_jobs",
+            )
+            self.assertEqual(
+                functions["system.jobs.schedule_tool"]["tool_id"],
+                "system_jobs",
+            )
             git_run_schema = functions["workspace.git.run"]["input_schema"]
             self.assertIsInstance(git_run_schema, dict)
             properties = git_run_schema.get("properties")
             self.assertIsInstance(properties, dict)
             self.assertIn("approval_context", properties)
+            config_patch_schema = functions["system.config.patch"]["input_schema"]
+            self.assertIsInstance(config_patch_schema, dict)
+            config_patch_properties = config_patch_schema.get("properties")
+            self.assertIsInstance(config_patch_properties, dict)
+            self.assertIn("approval_context", config_patch_properties)
 
     def test_runtime_handles_edited_messages_and_dispatches_notifications(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -704,6 +725,153 @@ class AgentRuntimeServiceTests(unittest.TestCase):
             self.assertEqual(router.messages[0][0], "telegram")
             self.assertEqual(router.messages[0][1]["chat_id"], "1522105862")
             self.assertEqual(router.messages[0][1]["text"], "Проверь VS Code.")
+
+    def test_scheduled_message_sends_without_waking_provider(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir) / "home"
+            workspace_root = Path(temp_dir) / "workspace"
+            workspace_root.mkdir(parents=True, exist_ok=True)
+            settings = Settings.from_env({"NAGIENT_HOME": str(home_dir)})
+            container = build_container(settings)
+            container.configuration_service.initialize(force=True)
+            _set_workspace_root(settings.config_file, workspace_root)
+
+            router = _RecordingTransportRouter()
+            container.agent_runtime_service.transport_router = router
+            provider_mock = Mock(side_effect=AssertionError("provider should not run"))
+            object.__setattr__(
+                container.provider_service,
+                "generate_assistant_response",
+                provider_mock,
+            )
+
+            reply = container.agent_runtime_service.handle_scheduled_job(
+                JobRecord(
+                    job_id="job_message",
+                    name="message",
+                    status="scheduled",
+                    trigger="once",
+                    created_at="2026-06-07T13:00:00Z",
+                    payload={
+                        "action_type": "transport.send_message",
+                        "session_id": "telegram:1522105862",
+                        "transport_id": "telegram",
+                        "text": "Пора проверить VS Code.",
+                    },
+                )
+            )
+
+            self.assertIsNone(reply)
+            provider_mock.assert_not_called()
+            self.assertEqual(router.messages[0][0], "telegram")
+            self.assertEqual(router.messages[0][1]["chat_id"], "1522105862")
+            self.assertEqual(router.messages[0][1]["text"], "Пора проверить VS Code.")
+
+    def test_scheduled_tool_executes_exact_request_without_waking_provider(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir) / "home"
+            workspace_root = Path(temp_dir) / "workspace"
+            workspace_root.mkdir(parents=True, exist_ok=True)
+            settings = Settings.from_env({"NAGIENT_HOME": str(home_dir)})
+            container = build_container(settings)
+            container.configuration_service.initialize(force=True)
+            _set_workspace_root(settings.config_file, workspace_root)
+
+            router = _RecordingTransportRouter()
+            container.agent_runtime_service.transport_router = router
+            provider_mock = Mock(side_effect=AssertionError("provider should not run"))
+            object.__setattr__(
+                container.provider_service,
+                "generate_assistant_response",
+                provider_mock,
+            )
+
+            reply = container.agent_runtime_service.handle_scheduled_job(
+                JobRecord(
+                    job_id="job_tool",
+                    name="write file",
+                    status="scheduled",
+                    trigger="once",
+                    created_at="2026-06-07T13:00:00Z",
+                    payload={
+                        "action_type": "tool.invoke",
+                        "session_id": "telegram:1522105862",
+                        "transport_id": "telegram",
+                        "success_message": "Файл записан.",
+                        "tool_request": {
+                            "tool_id": "workspace_fs",
+                            "function_name": "workspace.fs.write_text",
+                            "arguments": {
+                                "path": "scheduled.txt",
+                                "content": "done",
+                            },
+                        },
+                    },
+                )
+            )
+
+            self.assertIsNone(reply)
+            provider_mock.assert_not_called()
+            self.assertEqual((workspace_root / "scheduled.txt").read_text(), "done")
+            self.assertEqual(router.messages[0][1]["text"], "Файл записан.")
+
+    def test_progress_mode_sends_assistant_status_before_tool_execution(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir) / "home"
+            workspace_root = Path(temp_dir) / "workspace"
+            workspace_root.mkdir(parents=True, exist_ok=True)
+            settings = Settings.from_env({"NAGIENT_HOME": str(home_dir)})
+            container = build_container(settings)
+            container.configuration_service.initialize(force=True)
+            _set_workspace_root(settings.config_file, workspace_root)
+            container.configuration_service.configure_agent(
+                {"progress": {"enabled": True}}
+            )
+
+            router = _RecordingTransportRouter()
+            container.agent_runtime_service.transport_router = router
+            object.__setattr__(
+                container.provider_service,
+                "generate_assistant_response",
+                Mock(
+                    side_effect=[
+                        AssistantResponse(
+                            message="Начинаю: сейчас выполню команду.",
+                            tool_calls=[
+                                NormalizedToolCall(
+                                    call_id="call-1",
+                                    request=ToolExecutionRequest(
+                                        tool_id="workspace_shell",
+                                        function_name="workspace.shell.run",
+                                        arguments={
+                                            "command": "printf done",
+                                            "read_only": True,
+                                        },
+                                    ),
+                                )
+                            ],
+                        ),
+                        AssistantResponse(message="Готово."),
+                    ]
+                ),
+            )
+
+            reply = container.agent_runtime_service.handle_inbound_event(
+                "telegram",
+                {
+                    "event_type": "message",
+                    "session_id": "telegram:demo",
+                    "text": "выполни команду",
+                    "reply_target": {"chat_id": "1522105862"},
+                },
+            )
+
+            self.assertEqual(reply, "Готово.")
+            self.assertEqual(router.messages[0][0], "telegram")
+            self.assertEqual(
+                router.messages[0][1]["text"],
+                "Начинаю: сейчас выполню команду.",
+            )
 
     def test_runtime_returns_friendly_timeout_before_tool_execution(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -10,7 +10,11 @@ from nagient.app.container import build_container
 from nagient.app.settings import Settings
 from nagient.domain.entities.tooling import ToolExecutionRequest
 from nagient.tools.base import ToolExecutionContext
-from nagient.tools.builtin import GitHubApiToolPlugin, _plan_shell_command
+from nagient.tools.builtin import (
+    GitHubApiToolPlugin,
+    _plan_shell_command,
+    _workspace_git_env,
+)
 
 
 class ToolBuiltinsTests(unittest.TestCase):
@@ -114,6 +118,43 @@ class ToolBuiltinsTests(unittest.TestCase):
             self.assertEqual(result.status, "success")
             self.assertEqual(result.output["exit_code"], 0)
             self.assertIsInstance(result.output["stdout"], str)
+
+    def test_workspace_git_env_is_process_scoped_and_uses_configured_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace_root = Path(temp_dir) / "workspace"
+            workspace_root.mkdir()
+            secret_broker = SimpleNamespace(
+                resolve_secret=lambda name, scope_hint=None: "ghp_demo"
+            )
+
+            env, cleanup_paths = _workspace_git_env(
+                workspace_root=workspace_root,
+                config={
+                    "author_name": "Nagient Agent",
+                    "author_email": "agent@example.com",
+                    "username": "ddwnbot",
+                    "token_secret": "GIT_ACCESS_TOKEN",
+                },
+                secret_broker=secret_broker,
+            )
+
+            try:
+                self.assertEqual(env["HOME"], str(workspace_root))
+                self.assertEqual(env["GIT_AUTHOR_NAME"], "Nagient Agent")
+                self.assertEqual(env["GIT_AUTHOR_EMAIL"], "agent@example.com")
+                self.assertEqual(env["GIT_COMMITTER_NAME"], "Nagient Agent")
+                self.assertEqual(env["GIT_COMMITTER_EMAIL"], "agent@example.com")
+                self.assertEqual(env["GIT_CONFIG_COUNT"], "1")
+                self.assertEqual(env["GIT_CONFIG_KEY_0"], "credential.username")
+                self.assertEqual(env["GIT_CONFIG_VALUE_0"], "ddwnbot")
+                self.assertEqual(env["GIT_TERMINAL_PROMPT"], "0")
+                self.assertEqual(env["NAGIENT_GIT_USERNAME"], "ddwnbot")
+                self.assertEqual(env["NAGIENT_GIT_PASSWORD"], "ghp_demo")
+                self.assertTrue(Path(env["GIT_ASKPASS"]).exists())
+                self.assertEqual(cleanup_paths, [Path(env["GIT_ASKPASS"])])
+            finally:
+                for path in cleanup_paths:
+                    path.unlink(missing_ok=True)
 
     def test_system_jobs_schedule_once_accepts_delay_seconds(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

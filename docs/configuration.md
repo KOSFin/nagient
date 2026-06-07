@@ -84,6 +84,9 @@ default_provider = "openai"
 require_provider = true
 system_prompt_file = "@prompts/system.md"
 
+[agent.progress]
+enabled = false
+
 [providers.openai]
 plugin = "builtin.openai"
 enabled = true
@@ -111,6 +114,10 @@ author_name = "Nagient Agent"
 author_email = "agent@example.com"
 username = "git-user"
 token_secret = "GIT_ACCESS_TOKEN"
+
+[tools.system_config]
+plugin = "system.config"
+enabled = true
 ```
 
 ## 5. Secrets
@@ -152,6 +159,12 @@ nagient tool invoke github.api.request \
 ```
 
 `workspace_git` only inspects the configured `[workspace].root`. If it reports `git_repository=false`, check that the workspace root is the checkout mounted into the runtime, for example `@home/workspace` for the installed Docker layout or your repository path for local development.
+
+`workspace_git` applies `author_name`, `author_email`, `committer_*`, `username`, and token/password secrets only to the git process it runs. It does not write your host-level global git config. Token/password auth is supplied through a temporary askpass helper for HTTPS remotes; SSH remotes still need normal SSH key access.
+
+Delayed jobs have two direct-action helpers. Use `system.jobs.schedule_message` for prepared outbound text and `system.jobs.schedule_tool` for an exact stored tool request; both avoid waking the model again when the job is due. Keep `system.jobs.schedule_once` for self-wake jobs that genuinely need fresh model reasoning.
+
+`system_config` exposes `system.config.read` and approval-gated `system.config.patch`, so the agent can inspect its runtime config and request explicit config edits.
 
 ## 7. First checks
 

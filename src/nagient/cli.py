@@ -279,6 +279,8 @@ def build_parser() -> argparse.ArgumentParser:
     setup_agent_parser.add_argument("--no-json-logs", action="store_true")
     setup_agent_parser.add_argument("--log-events", action="store_true")
     setup_agent_parser.add_argument("--no-log-events", action="store_true")
+    setup_agent_parser.add_argument("--progress", action="store_true")
+    setup_agent_parser.add_argument("--no-progress", action="store_true")
     setup_agent_parser.add_argument("--format", choices=("text", "json"), default="text")
 
     setup_workspace_parser = setup_subparsers.add_parser(
@@ -677,6 +679,13 @@ def main(argv: list[str] | None = None) -> int:
             logging_updates["log_events"] = log_events
         if logging_updates:
             updates["logging"] = logging_updates
+
+        progress_updates: dict[str, object] = {}
+        progress_enabled = _resolve_enablement(args.progress, args.no_progress)
+        if progress_enabled is not None:
+            progress_updates["enabled"] = progress_enabled
+        if progress_updates:
+            updates["progress"] = progress_updates
 
         payload = container.configuration_service.configure_agent(updates)
         return _emit_configuration_result(container, payload, args.format)
@@ -2979,7 +2988,7 @@ def _terminal_screen() -> Iterator[None]:
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
         yield
         return
-    print("\033[?1049h\033[?25l", end="", flush=True)
+    print("\033[?1049h\033[?25l\033[2J\033[H", end="", flush=True)
     try:
         yield
     finally:

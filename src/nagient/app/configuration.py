@@ -102,6 +102,16 @@ class AgentLoggingConfig:
 
 
 @dataclass(frozen=True)
+class AgentProgressConfig:
+    enabled: bool = False
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "enabled": self.enabled,
+        }
+
+
+@dataclass(frozen=True)
 class AgentConfig:
     default_provider: str | None
     require_provider: bool
@@ -109,6 +119,7 @@ class AgentConfig:
     max_turns: int = 4
     memory: AgentMemoryConfig = field(default_factory=AgentMemoryConfig)
     logging: AgentLoggingConfig = field(default_factory=AgentLoggingConfig)
+    progress: AgentProgressConfig = field(default_factory=AgentProgressConfig)
 
     def to_dict(self) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -117,6 +128,7 @@ class AgentConfig:
             "max_turns": self.max_turns,
             "memory": self.memory.to_dict(),
             "logging": self.logging.to_dict(),
+            "progress": self.progress.to_dict(),
         }
         if self.system_prompt_file is not None:
             payload["system_prompt_file"] = str(self.system_prompt_file)
@@ -287,6 +299,9 @@ def render_default_config(settings: Settings) -> str:
             "json_logs = false",
             "log_events = true",
             "",
+            "[agent.progress]",
+            "enabled = false",
+            "",
             "[transports.console]",
             'plugin = "builtin.console"',
             "enabled = true",
@@ -391,6 +406,10 @@ def render_default_config(settings: Settings) -> str:
             "",
             "[tools.system_jobs]",
             'plugin = "system.jobs"',
+            "enabled = true",
+            "",
+            "[tools.system_config]",
+            'plugin = "system.config"',
             "enabled = true",
             "",
             "[tools.github_api]",
@@ -801,6 +820,9 @@ def _parse_agent_config(
     logging = agent.get("logging")
     if not isinstance(logging, dict):
         logging = {}
+    progress = agent.get("progress")
+    if not isinstance(progress, dict):
+        progress = {}
 
     system_prompt_file = _resolve_optional_path(
         agent.get("system_prompt_file"),
@@ -839,6 +861,9 @@ def _parse_agent_config(
             json_logs=_coerce_bool(logging.get("json_logs", False)),
             log_events=_coerce_bool(logging.get("log_events", True)),
         ),
+        progress=AgentProgressConfig(
+            enabled=_coerce_bool(progress.get("enabled", False)),
+        ),
     )
 
 
@@ -853,6 +878,7 @@ def _default_tools() -> list[ToolInstanceConfig]:
         ToolInstanceConfig("transport_router", "transport.router", True, {}),
         ToolInstanceConfig("agent_memory", "agent.memory", True, {}),
         ToolInstanceConfig("system_jobs", "system.jobs", True, {}),
+        ToolInstanceConfig("system_config", "system.config", True, {}),
         ToolInstanceConfig(
             "github_api",
             "github.api",
@@ -932,6 +958,17 @@ def merge_runtime_config(
             agent = _ensure_mapping(merged, "agent")
             logging = _ensure_nested_mapping(agent, "logging")
             logging[field_name] = _coerce_env_value(value)
+            continue
+        if key.startswith("NAGIENT_AGENT_PROGRESS__"):
+            parts = key.split("__")
+            if len(parts) < 2:
+                continue
+            field_name = "__".join(parts[1:]).strip().lower()
+            if not field_name:
+                continue
+            agent = _ensure_mapping(merged, "agent")
+            progress = _ensure_nested_mapping(agent, "progress")
+            progress[field_name] = _coerce_env_value(value)
             continue
         if key.startswith("NAGIENT_TRANSPORT__"):
             parts = key.split("__")
