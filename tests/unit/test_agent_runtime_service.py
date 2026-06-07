@@ -137,6 +137,7 @@ class AgentRuntimeServiceTests(unittest.TestCase):
             self.assertIn("run shell commands", system_prompt)
             self.assertIn("route outbound messages", system_prompt)
             self.assertIn("Any shell command must be finite and bounded", system_prompt)
+            self.assertIn("approval_context", system_prompt)
 
     def test_runtime_tool_catalog_includes_workspace_git_and_github_api_by_default(
         self,
@@ -169,6 +170,11 @@ class AgentRuntimeServiceTests(unittest.TestCase):
                 functions["github.api.list_repositories"]["tool_id"],
                 "github_api",
             )
+            git_run_schema = functions["workspace.git.run"]["input_schema"]
+            self.assertIsInstance(git_run_schema, dict)
+            properties = git_run_schema.get("properties")
+            self.assertIsInstance(properties, dict)
+            self.assertIn("approval_context", properties)
 
     def test_runtime_handles_edited_messages_and_dispatches_notifications(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -350,6 +356,136 @@ class AgentRuntimeServiceTests(unittest.TestCase):
             self.assertEqual(stdout.getvalue(), "")
             runtime_log = (settings.log_dir / "runtime.log").read_text(encoding="utf-8")
             self.assertIn("Provider demo: hidden from interactive chat", runtime_log)
+
+    def test_transport_approve_executes_pending_tool_action_and_resumes(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir) / "home"
+            workspace_root = Path(temp_dir) / "workspace"
+            workspace_root.mkdir(parents=True, exist_ok=True)
+            target_path = workspace_root / "old.txt"
+            target_path.write_text("remove me", encoding="utf-8")
+            settings = Settings.from_env({"NAGIENT_HOME": str(home_dir)})
+            container = build_container(settings)
+            container.configuration_service.initialize(force=True)
+            _set_workspace_root(settings.config_file, workspace_root)
+
+            provider_mock = Mock(
+                side_effect=[
+                    AssistantResponse(
+                        message="I'll remove it after approval.",
+                        tool_calls=[
+                            NormalizedToolCall(
+                                call_id="call-1",
+                                request=ToolExecutionRequest(
+                                    tool_id="workspace_fs",
+                                    function_name="workspace.fs.delete",
+                                    arguments={
+                                        "path": "old.txt",
+                                        "approval_context": {
+                                            "on_success": "resume_model",
+                                        },
+                                    },
+                                ),
+                            )
+                        ],
+                    ),
+                    AssistantResponse(message="Готово, файл удален."),
+                ]
+            )
+            object.__setattr__(
+                container.provider_service,
+                "generate_assistant_response",
+                provider_mock,
+            )
+
+            first_reply = container.agent_runtime_service.handle_inbound_event(
+                "telegram",
+                {
+                    "event_type": "message",
+                    "session_id": "telegram:demo",
+                    "text": "удали old.txt",
+                },
+            )
+
+            self.assertIsNotNone(first_reply)
+            self.assertIn("Нужно подтверждение", first_reply or "")
+            self.assertTrue(target_path.exists())
+
+            approval_reply = container.agent_runtime_service.handle_inbound_event(
+                "telegram",
+                {
+                    "event_type": "message",
+                    "session_id": "telegram:demo",
+                    "text": "approve",
+                },
+            )
+
+            self.assertEqual(approval_reply, "Готово, файл удален.")
+            self.assertFalse(target_path.exists())
+            self.assertEqual(provider_mock.call_count, 2)
+            runtime_log = (settings.log_dir / "runtime.log").read_text(encoding="utf-8")
+            self.assertIn("Waiting for approval", runtime_log)
+            self.assertIn("Resolved approval", runtime_log)
+
+    def test_transport_approve_can_use_success_message_without_model_resume(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir) / "home"
+            workspace_root = Path(temp_dir) / "workspace"
+            workspace_root.mkdir(parents=True, exist_ok=True)
+            target_path = workspace_root / "old.txt"
+            target_path.write_text("remove me", encoding="utf-8")
+            settings = Settings.from_env({"NAGIENT_HOME": str(home_dir)})
+            container = build_container(settings)
+            container.configuration_service.initialize(force=True)
+            _set_workspace_root(settings.config_file, workspace_root)
+
+            provider_mock = Mock(
+                return_value=AssistantResponse(
+                    message="I'll remove it after approval.",
+                    tool_calls=[
+                        NormalizedToolCall(
+                            call_id="call-1",
+                            request=ToolExecutionRequest(
+                                tool_id="workspace_fs",
+                                function_name="workspace.fs.delete",
+                                arguments={
+                                    "path": "old.txt",
+                                    "approval_context": {
+                                        "on_success": "message",
+                                        "on_success_message": "Готово, old.txt удален.",
+                                    },
+                                },
+                            ),
+                        )
+                    ],
+                )
+            )
+            object.__setattr__(
+                container.provider_service,
+                "generate_assistant_response",
+                provider_mock,
+            )
+
+            container.agent_runtime_service.handle_inbound_event(
+                "telegram",
+                {
+                    "event_type": "message",
+                    "session_id": "telegram:demo",
+                    "text": "удали old.txt",
+                },
+            )
+            approval_reply = container.agent_runtime_service.handle_inbound_event(
+                "telegram",
+                {
+                    "event_type": "message",
+                    "session_id": "telegram:demo",
+                    "text": "approve",
+                },
+            )
+
+            self.assertEqual(approval_reply, "Готово, old.txt удален.")
+            self.assertFalse(target_path.exists())
+            self.assertEqual(provider_mock.call_count, 1)
 
     def test_runtime_returns_friendly_timeout_before_tool_execution(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

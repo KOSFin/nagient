@@ -46,6 +46,39 @@ class SessionMemoryServiceTests(unittest.TestCase):
             self.assertIn("message 0", context.summary)
             self.assertEqual(context.focus_messages[-1].content, "message 5")
 
+    def test_prompt_context_retrieves_messages_across_transport_sessions(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            settings = Settings.from_env({"NAGIENT_HOME": str(Path(temp_dir) / "home")})
+            layout = WorkspaceManager(settings).ensure_layout(
+                WorkspaceConfig(root=Path(temp_dir) / "workspace", mode="bounded")
+            )
+            service = SessionMemoryService(RuntimeLogger(settings, "memory-test"))
+            service.append_message(
+                layout,
+                session_id="telegram:demo",
+                transport_id="telegram",
+                role="user",
+                content="Искали телефон через сообщение в Telegram.",
+            )
+            service.append_message(
+                layout,
+                session_id="console:demo",
+                transport_id="console",
+                role="user",
+                content="О чем мы говорили?",
+            )
+
+            context = service.build_prompt_context(
+                layout,
+                session_id="console:demo",
+                config=AgentMemoryConfig(retrieval_max_results=4),
+                retrieval_query="телефон Telegram",
+            )
+
+            self.assertTrue(
+                any("Искали телефон" in item.content for item in context.retrieved_messages)
+            )
+
     def test_notes_are_created_and_searchable(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             settings = Settings.from_env({"NAGIENT_HOME": str(Path(temp_dir) / "home")})

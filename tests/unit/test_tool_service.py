@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -60,6 +61,42 @@ class ToolServiceTests(unittest.TestCase):
             )
             self.assertEqual(approval_result.status, "approved")
             self.assertFalse((workspace_root / "note.txt").exists())
+
+    def test_expected_workspace_git_action_can_auto_approve(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir) / "home"
+            workspace_root = Path(temp_dir) / "workspace"
+            workspace_root.mkdir(parents=True, exist_ok=True)
+            subprocess.run(
+                ["git", "init"],
+                cwd=workspace_root,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            settings = Settings.from_env({"NAGIENT_HOME": str(home_dir)})
+            container = build_container(settings)
+            container.configuration_service.initialize(force=True)
+            _set_workspace_root(settings.config_file, workspace_root)
+
+            result = container.tool_service.invoke(
+                ToolExecutionRequest(
+                    tool_id="workspace_git",
+                    function_name="workspace.git.run",
+                    dry_run=True,
+                    arguments={
+                        "args": ["push", "origin", "main"],
+                        "approval_context": {
+                            "expected_by_user": True,
+                            "reason": "User explicitly requested clone/edit/commit/push flow.",
+                        },
+                    },
+                )
+            )
+
+            self.assertEqual(result.status, "success")
+            self.assertTrue(result.output["dry_run"])
+            self.assertEqual(container.workflow_service.list_approvals(), [])
 
     def test_secure_interaction_submission_stores_tool_secret(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

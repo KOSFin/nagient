@@ -157,6 +157,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Show the full diagnostic tree instead of the compact summary",
     )
+    logs_parser = subparsers.add_parser(
+        "logs",
+        help="Show runtime and agent logs",
+    )
+    logs_parser.add_argument("component", nargs="?")
+    logs_parser.add_argument("--lines", type=int, default=80)
+    logs_parser.add_argument("--plain", action="store_true")
 
     paths_parser = subparsers.add_parser(
         "paths",
@@ -527,6 +534,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "status":
         payload = container.status_service.collect()
         return _emit(payload, args.format, view="status", verbose=args.verbose)
+
+    if args.command == "logs":
+        return _run_logs_viewer(
+            container.settings,
+            component=args.component,
+            lines=args.lines,
+            plain=args.plain,
+        )
 
     if args.command == "paths":
         payload = _paths_payload(container)
@@ -1870,6 +1885,80 @@ def _run_provider_login_flow(container: AppContainer, provider_id: str) -> None:
                 except KeyboardInterrupt:
                     print("")
                     return
+
+
+def _run_logs_viewer(
+    settings: Settings,
+    *,
+    component: str | None,
+    lines: int,
+    plain: bool,
+) -> int:
+    line_count = max(1, lines)
+    if plain or not (sys.stdin.isatty() and sys.stdout.isatty()):
+        for line in _read_log_lines(settings, component=component, lines=line_count):
+            print(line)
+        return 0
+
+    while True:
+        print("\033[2J\033[H", end="")
+        title = "Nagient Logs"
+        if component:
+            title += f" / {component}"
+        print(title)
+        print("=" * len(title))
+        print("Enter: refresh   q: quit")
+        print("")
+        for line in _read_log_lines(settings, component=component, lines=line_count):
+            print(line)
+        try:
+            answer = input("\nlogs> ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print("")
+            return 0
+        if answer in {"q", "quit", "exit", "0"}:
+            return 0
+
+
+def _read_log_lines(
+    settings: Settings,
+    *,
+    component: str | None,
+    lines: int,
+) -> list[str]:
+    log_dir = settings.log_dir
+    if not log_dir.exists():
+        return [f"No log directory yet: {log_dir}"]
+    paths = _log_paths(log_dir, component)
+    if not paths:
+        if component:
+            return [f"No logs found for component {component!r} in {log_dir}"]
+        return [f"No logs found in {log_dir}"]
+    collected: list[str] = []
+    for path in paths:
+        prefix = path.name
+        for line in _tail_file(path, lines):
+            collected.append(f"{prefix}: {line}")
+    return collected[-lines:]
+
+
+def _log_paths(log_dir: Path, component: str | None) -> list[Path]:
+    if component:
+        normalized = component.strip()
+        candidates = [
+            log_dir / normalized,
+            log_dir / f"{normalized}.log",
+        ]
+        return [path for path in candidates if path.exists() and path.is_file()]
+    return sorted(path for path in log_dir.glob("*.log") if path.is_file())
+
+
+def _tail_file(path: Path, lines: int) -> list[str]:
+    try:
+        payload = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError as exc:
+        return [f"Could not read {path}: {exc}"]
+    return payload[-lines:]
 
 
 def _save_secret_reference_value(

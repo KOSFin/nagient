@@ -15,6 +15,7 @@ from nagient.domain.entities.agent_runtime import AssistantResponse
 from nagient.domain.entities.security import ApprovalRequest, PostSubmitAction
 from nagient.domain.entities.system_state import CheckIssue
 from nagient.domain.entities.tooling import ToolExecutionRequest, ToolExecutionResult, ToolState
+from nagient.security.approval_policy import ApprovalPolicyDecision, ApprovalPolicyEngine
 from nagient.security.broker import SecretBroker
 from nagient.tools.base import (
     LoadedToolPlugin,
@@ -118,9 +119,11 @@ class ToolService:
                 ToolRiskDecision,
                 bool,
                 str,
+                ApprovalPolicyDecision,
             ]
         ] = []
         checkpoint_required = False
+        policy_engine = ApprovalPolicyEngine()
         for request in requests:
             tool_config, plugin = self._resolve_tool(runtime_config, discovery.plugins, request)
             function = plugin.manifest.function_by_name(request.function_name)
@@ -141,21 +144,20 @@ class ToolService:
                 request.arguments,
                 context,
             )
-            effective_policy = function.approval_policy
-            if risk.approval_policy != "inherit":
-                effective_policy = risk.approval_policy
-            needs_checkpoint = (
-                risk.checkpoint_required
-                if risk.checkpoint_required is not None
-                else function.side_effect in {"write", "destructive", "system"}
+            policy = policy_engine.decide(
+                request=request,
+                function=function,
+                risk=risk,
             )
+            effective_policy = policy.policy
+            needs_checkpoint = policy.checkpoint_required
             checkpoint_required = checkpoint_required or (
                 needs_checkpoint
                 and not request.dry_run
                 and not (effective_policy == "required" and not request.auto_approve)
             )
             prepared.append(
-                (request, tool_config, plugin, risk, needs_checkpoint, effective_policy)
+                (request, tool_config, plugin, risk, needs_checkpoint, effective_policy, policy)
             )
 
         checkpoint_id: str | None = None
@@ -202,36 +204,43 @@ class ToolService:
                             _risk,
                             _needs_checkpoint,
                             _policy,
+                            _policy_decision,
                         ) in prepared
                     ],
                     None,
                 )
 
         results: list[ToolExecutionResult] = []
-        for request, tool_config, plugin, risk, needs_checkpoint, effective_policy in prepared:
+        for (
+            request,
+            tool_config,
+            plugin,
+            _risk,
+            needs_checkpoint,
+            effective_policy,
+            policy_decision,
+        ) in prepared:
             function = plugin.manifest.function_by_name(request.function_name)
             if function is None:
                 raise AssertionError("Function was resolved during preparation.")
             if effective_policy == "required" and not request.auto_approve:
+                approved_payload = request.to_dict()
+                approved_payload["arguments"] = dict(policy_decision.sanitized_arguments)
+                approved_payload["auto_approve"] = True
                 approval = self.workflow_service.create_approval(
                     ApprovalRequest(
                         request_id="",
                         session_id=request.session_id or "system",
                         transport_id=request.transport_id or "console",
                         action_label=request.function_name,
-                        prompt=(
-                            risk.reason
-                            or f"Approve execution of {request.function_name!r}?"
-                        ),
+                        prompt=policy_decision.reason,
                         status="pending",
                         created_at="",
                         action=PostSubmitAction(
                             action_type="tool.invoke",
-                            payload={
-                                **request.to_dict(),
-                                "auto_approve": True,
-                            },
+                            payload=approved_payload,
                         ),
+                        metadata=policy_decision.context.to_metadata(),
                     )
                 )
                 results.append(
@@ -253,27 +262,37 @@ class ToolService:
                 )
                 continue
 
-            context = self._build_context(
-                layout=layout,
-                tool_config=tool_config,
-                plugin_id=plugin.manifest.plugin_id,
-                request=request,
-                checkpoint_id=checkpoint_id if needs_checkpoint else None,
-            )
             self._log(
                 "info",
                 "tool.invoke_batch.executing",
                 "Executing tool function.",
                 tool_id=tool_config.tool_id,
                 function_name=request.function_name,
-                argument_keys=sorted(request.arguments),
+                argument_keys=sorted(policy_decision.sanitized_arguments),
                 checkpoint_id=checkpoint_id if needs_checkpoint else None,
                 dry_run=request.dry_run,
             )
             try:
+                execution_request = ToolExecutionRequest(
+                    tool_id=request.tool_id,
+                    function_name=request.function_name,
+                    arguments=dict(policy_decision.sanitized_arguments),
+                    dry_run=request.dry_run,
+                    batch_id=request.batch_id,
+                    session_id=request.session_id,
+                    transport_id=request.transport_id,
+                    auto_approve=request.auto_approve,
+                )
+                context = self._build_context(
+                    layout=layout,
+                    tool_config=tool_config,
+                    plugin_id=plugin.manifest.plugin_id,
+                    request=execution_request,
+                    checkpoint_id=checkpoint_id if needs_checkpoint else None,
+                )
                 output = plugin.implementation.execute(
                     request.function_name,
-                    request.arguments,
+                    policy_decision.sanitized_arguments,
                     context,
                 )
                 sanitized_output = self.secret_broker.redact_value(output)

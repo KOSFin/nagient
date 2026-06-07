@@ -408,6 +408,23 @@ class CliTests(unittest.TestCase):
             "@config",
         )
 
+    def test_logs_command_reads_combined_runtime_logs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            log_dir = Path(temp_dir) / "logs"
+            log_dir.mkdir()
+            (log_dir / "runtime.log").write_text("transport event\n", encoding="utf-8")
+            (log_dir / "agent-runtime.log").write_text("agent step\n", encoding="utf-8")
+            container = SimpleNamespace(settings=SimpleNamespace(log_dir=log_dir))
+
+            exit_code, output = _run_main(
+                ["logs", "--plain", "--lines", "10"],
+                container=container,
+            )
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("runtime.log: transport event", output)
+        self.assertIn("agent-runtime.log: agent step", output)
+
     def test_prompt_for_model_selection(self) -> None:
         models = [
             {"model_id": "gpt-5", "display_name": "GPT-5"},

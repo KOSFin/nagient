@@ -88,7 +88,7 @@ class SessionMemoryService:
             retrieved = (
                 self._search_messages(
                     connection,
-                    session_id=session_id,
+                    session_id=None,
                     query=retrieval_query,
                     limit=config.retrieval_max_results,
                 )
@@ -360,12 +360,18 @@ class SessionMemoryService:
         session_id: str | None,
     ) -> list[MemorySearchResult]:
         normalized_limit = max(1, limit)
-        parameters: list[object] = [f"%{query}%"]
+        terms = _search_terms(query)
+        if not terms:
+            return []
+        parameters: list[object] = [f"%{term}%" for term in terms]
+        content_filters = " OR ".join("content LIKE ?" for _term in terms)
         sql = """
             SELECT message_id, session_id, role, content, created_at
             FROM messages
-            WHERE content LIKE ?
+            WHERE (
         """
+        sql += content_filters
+        sql += ")"
         if session_id is not None:
             sql += " AND session_id = ?"
             parameters.append(session_id)
@@ -442,6 +448,18 @@ def _message_from_row(row: sqlite3.Row) -> SessionMessage:
 
 def _estimate_tokens(content: str) -> int:
     return max(1, len(content.encode("utf-8")) // 4)
+
+
+def _search_terms(query: str) -> list[str]:
+    normalized = query.strip()
+    if not normalized:
+        return []
+    terms = [
+        part.strip()
+        for part in normalized.replace("\n", " ").split(" ")
+        if len(part.strip()) >= 2
+    ]
+    return terms or [normalized]
 
 
 def _summarize_messages(messages: list[SessionMessage]) -> str:

@@ -61,6 +61,34 @@ class AgentRuntimeService:
         if not text:
             return None
 
+        approval_reply = self._maybe_resolve_transport_approval(
+            layout=layout,
+            session_id=session_id,
+            transport_id=transport_id,
+            text=text,
+            provider_id=provider_id,
+            runtime_config=runtime_config,
+            system_prompt_override=system_prompt_override,
+        )
+        if approval_reply is not None:
+            return approval_reply
+
+        self.logger.info(
+            "agent_runtime.inbound_message",
+            "Handling inbound message.",
+            session_id=session_id,
+            transport_id=transport_id,
+            event_type=event_type,
+            text_preview=_compact_text(text, limit=240),
+        )
+        append_runtime_log(
+            self.settings,
+            (
+                f"Handling {event_type} from {transport_id} "
+                f"(session_id={session_id}): {_compact_text(text, limit=160)}"
+            ),
+            component="agent.runtime",
+        )
         self.memory_service.append_message(
             layout,
             session_id=session_id,
@@ -157,6 +185,43 @@ class AgentRuntimeService:
                         metadata={"function_name": result.function_name},
                     )
 
+            approval_required_reply = _render_tool_approval_required_reply(
+                turn_result.tool_results
+            )
+            if approval_required_reply is not None:
+                self.memory_service.append_message(
+                    layout,
+                    session_id=session_id,
+                    transport_id=transport_id,
+                    role="assistant",
+                    content=approval_required_reply,
+                    metadata={"turn_index": turn_index, "approval_wait": True},
+                )
+                self.logger.info(
+                    "agent_runtime.waiting_for_approval",
+                    "Paused agent turn until the user approves a pending tool action.",
+                    session_id=session_id,
+                    transport_id=transport_id,
+                    approvals=[
+                        result.approval_request_id
+                        for result in turn_result.tool_results
+                        if result.approval_request_id
+                    ],
+                )
+                append_runtime_log(
+                    self.settings,
+                    (
+                        "Waiting for approval: "
+                        + ", ".join(
+                            result.approval_request_id or result.function_name
+                            for result in turn_result.tool_results
+                            if result.status == "approval_required"
+                        )
+                    ),
+                    component="agent.runtime",
+                )
+                return approval_required_reply
+
             deferred_reply = _render_deferred_assistant_message(
                 assistant_response=assistant_response,
                 tool_results=turn_result.tool_results,
@@ -212,6 +277,164 @@ class AgentRuntimeService:
             max_turns=runtime_config.agent.max_turns,
         )
         return last_message
+
+    def _maybe_resolve_transport_approval(
+        self,
+        *,
+        layout: object,
+        session_id: str,
+        transport_id: str,
+        text: str,
+        provider_id: str | None,
+        runtime_config: RuntimeConfiguration,
+        system_prompt_override: str | None,
+    ) -> str | None:
+        decision = _approval_decision_from_text(text)
+        if decision is None:
+            return None
+        workflow_service = getattr(self.agent_turn_service, "workflow_service", None)
+        if workflow_service is None:
+            return None
+        pending = [
+            approval
+            for approval in workflow_service.list_approvals()
+            if approval.status == "pending"
+            and (
+                approval.session_id == session_id
+                or approval.transport_id == transport_id
+            )
+        ]
+        if not pending:
+            return None
+        approval = pending[-1]
+        self.memory_service.append_message(
+            layout,
+            session_id=session_id,
+            transport_id=transport_id,
+            role="user",
+            content=text,
+            metadata={"approval_decision": decision, "approval_request_id": approval.request_id},
+        )
+        result = workflow_service.resolve_approval(approval.request_id, decision)
+        self.logger.info(
+            "agent_runtime.approval_resolved",
+            "Resolved pending approval from transport message.",
+            session_id=session_id,
+            transport_id=transport_id,
+            approval_request_id=approval.request_id,
+            decision=decision,
+            status=result.status,
+        )
+        append_runtime_log(
+            self.settings,
+            (
+                f"Resolved approval {approval.request_id} from {transport_id} "
+                f"with decision={decision}, status={result.status}."
+            ),
+            component="agent.runtime",
+        )
+        reply = _render_approval_result_reply(result.to_dict())
+        should_resume = _approval_should_resume_model(
+            approval.metadata,
+            status=result.status,
+        )
+        message_override = _approval_message_override(
+            approval.metadata,
+            status=result.status,
+        )
+        if message_override:
+            reply = message_override
+        elif decision == "approve" and should_resume:
+            resumed = self._try_provider_resume_after_approval(
+                layout=layout,
+                session_id=session_id,
+                transport_id=transport_id,
+                provider_id=provider_id,
+                runtime_config=runtime_config,
+                system_prompt_override=system_prompt_override,
+                approval_result=result.to_dict(),
+            )
+            if resumed is not None:
+                reply = resumed
+        self.memory_service.append_message(
+            layout,
+            session_id=session_id,
+            transport_id=transport_id,
+            role="assistant",
+            content=reply,
+            metadata={
+                "approval_result": result.status,
+                "approval_request_id": approval.request_id,
+            },
+        )
+        return reply
+
+    def _try_provider_resume_after_approval(
+        self,
+        *,
+        layout: object,
+        session_id: str,
+        transport_id: str,
+        provider_id: str | None,
+        runtime_config: RuntimeConfiguration,
+        system_prompt_override: str | None,
+        approval_result: dict[str, object],
+    ) -> str | None:
+        prompt_context = self.memory_service.build_prompt_context(
+            layout,
+            session_id=session_id,
+            config=runtime_config.agent.memory,
+            retrieval_query=None,
+        )
+        try:
+            assistant_response = self.provider_service.generate_assistant_response(
+                message=(
+                    "The user approved the pending action. Summarize the completed "
+                    "result clearly and do not request approval again unless another "
+                    "new action is required."
+                ),
+                provider_id=provider_id,
+                session_id=session_id,
+                transport_id=transport_id,
+                system_prompt=self._system_prompt(
+                    runtime_config,
+                    override=system_prompt_override,
+                ),
+                prompt_context=prompt_context,
+                tool_catalog=self._tool_catalog(runtime_config),
+                transport_catalog=self._transport_catalog(),
+                previous_results=[
+                    {
+                        "function_name": "workflow.approval.resolve",
+                        "status": approval_result.get("status"),
+                        "output": approval_result.get("resume_payload", {}),
+                    }
+                ],
+                runtime_log=self._provider_runtime_log,
+            )
+        except Exception as exc:
+            self.logger.warning(
+                "agent_runtime.approval_resume_failed",
+                "Failed to resume provider after approval.",
+                session_id=session_id,
+                transport_id=transport_id,
+                error=str(exc),
+            )
+            return None
+        resumed_message = str(assistant_response.message).strip()
+        if not resumed_message:
+            return None
+        if assistant_response.tool_calls:
+            self.logger.warning(
+                "agent_runtime.approval_resume_tool_calls_ignored",
+                "Provider returned tool calls during approval resume; keeping execution bounded.",
+                session_id=session_id,
+                transport_id=transport_id,
+                tool_calls=[
+                    call.request.function_name for call in assistant_response.tool_calls
+                ],
+            )
+        return resumed_message
 
     def handle_scheduled_job(self, job: JobRecord) -> str | None:
         action_type = str(job.payload.get("action_type", "")).strip()
@@ -289,7 +512,11 @@ class AgentRuntimeService:
                         "plugin_id": tool.plugin_id,
                         "function_name": function.function_name,
                         "description": function.description,
-                        "input_schema": function.input_schema,
+                        "input_schema": _tool_input_schema_with_approval_context(
+                            function.input_schema,
+                            side_effect=function.side_effect,
+                            approval_policy=function.approval_policy,
+                        ),
                         "side_effect": function.side_effect,
                         "approval_policy": function.approval_policy,
                     }
@@ -451,6 +678,16 @@ class AgentRuntimeService:
             step=step,
             results=[_tool_result_log_summary(item) for item in tool_results],
         )
+        append_runtime_log(
+            self.settings,
+            (
+                f"Tool results for {transport_id}/{session_id}: "
+                + "; ".join(
+                    f"{item.function_name}={item.status}" for item in tool_results
+                )
+            ),
+            component="agent.runtime",
+        )
 
 
 def _should_retrieve(message: str) -> bool:
@@ -460,12 +697,181 @@ def _should_retrieve(message: str) -> bool:
         "помнишь",
         "раньше",
         "что было",
+        "о чем",
+        "говорили",
         "remember",
         "recall",
         "earlier",
         "previously",
     ]
     return any(marker in normalized for marker in markers)
+
+
+def _approval_decision_from_text(message: str) -> str | None:
+    normalized = message.strip().lower()
+    normalized = normalized.strip(" .,!?:;")
+    approve_words = {
+        "approve",
+        "approved",
+        "approval",
+        "yes",
+        "y",
+        "ok",
+        "okay",
+        "да",
+        "ок",
+        "окей",
+        "подтверждаю",
+        "разрешаю",
+        "апрув",
+        "аппрув",
+        "опрув",
+        "опруф",
+    }
+    reject_words = {
+        "reject",
+        "no",
+        "n",
+        "cancel",
+        "stop",
+        "нет",
+        "отклонить",
+        "отмена",
+        "отбой",
+        "не надо",
+        "запретить",
+    }
+    if normalized in approve_words:
+        return "approve"
+    if normalized in reject_words:
+        return "reject" if normalized not in {"cancel", "отмена", "отбой"} else "cancel"
+    return None
+
+
+def _render_tool_approval_required_reply(
+    tool_results: list[ToolExecutionResult],
+) -> str | None:
+    pending = [
+        result
+        for result in tool_results
+        if result.status == "approval_required" and result.approval_request_id
+    ]
+    if not pending:
+        return None
+    if len(pending) == 1:
+        result = pending[0]
+        return "\n".join(
+            [
+                "Нужно подтверждение для действия:",
+                f"- `{result.function_name}`",
+                "",
+                "Напиши `approve` / `опрув`, чтобы выполнить, или `cancel`, чтобы отменить.",
+            ]
+        )
+    lines = ["Нужно подтверждение для нескольких действий:"]
+    for result in pending:
+        lines.append(f"- `{result.function_name}`")
+    lines.extend(
+        [
+            "",
+            "Напиши `approve` / `опрув`, чтобы выполнить последнее ожидающее действие, "
+            "или `cancel`, чтобы отменить.",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _render_approval_result_reply(payload: dict[str, object]) -> str:
+    status = str(payload.get("status", ""))
+    decision = str(payload.get("decision", ""))
+    logs = payload.get("logs", [])
+    if status == "approved":
+        lines = ["Подтверждение принято, действие выполнено."]
+    elif status == "failed":
+        lines = ["Подтверждение принято, но действие упало."]
+    elif decision in {"reject", "cancel"}:
+        lines = ["Ок, действие отменено."]
+    else:
+        lines = [f"Approval обработан со статусом `{status or decision}`."]
+    if isinstance(logs, list):
+        for log in logs[:3]:
+            if isinstance(log, str) and log.strip():
+                lines.append(f"- {log.strip()}")
+    return "\n".join(lines)
+
+
+def _approval_message_override(
+    metadata: dict[str, object],
+    *,
+    status: str,
+) -> str:
+    if status == "approved":
+        message = metadata.get("on_success_message")
+        if isinstance(message, str) and message.strip():
+            return message.strip()
+    if status == "failed" and metadata.get("on_error") == "message":
+        message = metadata.get("on_error_message")
+        if isinstance(message, str) and message.strip():
+            return message.strip()
+    return ""
+
+
+def _approval_should_resume_model(
+    metadata: dict[str, object],
+    *,
+    status: str,
+) -> bool:
+    if status == "approved":
+        return metadata.get("on_success") == "resume_model"
+    if status == "failed":
+        return metadata.get("on_error", "resume_model") == "resume_model"
+    return False
+
+
+def _tool_input_schema_with_approval_context(
+    input_schema: dict[str, object],
+    *,
+    side_effect: str,
+    approval_policy: str,
+) -> dict[str, object]:
+    if side_effect == "read" and approval_policy == "never":
+        return dict(input_schema)
+    schema = dict(input_schema)
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        properties = {}
+    else:
+        properties = dict(properties)
+    properties.setdefault(
+        "approval_context",
+        {
+            "type": "object",
+            "description": (
+                "Optional approval policy hint. Set expected_by_user only when the user "
+                "clearly requested this exact side-effecting action."
+            ),
+            "properties": {
+                "expected_by_user": {"type": "boolean"},
+                "reason": {"type": "string"},
+                "on_success": {
+                    "type": "string",
+                    "enum": ["message", "resume_model", "none"],
+                },
+                "on_success_message": {"type": "string"},
+                "on_error": {
+                    "type": "string",
+                    "enum": ["resume_model", "message", "none"],
+                },
+                "on_error_message": {"type": "string"},
+                "metadata": {"type": "object"},
+            },
+            "additionalProperties": True,
+        },
+    )
+    schema["properties"] = properties
+    if schema.get("additionalProperties") is False:
+        schema["additionalProperties"] = True
+    return schema
 
 
 def _event_metadata(
@@ -510,6 +916,11 @@ def _runtime_identity_prompt() -> str:
             "provider limitation actually prevents it.",
             "Any shell command must be finite and bounded. Prefer forms like `ping -c 4` or "
             "`curl --max-time 10`, and avoid interactive or continuous commands.",
+            "For side-effecting tool calls, you may include `approval_context` in arguments. "
+            "Set `expected_by_user=true` only when the user clearly requested that exact action. "
+            "Use `on_success_message` for a final user-facing message that can be sent after "
+            "approval without another model call; use `on_error='resume_model'` when failures "
+            "should be sent back to the model.",
             "When useful, explain briefly what you are doing before or after tool use.",
         ]
     )
