@@ -402,12 +402,13 @@ class CliRuntimeFlowsTests(unittest.TestCase):
                 [sys.executable, "-m", "nagient", "setup"],
                 cwd=PROJECT_ROOT,
                 env=env,
-                input="4\n1\n@home/project\n0\n0\n",
+                input="5\n1\n@home/project\n0\n0\n",
                 capture_output=True,
                 text=True,
                 check=True,
             )
             self.assertIn("Nagient Setup", setup_process.stdout)
+            self.assertIn("Agent", setup_process.stdout)
             config_text = (home_dir / "config.toml").read_text(encoding="utf-8")
             self.assertIn('root = "@home/project"', config_text)
 

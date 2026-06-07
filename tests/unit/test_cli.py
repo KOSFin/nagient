@@ -453,6 +453,26 @@ class CliTests(unittest.TestCase):
         self.assertEqual(selection, "fields")
         self.assertIn("Enter a number from 0 to 2.", stdout.getvalue())
 
+    def test_agent_setup_menu_toggles_progress_broadcasts(self) -> None:
+        from nagient.app.configuration import load_runtime_configuration
+        from nagient.app.container import build_container
+        from nagient.app.settings import Settings
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            settings = Settings.from_env({"NAGIENT_HOME": str(Path(temp_dir) / "home")})
+            container = build_container(settings)
+            container.configuration_service.initialize(force=True)
+
+            with patch("builtins.input", side_effect=["5", "0"]):
+                stdout = io.StringIO()
+                with redirect_stdout(stdout):
+                    cli._run_agent_setup_menu(container)
+
+            runtime_config = load_runtime_configuration(settings)
+
+        self.assertTrue(runtime_config.agent.progress.enabled)
+        self.assertIn("Progress broadcasts", stdout.getvalue())
+
     def test_run_generic_field_editor_stores_secret_values_for_secret_fields(self) -> None:
         container = SimpleNamespace(
             secret_broker=SimpleNamespace(

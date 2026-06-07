@@ -1054,6 +1054,7 @@ def _run_setup_wizard(container: AppContainer) -> int:
                 "Choose a setup area:",
                 [
                     ("providers", "Providers"),
+                    ("agent", "Agent"),
                     ("transports", "Transports"),
                     ("tools", "Tools"),
                     ("workspace", "Workspace"),
@@ -1070,6 +1071,9 @@ def _run_setup_wizard(container: AppContainer) -> int:
             if selection == "providers":
                 _run_provider_setup_menu(container)
                 continue
+            if selection == "agent":
+                _run_agent_setup_menu(container)
+                continue
             if selection == "transports":
                 _run_transport_setup_menu(container)
                 continue
@@ -1084,6 +1088,136 @@ def _run_setup_wizard(container: AppContainer) -> int:
                 continue
             if selection == "status":
                 _emit(container.status_service.collect(), "text", view="status")
+
+
+def _run_agent_setup_menu(container: AppContainer) -> None:
+    while True:
+        colors = _supports_color()
+        runtime_config = load_runtime_configuration(container.settings)
+        agent = runtime_config.agent
+        progress_label = "enabled" if agent.progress.enabled else "disabled"
+        require_label = "true" if agent.require_provider else "false"
+        selection = _prompt_menu_choice(
+            "Agent settings:",
+            [
+                (
+                    "default_provider",
+                    "Default provider"
+                    + _suffix_value(runtime_config.default_provider or "none", colors=colors),
+                ),
+                (
+                    "require_provider",
+                    "Require provider" + _suffix_value(require_label, colors=colors),
+                ),
+                (
+                    "system_prompt_file",
+                    "System prompt file"
+                    + _suffix_value(
+                        _render_path_value(
+                            str(agent.system_prompt_file or ""),
+                            container.settings,
+                        ),
+                        colors=colors,
+                    ),
+                ),
+                (
+                    "max_turns",
+                    "Max turns" + _suffix_value(str(agent.max_turns), colors=colors),
+                ),
+                (
+                    "progress",
+                    "Progress broadcasts"
+                    + _suffix_value(progress_label, colors=colors),
+                ),
+                ("memory", "Memory settings"),
+                ("logging", "Logging settings"),
+            ],
+            zero_label="Back",
+        )
+        if selection is None:
+            return
+        if selection == "default_provider":
+            default_provider = _prompt_text(
+                "Default provider",
+                default=runtime_config.default_provider or "",
+            )
+            if default_provider is not None:
+                payload = container.configuration_service.configure_agent(
+                    {"default_provider": default_provider}
+                )
+                _emit_configuration_result(container, payload, "text")
+            continue
+        if selection == "require_provider":
+            payload = container.configuration_service.configure_agent(
+                {"require_provider": not agent.require_provider}
+            )
+            _emit_configuration_result(container, payload, "text")
+            continue
+        if selection == "system_prompt_file":
+            system_prompt_file = _prompt_text(
+                "System prompt file",
+                default=_render_path_value(
+                    str(agent.system_prompt_file or ""),
+                    container.settings,
+                ),
+            )
+            if system_prompt_file is not None:
+                payload = container.configuration_service.configure_agent(
+                    {
+                        "system_prompt_file": _resolve_path_alias(
+                            system_prompt_file,
+                            container.settings,
+                        )
+                    }
+                )
+                _emit_configuration_result(container, payload, "text")
+            continue
+        if selection == "max_turns":
+            raw_max_turns = _prompt_text("Max turns", default=str(agent.max_turns))
+            if raw_max_turns is not None:
+                try:
+                    max_turns = int(raw_max_turns)
+                except ValueError:
+                    print(_paint("Max turns must be a positive integer.", "31", colors=colors))
+                    continue
+                payload = container.configuration_service.configure_agent(
+                    {"max_turns": max_turns}
+                )
+                _emit_configuration_result(container, payload, "text")
+            continue
+        if selection == "progress":
+            payload = container.configuration_service.configure_agent(
+                {"progress": {"enabled": not agent.progress.enabled}}
+            )
+            _emit_configuration_result(container, payload, "text")
+            continue
+        if selection == "memory":
+            _run_generic_field_editor(
+                title="Agent memory settings:",
+                current_config=agent.memory.to_dict(),
+                allowed_keys=[
+                    "hard_message_limit",
+                    "dynamic_focus_enabled",
+                    "dynamic_focus_messages",
+                    "summary_trigger_messages",
+                    "retrieval_max_results",
+                ],
+                save_callback=lambda updates: container.configuration_service.configure_agent(
+                    {"memory": updates}
+                ),
+                container=container,
+            )
+            continue
+        if selection == "logging":
+            _run_generic_field_editor(
+                title="Agent logging settings:",
+                current_config=agent.logging.to_dict(),
+                allowed_keys=["level", "json_logs", "log_events"],
+                save_callback=lambda updates: container.configuration_service.configure_agent(
+                    {"logging": updates}
+                ),
+                container=container,
+            )
 
 
 def _run_provider_setup_menu(container: AppContainer) -> None:
