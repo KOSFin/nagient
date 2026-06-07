@@ -40,7 +40,7 @@ docker pull docker.io/parampo/nagient:latest
 После установки используйте одну короткую команду управления:
 
 ```bash
-~/.nagient/bin/nagient help
+nagient help
 ```
 
 Подробная документация:
@@ -53,7 +53,7 @@ docker pull docker.io/parampo/nagient:latest
 Через короткую команду:
 
 ```bash
-~/.nagient/bin/nagient update
+nagient update
 ```
 
 ```powershell
@@ -63,7 +63,7 @@ powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagient.ps1" update
 Удаление:
 
 ```bash
-~/.nagient/bin/nagient remove
+nagient remove
 ```
 
 ```powershell
@@ -81,9 +81,9 @@ powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagient.ps1" remove
 5. Используйте короткие команды.
 
 ```bash
-~/.nagient/bin/nagient up
-~/.nagient/bin/nagient status
-~/.nagient/bin/nagient logs
+nagient up
+nagient status
+nagient logs
 ```
 
 ## Короткий набор команд

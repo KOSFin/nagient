@@ -30,15 +30,15 @@ Layout:
 ## 2. Minimal working flow
 
 1. Install Nagient.
-2. Run `~/.nagient/bin/nagient setup`.
+2. Run `nagient setup`.
 3. Configure a provider, transport, workspace, and tool secrets from the setup menus.
-4. Use `~/.nagient/bin/nagient paths` when you need the exact alias-expanded paths.
+4. Use `nagient paths` when you need the exact alias-expanded paths.
 5. Run:
 
 ```bash
-~/.nagient/bin/nagient preflight
-~/.nagient/bin/nagient reconcile
-~/.nagient/bin/nagient status
+nagient preflight
+nagient reconcile
+nagient status
 ```
 
 ## 3. Path aliases
@@ -139,13 +139,13 @@ GITHUB_TOKEN=
 The `github_api` tool profile is present and enabled out of the box so the agent can see the GitHub capability in its tool catalog. It supports authenticated user lookup, repository listing, repository lookup, issue listing, issue creation, comments, and a generic `github.api.request` function. Store the token in `@tool_secrets` as `GITHUB_TOKEN`:
 
 ```bash
-~/.nagient/bin/nagient setup tool github_api --set token_secret=GITHUB_TOKEN
+nagient setup tool github_api --set token_secret=GITHUB_TOKEN
 ```
 
 Use `github.api.request` for GitHub REST endpoints that do not have a dedicated helper yet, for example repository settings updates:
 
 ```bash
-~/.nagient/bin/nagient tool invoke github.api.request \
+nagient tool invoke github.api.request \
   --tool-id github_api \
   --args-json '{"method":"PATCH","path":"/repos/OWNER/REPO","json":{"description":"Updated by Nagient"}}' \
   --auto-approve

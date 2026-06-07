@@ -9,7 +9,7 @@ After installation, use `nagient` for day-to-day operations.
 Linux/macOS:
 
 ```bash
-~/.nagient/bin/nagient help
+nagient help
 ```
 
 Windows:

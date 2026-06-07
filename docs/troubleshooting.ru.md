@@ -81,19 +81,19 @@ irm https://ngnt-in.ruka.me/install.ps1 | iex
 Команды:
 
 ```bash
-~/.nagient/bin/nagient preflight
-~/.nagient/bin/nagient reconcile
-~/.nagient/bin/nagient status
+nagient preflight
+nagient reconcile
+nagient status
 ```
 
-## Слишком длинный путь до `nagient`
+## Необязательный shell alias
 
 Создайте alias.
 
 Linux/macOS:
 
 ```bash
-alias ng='~/.nagient/bin/nagient'
+alias ng='nagient'
 ng status
 ```
 

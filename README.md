@@ -40,7 +40,7 @@ The installer creates a local runtime in `~/.nagient` and starts Nagient via Doc
 After installation, use one short control command instead of long Docker Compose commands:
 
 ```bash
-~/.nagient/bin/nagient help
+nagient help
 ```
 
 Detailed documentation:
@@ -53,7 +53,7 @@ Detailed documentation:
 Use the shortcut command:
 
 ```bash
-~/.nagient/bin/nagient update
+nagient update
 ```
 
 ```powershell
@@ -63,7 +63,7 @@ powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagient.ps1" update
 Remove installation:
 
 ```bash
-~/.nagient/bin/nagient remove
+nagient remove
 ```
 
 ```powershell
@@ -81,9 +81,9 @@ To remove all local runtime data, set `NAGIENT_PURGE=true` before running uninst
 5. Run short commands:
 
 ```bash
-~/.nagient/bin/nagient up
-~/.nagient/bin/nagient status
-~/.nagient/bin/nagient logs
+nagient up
+nagient status
+nagient logs
 ```
 
 ## Short Command Surface

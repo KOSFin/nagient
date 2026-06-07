@@ -46,7 +46,7 @@ Invoke-Expression ((Invoke-WebRequest -UseBasicParsing -Uri "https://ngnt-in.ruk
 Linux/macOS:
 
 ```bash
-~/.nagient/bin/nagient update
+nagient update
 ```
 
 Windows:
@@ -60,7 +60,7 @@ powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagient.ps1" update
 Linux/macOS:
 
 ```bash
-~/.nagient/bin/nagient remove
+nagient remove
 ```
 
 Windows:
@@ -74,7 +74,7 @@ Full data cleanup:
 Linux/macOS:
 
 ```bash
-NAGIENT_PURGE=true ~/.nagient/bin/nagient remove
+NAGIENT_PURGE=true nagient remove
 ```
 
 Windows:

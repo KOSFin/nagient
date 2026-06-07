@@ -1015,17 +1015,13 @@ def _run_setup_wizard(container: AppContainer) -> int:
         runtime_config = load_runtime_configuration(container.settings)
         default_provider = runtime_config.default_provider or "none"
         runtime_state = container.status_service.runtime_state()
-        print("")
-        print(_heading("Nagient Setup", colors))
-        print(
+        header_lines = [
             "Default provider: "
             + (
                 _paint(default_provider, "1;36", colors=colors)
                 if default_provider != "none"
                 else _paint(default_provider, "2", colors=colors)
-            )
-        )
-        print(
+            ),
             "Runtime apply state: "
             + _paint(_as_text(runtime_state.get("status")) or "unknown", "1", colors=colors)
             + (
@@ -1037,8 +1033,8 @@ def _run_setup_wizard(container: AppContainer) -> int:
                 _paint("  reconcile required", "33", colors=colors)
                 if _as_bool(runtime_state.get("needs_reconcile"))
                 else ""
-            )
-        )
+            ),
+        ]
         selection = _prompt_menu_choice(
             "Choose a setup area:",
             [
@@ -1050,6 +1046,8 @@ def _run_setup_wizard(container: AppContainer) -> int:
                 ("status", "Review runtime health"),
             ],
             zero_label="Exit setup",
+            screen_title="Nagient Setup",
+            screen_lines=header_lines,
         )
         if selection is None:
             print("Leaving setup.")
@@ -1901,16 +1899,20 @@ def _run_logs_viewer(
         return 0
 
     while True:
-        print("\033[2J\033[H", end="")
         title = "Nagient Logs"
         if component:
             title += f" / {component}"
-        print(title)
-        print("=" * len(title))
-        print("Enter: refresh   q: quit")
-        print("")
-        for line in _read_log_lines(settings, component=component, lines=line_count):
-            print(line)
+        colors = _supports_color()
+        log_lines = _read_log_lines(settings, component=component, lines=line_count)
+        screen_lines = [
+            f"Path: {_render_path_value(str(settings.log_dir), settings)}",
+            f"Lines: {len(log_lines)} shown, requested {line_count}",
+            "",
+            "Enter: refresh   q: quit",
+            "",
+            *log_lines,
+        ]
+        _render_cli_screen(title, screen_lines, colors=colors)
         try:
             answer = input("\nlogs> ").strip().lower()
         except (EOFError, KeyboardInterrupt):
@@ -2896,17 +2898,23 @@ def _prompt_menu_choice(
     options: list[tuple[str, str]],
     *,
     zero_label: str,
+    screen_title: str | None = None,
+    screen_lines: list[str] | None = None,
 ) -> str | None:
     colors = _supports_color()
     while True:
-        print("")
-        print(_heading(title, colors))
+        lines = list(screen_lines or [])
+        if lines and screen_title:
+            lines.append("")
+        if screen_title:
+            lines.append(_heading(title, colors))
         for index, (_value, label) in enumerate(options, start=1):
-            print(f"{_paint(str(index), '1;36', colors=colors)}) {label}")
-        print(
+            lines.append(f"{_paint(str(index), '1;36', colors=colors)}) {label}")
+        lines.append(
             f"{_paint('0', '1;36', colors=colors)}) "
             f"{_paint(zero_label, '2', colors=colors)}"
         )
+        _render_cli_screen(screen_title or title, lines, colors=colors)
         try:
             raw_choice = input(
                 _paint(f"Choice [0-{len(options)}]: ", "1", colors=colors)
@@ -2936,6 +2944,27 @@ def _prompt_menu_choice(
             )
             continue
         return options[selected_index - 1][0]
+
+
+def _render_cli_screen(
+    title: str,
+    lines: list[str],
+    *,
+    colors: bool,
+) -> None:
+    if sys.stdin.isatty() and sys.stdout.isatty():
+        print("\033[2J\033[H", end="")
+        print(_heading(title, colors))
+        print("")
+        for line in lines:
+            print(line)
+        return
+    print("")
+    print(_heading(title, colors))
+    if lines:
+        print("")
+    for line in lines:
+        print(line)
 
 
 def _prompt_text(prompt: str, *, default: str = "") -> str | None:

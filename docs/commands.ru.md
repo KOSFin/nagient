@@ -9,7 +9,7 @@
 Linux/macOS:
 
 ```bash
-~/.nagient/bin/nagient help
+nagient help
 ```
 
 Windows:

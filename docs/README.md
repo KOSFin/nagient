@@ -8,10 +8,10 @@ Linux/macOS:
 
 ```bash
 curl -fsSL https://ngnt-in.ruka.me/install.sh | bash
-~/.nagient/bin/nagient setup
-~/.nagient/bin/nagient chat
-~/.nagient/bin/nagient up
-~/.nagient/bin/nagient status
+nagient setup
+nagient chat
+nagient up
+nagient status
 ```
 
 Windows PowerShell:

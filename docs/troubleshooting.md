@@ -81,19 +81,19 @@ Check:
 Commands:
 
 ```bash
-~/.nagient/bin/nagient preflight
-~/.nagient/bin/nagient reconcile
-~/.nagient/bin/nagient status
+nagient preflight
+nagient reconcile
+nagient status
 ```
 
-## Shortcut for long `nagient` path
+## Optional shell alias
 
 Define an alias.
 
 Linux/macOS:
 
 ```bash
-alias ng='~/.nagient/bin/nagient'
+alias ng='nagient'
 ng status
 ```
 

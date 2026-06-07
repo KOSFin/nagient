@@ -30,15 +30,15 @@
 ## 2. Минимальный рабочий сценарий
 
 1. Установить Nagient.
-2. Запустить `~/.nagient/bin/nagient setup`.
+2. Запустить `nagient setup`.
 3. Настроить provider, transport, workspace и секреты через меню setup.
-4. Использовать `~/.nagient/bin/nagient paths`, когда нужны точные пути после раскрытия алиасов.
+4. Использовать `nagient paths`, когда нужны точные пути после раскрытия алиасов.
 5. Выполнить:
 
 ```bash
-~/.nagient/bin/nagient preflight
-~/.nagient/bin/nagient reconcile
-~/.nagient/bin/nagient status
+nagient preflight
+nagient reconcile
+nagient status
 ```
 
 ## 3. Алиасы путей
@@ -139,13 +139,13 @@ GITHUB_TOKEN=
 Профиль `github_api` есть из коробки и включен по умолчанию, чтобы агент видел GitHub-возможности в каталоге tools. Он умеет получать подключенного пользователя, список репозиториев, читать репозитории, получать issues, создавать issues, писать комментарии и выполнять общий `github.api.request`. Сохраните токен в `@tool_secrets` как `GITHUB_TOKEN`:
 
 ```bash
-~/.nagient/bin/nagient setup tool github_api --set token_secret=GITHUB_TOKEN
+nagient setup tool github_api --set token_secret=GITHUB_TOKEN
 ```
 
 Используйте `github.api.request` для GitHub REST endpoints, для которых пока нет отдельного helper, например для обновления настроек репозитория:
 
 ```bash
-~/.nagient/bin/nagient tool invoke github.api.request \
+nagient tool invoke github.api.request \
   --tool-id github_api \
   --args-json '{"method":"PATCH","path":"/repos/OWNER/REPO","json":{"description":"Updated by Nagient"}}' \
   --auto-approve
