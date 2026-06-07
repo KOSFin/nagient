@@ -40,6 +40,27 @@ class SchedulerServiceTests(unittest.TestCase):
             self.assertEqual(len(executed), 1)
             self.assertEqual(executed[0].status, "completed")
 
+    def test_schedule_once_normalizes_relative_run_at(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            settings = Settings.from_env({"NAGIENT_HOME": str(Path(temp_dir) / "home")})
+            layout = WorkspaceManager(settings).ensure_layout(
+                WorkspaceConfig(root=Path(temp_dir) / "workspace", mode="bounded")
+            )
+            service = SchedulerService(RuntimeLogger(settings, "scheduler-test"))
+
+            job = service.schedule_once(
+                layout,
+                run_at="in 10 seconds",
+                payload={"action_type": "agent.wake", "message": "hello"},
+                name="wake",
+            )
+
+            self.assertRegex(job.run_at or "", r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+            self.assertNotEqual(job.run_at, "in 10 seconds")
+            next_due = service.seconds_until_next_due(layout)
+            self.assertIsNotNone(next_due)
+            self.assertLessEqual(next_due or 999, 10)
+
     def test_cancel_job_updates_status(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             settings = Settings.from_env({"NAGIENT_HOME": str(Path(temp_dir) / "home")})

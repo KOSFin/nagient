@@ -46,14 +46,44 @@ class JobStore:
                 continue
             if job.trigger == "event":
                 continue
-            if job.trigger == "once" and job.run_at and _parse_time(job.run_at) <= current:
-                due_jobs.append(job)
-                continue
+            if job.trigger == "once" and job.run_at:
+                run_at = _try_parse_time(job.run_at)
+                if run_at is None:
+                    continue
+                if run_at <= current:
+                    due_jobs.append(job)
+                    continue
             if job.trigger == "interval" and job.interval_seconds is not None:
-                last_run = _parse_time(job.last_run_at) if job.last_run_at else None
+                last_run = _try_parse_time(job.last_run_at) if job.last_run_at else None
                 if last_run is None or (current - last_run).total_seconds() >= job.interval_seconds:
                     due_jobs.append(job)
         return due_jobs
+
+    def seconds_until_next_due(self, now: datetime | None = None) -> float | None:
+        current = now or datetime.now(tz=UTC)
+        next_delay: float | None = None
+        for job in self.list():
+            if job.status not in {"pending", "scheduled"}:
+                continue
+            if job.trigger == "once" and job.run_at:
+                run_at = _try_parse_time(job.run_at)
+                if run_at is None:
+                    continue
+                delay = max(0.0, (run_at - current).total_seconds())
+            elif job.trigger == "interval" and job.interval_seconds is not None:
+                last_run = _try_parse_time(job.last_run_at) if job.last_run_at else None
+                if last_run is None:
+                    delay = 0.0
+                else:
+                    delay = max(
+                        0.0,
+                        job.interval_seconds - (current - last_run).total_seconds(),
+                    )
+            else:
+                continue
+            if next_delay is None or delay < next_delay:
+                next_delay = delay
+        return next_delay
 
 
 def _parse_time(value: str | None) -> datetime:
@@ -64,3 +94,10 @@ def _parse_time(value: str | None) -> datetime:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=UTC)
     return parsed.astimezone(UTC)
+
+
+def _try_parse_time(value: str | None) -> datetime | None:
+    try:
+        return _parse_time(value)
+    except ValueError:
+        return None

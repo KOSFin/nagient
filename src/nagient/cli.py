@@ -8,7 +8,8 @@ import re
 import sys
 import time
 import tomllib
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -1010,65 +1011,70 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _run_setup_wizard(container: AppContainer) -> int:
-    while True:
-        colors = _supports_color()
-        runtime_config = load_runtime_configuration(container.settings)
-        default_provider = runtime_config.default_provider or "none"
-        runtime_state = container.status_service.runtime_state()
-        header_lines = [
-            "Default provider: "
-            + (
-                _paint(default_provider, "1;36", colors=colors)
-                if default_provider != "none"
-                else _paint(default_provider, "2", colors=colors)
-            ),
-            "Runtime apply state: "
-            + _paint(_as_text(runtime_state.get("status")) or "unknown", "1", colors=colors)
-            + (
-                _paint("  restart required", "33", colors=colors)
-                if _as_bool(runtime_state.get("needs_restart"))
-                else ""
+    with _terminal_screen():
+        while True:
+            colors = _supports_color()
+            runtime_config = load_runtime_configuration(container.settings)
+            default_provider = runtime_config.default_provider or "none"
+            runtime_state = container.status_service.runtime_state()
+            header_lines = [
+                "Default provider: "
+                + (
+                    _paint(default_provider, "1;36", colors=colors)
+                    if default_provider != "none"
+                    else _paint(default_provider, "2", colors=colors)
+                ),
+                "Runtime apply state: "
+                + _paint(
+                    _as_text(runtime_state.get("status")) or "unknown",
+                    "1",
+                    colors=colors,
+                )
+                + (
+                    _paint("  restart required", "33", colors=colors)
+                    if _as_bool(runtime_state.get("needs_restart"))
+                    else ""
+                )
+                + (
+                    _paint("  reconcile required", "33", colors=colors)
+                    if _as_bool(runtime_state.get("needs_reconcile"))
+                    else ""
+                ),
+            ]
+            selection = _prompt_menu_choice(
+                "Choose a setup area:",
+                [
+                    ("providers", "Providers"),
+                    ("transports", "Transports"),
+                    ("tools", "Tools"),
+                    ("workspace", "Workspace"),
+                    ("paths", "Path aliases"),
+                    ("status", "Review runtime health"),
+                ],
+                zero_label="Exit setup",
+                screen_title="Nagient Setup",
+                screen_lines=header_lines,
             )
-            + (
-                _paint("  reconcile required", "33", colors=colors)
-                if _as_bool(runtime_state.get("needs_reconcile"))
-                else ""
-            ),
-        ]
-        selection = _prompt_menu_choice(
-            "Choose a setup area:",
-            [
-                ("providers", "Providers"),
-                ("transports", "Transports"),
-                ("tools", "Tools"),
-                ("workspace", "Workspace"),
-                ("paths", "Path aliases"),
-                ("status", "Review runtime health"),
-            ],
-            zero_label="Exit setup",
-            screen_title="Nagient Setup",
-            screen_lines=header_lines,
-        )
-        if selection is None:
-            print("Leaving setup.")
-            return 0
-        if selection == "providers":
-            _run_provider_setup_menu(container)
-            continue
-        if selection == "transports":
-            _run_transport_setup_menu(container)
-            continue
-        if selection == "tools":
-            _run_tool_setup_menu(container)
-            continue
-        if selection == "workspace":
-            _run_workspace_setup_menu(container)
-            continue
-        if selection == "paths":
-            _run_paths_setup_menu(container)
-            continue
-        if selection == "status":
-            _emit(container.status_service.collect(), "text", view="status")
+            if selection is None:
+                print("Leaving setup.")
+                return 0
+            if selection == "providers":
+                _run_provider_setup_menu(container)
+                continue
+            if selection == "transports":
+                _run_transport_setup_menu(container)
+                continue
+            if selection == "tools":
+                _run_tool_setup_menu(container)
+                continue
+            if selection == "workspace":
+                _run_workspace_setup_menu(container)
+                continue
+            if selection == "paths":
+                _run_paths_setup_menu(container)
+                continue
+            if selection == "status":
+                _emit(container.status_service.collect(), "text", view="status")
 
 
 def _run_provider_setup_menu(container: AppContainer) -> None:
@@ -1898,28 +1904,29 @@ def _run_logs_viewer(
             print(line)
         return 0
 
-    while True:
-        title = "Nagient Logs"
-        if component:
-            title += f" / {component}"
-        colors = _supports_color()
-        log_lines = _read_log_lines(settings, component=component, lines=line_count)
-        screen_lines = [
-            f"Path: {_render_path_value(str(settings.log_dir), settings)}",
-            f"Lines: {len(log_lines)} shown, requested {line_count}",
-            "",
-            "Enter: refresh   q: quit",
-            "",
-            *log_lines,
-        ]
-        _render_cli_screen(title, screen_lines, colors=colors)
-        try:
-            answer = input("\nlogs> ").strip().lower()
-        except (EOFError, KeyboardInterrupt):
-            print("")
-            return 0
-        if answer in {"q", "quit", "exit", "0"}:
-            return 0
+    with _terminal_screen():
+        while True:
+            title = "Nagient Logs"
+            if component:
+                title += f" / {component}"
+            colors = _supports_color()
+            log_lines = _read_log_lines(settings, component=component, lines=line_count)
+            screen_lines = [
+                f"Path: {_render_path_value(str(settings.log_dir), settings)}",
+                f"Lines: {len(log_lines)} shown, requested {line_count}",
+                "",
+                "Enter: refresh   q: quit",
+                "",
+                *log_lines,
+            ]
+            _render_cli_screen(title, screen_lines, colors=colors)
+            try:
+                answer = input("\nlogs> ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                print("")
+                return 0
+            if answer in {"q", "quit", "exit", "0"}:
+                return 0
 
 
 def _read_log_lines(
@@ -2965,6 +2972,18 @@ def _render_cli_screen(
         print("")
     for line in lines:
         print(line)
+
+
+@contextmanager
+def _terminal_screen() -> Iterator[None]:
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        yield
+        return
+    print("\033[?1049h\033[?25l", end="", flush=True)
+    try:
+        yield
+    finally:
+        print("\033[?25h\033[?1049l", end="", flush=True)
 
 
 def _prompt_text(prompt: str, *, default: str = "") -> str | None:

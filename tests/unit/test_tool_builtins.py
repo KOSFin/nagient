@@ -115,6 +115,30 @@ class ToolBuiltinsTests(unittest.TestCase):
             self.assertEqual(result.output["exit_code"], 0)
             self.assertIsInstance(result.output["stdout"], str)
 
+    def test_system_jobs_schedule_once_accepts_delay_seconds(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            container = _container_with_workspace(Path(temp_dir))
+
+            result = container.tool_service.invoke(
+                ToolExecutionRequest(
+                    tool_id="system_jobs",
+                    function_name="system.jobs.schedule_once",
+                    arguments={
+                        "delay_seconds": 10,
+                        "message": "check VS Code",
+                        "transport_id": "telegram",
+                        "session_id": "telegram:demo",
+                        "approval_context": {"expected_by_user": True},
+                    },
+                )
+            )
+
+            self.assertEqual(result.status, "success")
+            self.assertRegex(
+                str(result.output["run_at"]),
+                r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$",
+            )
+
     def test_github_api_tool_uses_structured_requests(self) -> None:
         seen: dict[str, object] = {}
         responses = [

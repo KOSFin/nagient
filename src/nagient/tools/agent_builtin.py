@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from nagient.application.services.scheduler_service import SchedulerService
+from nagient.application.services.scheduler_service import SchedulerService, run_at_after
 from nagient.application.services.session_memory_service import SessionMemoryService
 from nagient.application.services.transport_router_service import TransportRouterService
 from nagient.domain.entities.tooling import ToolFunctionManifest, ToolPluginManifest
@@ -348,13 +348,14 @@ class SystemJobsToolPlugin(BaseToolPlugin):
                     "type": "object",
                     "properties": {
                         "run_at": {"type": "string"},
+                        "delay_seconds": {"type": "integer", "minimum": 1},
                         "message": {"type": "string"},
                         "name": {"type": "string"},
                         "notes": {"type": "string"},
                         "session_id": {"type": "string"},
                         "transport_id": {"type": "string"},
                     },
-                    "required": ["run_at", "message"],
+                    "required": ["message"],
                     "additionalProperties": False,
                 },
                 output_schema={"type": "object"},
@@ -417,7 +418,7 @@ class SystemJobsToolPlugin(BaseToolPlugin):
         context: ToolExecutionContext,
     ) -> dict[str, object]:
         scheduler = _require_scheduler_service(context)
-        run_at = _require_string(arguments, "run_at")
+        run_at = _run_at_argument(arguments)
         message = _require_string(arguments, "message")
         name = str(arguments.get("name", "scheduled wake")).strip() or "scheduled wake"
         job = scheduler.schedule_once(
@@ -484,6 +485,17 @@ def _wake_payload(
         "transport_id": transport_id,
         "message": message,
     }
+
+
+def _run_at_argument(arguments: Mapping[str, object]) -> str:
+    delay_seconds = arguments.get("delay_seconds")
+    if isinstance(delay_seconds, bool):
+        delay_seconds = None
+    if isinstance(delay_seconds, int):
+        return run_at_after(delay_seconds)
+    if isinstance(delay_seconds, str) and delay_seconds.strip().isdigit():
+        return run_at_after(int(delay_seconds.strip()))
+    return _require_string(arguments, "run_at")
 
 
 def _require_string(arguments: Mapping[str, object], key: str) -> str:

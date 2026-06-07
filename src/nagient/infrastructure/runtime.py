@@ -95,7 +95,9 @@ class RuntimeAgent:
                 self._run_due_jobs(log_path, scheduler_layout)
                 if once:
                     break
-                stop_event.wait(timeout=self.settings.heartbeat_interval_seconds)
+                stop_event.wait(
+                    timeout=self._next_runtime_wait_seconds(scheduler_layout)
+                )
         finally:
             self._stop_transports(log_path, started_transports)
             self._log(log_path, "Runtime stopped.", component="runtime.lifecycle")
@@ -653,6 +655,22 @@ class RuntimeAgent:
                 f"Scheduler executed job {job.job_id} ({job.trigger}).",
                 component="scheduler",
             )
+
+    def _next_runtime_wait_seconds(
+        self,
+        layout: WorkspaceLayout | None,
+    ) -> float:
+        heartbeat = float(max(1, self.settings.heartbeat_interval_seconds))
+        if layout is None or self.scheduler_service is None:
+            return heartbeat
+        try:
+            next_due = self.scheduler_service.seconds_until_next_due(layout)
+        except Exception:
+            return heartbeat
+        if next_due is None:
+            return heartbeat
+        next_due_seconds = float(next_due)
+        return max(0.5, min(heartbeat, next_due_seconds))
 
 
 def _latest_runtime_input_change(settings: Settings) -> tuple[Path, float] | None:

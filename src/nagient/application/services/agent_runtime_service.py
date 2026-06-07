@@ -581,14 +581,59 @@ class AgentRuntimeService:
         message = str(job.payload.get("message", "")).strip()
         if not message:
             return None
-        return self.handle_inbound_event(
+        event: dict[str, object] = {
+            "event_type": "system_wake",
+            "session_id": session_id,
+            "text": message,
+        }
+        reply_target = _scheduled_reply_target(job.payload, transport_id, session_id)
+        if reply_target:
+            event["reply_target"] = reply_target
+        reply = self.handle_inbound_event(
             transport_id,
-            {
-                "event_type": "system_wake",
-                "session_id": session_id,
-                "text": message,
-            },
+            event,
         )
+        if reply and self._maybe_send_scheduled_reply(
+            transport_id=transport_id,
+            reply_target=reply_target,
+            reply=reply,
+            job_id=job.job_id,
+        ):
+            return None
+        return reply
+
+    def _maybe_send_scheduled_reply(
+        self,
+        *,
+        transport_id: str,
+        reply_target: dict[str, object],
+        reply: str,
+        job_id: str,
+    ) -> bool:
+        if self.transport_router is None or transport_id == "console" or not reply_target:
+            return False
+        payload = dict(reply_target)
+        payload["text"] = reply
+        try:
+            self.transport_router.send_message(
+                transport_id=transport_id,
+                payload=payload,
+            )
+        except Exception as exc:
+            self.logger.warning(
+                "agent_runtime.scheduled_reply_failed",
+                "Failed to send scheduled job reply through transport.",
+                transport_id=transport_id,
+                job_id=job_id,
+                error=str(exc),
+            )
+            return False
+        append_runtime_log(
+            self.settings,
+            f"Sent scheduled job reply through {transport_id} for {job_id}.",
+            component="agent.runtime",
+        )
+        return True
 
     def _system_prompt(
         self,
@@ -1072,6 +1117,21 @@ def _event_metadata(
     return metadata
 
 
+def _scheduled_reply_target(
+    payload: dict[str, object],
+    transport_id: str,
+    session_id: str,
+) -> dict[str, object]:
+    reply_target = payload.get("reply_target")
+    if isinstance(reply_target, dict):
+        return {str(key): value for key, value in reply_target.items()}
+    if transport_id == "telegram" and session_id.startswith("telegram:"):
+        chat_id = session_id.split(":", 1)[1].strip()
+        if chat_id:
+            return {"chat_id": chat_id}
+    return {}
+
+
 def _runtime_identity_prompt() -> str:
     return "\n".join(
         [
@@ -1080,6 +1140,8 @@ def _runtime_identity_prompt() -> str:
             "You can use configured tools to read and write workspace files, run shell "
             "commands, inspect git state, use durable memory, route outbound messages through "
             "configured transports, and schedule future jobs or self-wake tasks.",
+            "For short delayed reminders, use system.jobs.schedule_once with delay_seconds "
+            "instead of putting phrases like 'in 10 seconds' into run_at.",
             "You have conversation memory with recent context, focused context, retrieval, and "
             "durable notes.",
             "If a user asks what you can do, describe your real runtime capabilities.",

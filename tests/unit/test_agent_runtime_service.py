@@ -16,6 +16,7 @@ from nagient.domain.entities.agent_runtime import (
     NormalizedToolCall,
     NotificationIntent,
 )
+from nagient.domain.entities.jobs import JobRecord
 from nagient.domain.entities.tooling import ToolExecutionRequest
 from nagient.infrastructure.logging import RuntimeLogger
 from nagient.plugins.registry import TransportPluginRegistry
@@ -664,6 +665,45 @@ class AgentRuntimeServiceTests(unittest.TestCase):
             function_names = [item[1] for item in router.custom_calls]
             self.assertIn("telegram.answerCallback", function_names)
             self.assertIn("telegram.editMessage", function_names)
+
+    def test_scheduled_wake_sends_reply_through_transport_router(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir) / "home"
+            workspace_root = Path(temp_dir) / "workspace"
+            workspace_root.mkdir(parents=True, exist_ok=True)
+            settings = Settings.from_env({"NAGIENT_HOME": str(home_dir)})
+            container = build_container(settings)
+            container.configuration_service.initialize(force=True)
+            _set_workspace_root(settings.config_file, workspace_root)
+
+            router = _RecordingTransportRouter()
+            container.agent_runtime_service.transport_router = router
+            object.__setattr__(
+                container.provider_service,
+                "generate_assistant_response",
+                Mock(return_value=AssistantResponse(message="Проверь VS Code.")),
+            )
+
+            reply = container.agent_runtime_service.handle_scheduled_job(
+                JobRecord(
+                    job_id="job_demo",
+                    name="reminder",
+                    status="scheduled",
+                    trigger="once",
+                    created_at="2026-06-07T13:00:00Z",
+                    payload={
+                        "action_type": "agent.wake",
+                        "session_id": "telegram:1522105862",
+                        "transport_id": "telegram",
+                        "message": "напомни проверить VS Code",
+                    },
+                )
+            )
+
+            self.assertIsNone(reply)
+            self.assertEqual(router.messages[0][0], "telegram")
+            self.assertEqual(router.messages[0][1]["chat_id"], "1522105862")
+            self.assertEqual(router.messages[0][1]["text"], "Проверь VS Code.")
 
     def test_runtime_returns_friendly_timeout_before_tool_execution(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
