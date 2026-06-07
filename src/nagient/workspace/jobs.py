@@ -38,6 +38,13 @@ class JobStore:
                 jobs.append(JobRecord.from_dict(payload))
         return jobs
 
+    def delete(self, job_id: str) -> bool:
+        path = self.jobs_dir / f"{job_id}.json"
+        if not path.exists():
+            return False
+        path.unlink()
+        return True
+
     def due(self, now: datetime | None = None) -> builtins.list[JobRecord]:
         current = now or datetime.now(tz=UTC)
         due_jobs: list[JobRecord] = []

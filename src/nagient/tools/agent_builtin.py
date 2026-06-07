@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import UTC, datetime
 
 from nagient.application.services.scheduler_service import SchedulerService, run_at_after
 from nagient.application.services.session_memory_service import SessionMemoryService
@@ -389,7 +390,9 @@ class SystemJobsToolPlugin(BaseToolPlugin):
                 description="List stored scheduler jobs for the current workspace.",
                 input_schema={
                     "type": "object",
-                    "properties": {},
+                    "properties": {
+                        "include_history": {"type": "boolean"},
+                    },
                     "additionalProperties": False,
                 },
                 output_schema={"type": "object"},
@@ -455,10 +458,22 @@ class SystemJobsToolPlugin(BaseToolPlugin):
         arguments: Mapping[str, object],
         context: ToolExecutionContext,
     ) -> dict[str, object]:
-        del arguments
         scheduler = _require_scheduler_service(context)
         jobs = scheduler.list_jobs(context.workspace)
-        return {"jobs": [job.to_dict() for job in jobs]}
+        include_history = bool(arguments.get("include_history", False))
+        visible_jobs = [
+            job
+            for job in jobs
+            if include_history or job.status in {"pending", "scheduled", "failed"}
+        ]
+        return {
+            "jobs": [_job_summary(job) for job in visible_jobs],
+            "count": len(visible_jobs),
+            "active_count": sum(
+                1 for job in jobs if job.status in {"pending", "scheduled"}
+            ),
+            "history_included": include_history,
+        }
 
     def cancel_job(
         self,
@@ -496,6 +511,38 @@ def _run_at_argument(arguments: Mapping[str, object]) -> str:
     if isinstance(delay_seconds, str) and delay_seconds.strip().isdigit():
         return run_at_after(int(delay_seconds.strip()))
     return _require_string(arguments, "run_at")
+
+
+def _job_summary(job: object) -> dict[str, object]:
+    run_at = getattr(job, "run_at", None)
+    summary: dict[str, object] = {
+        "job_id": getattr(job, "job_id", ""),
+        "name": getattr(job, "name", ""),
+        "status": getattr(job, "status", ""),
+        "trigger": getattr(job, "trigger", ""),
+    }
+    if isinstance(run_at, str) and run_at:
+        summary["run_at"] = run_at
+        due_in = _seconds_until(run_at)
+        if due_in is not None:
+            summary["due_in_seconds"] = due_in
+    interval_seconds = getattr(job, "interval_seconds", None)
+    if isinstance(interval_seconds, int):
+        summary["interval_seconds"] = interval_seconds
+    last_run_at = getattr(job, "last_run_at", None)
+    if isinstance(last_run_at, str) and last_run_at:
+        summary["last_run_at"] = last_run_at
+    return summary
+
+
+def _seconds_until(value: str) -> int | None:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return max(0, int((parsed.astimezone(UTC) - datetime.now(tz=UTC)).total_seconds()))
 
 
 def _require_string(arguments: Mapping[str, object], key: str) -> str:

@@ -98,6 +98,27 @@ class SchedulerService:
         job = self._store(layout).load(job_id)
         if job is None:
             raise ValueError(f"Job {job_id!r} was not found.")
+        if job.trigger == "once":
+            self._store(layout).delete(job.job_id)
+            self.logger.info(
+                "scheduler.cancel_job",
+                "Deleted cancelled one-off job.",
+                workspace_id=layout.metadata.workspace_id,
+                job_id=job_id,
+            )
+            return JobRecord(
+                job_id=job.job_id,
+                name=job.name,
+                status="cancelled",
+                trigger=job.trigger,
+                created_at=job.created_at,
+                run_at=job.run_at,
+                interval_seconds=job.interval_seconds,
+                event_name=job.event_name,
+                payload=job.payload,
+                last_run_at=job.last_run_at,
+                notes=job.notes,
+            )
         cancelled = JobRecord(
             job_id=job.job_id,
             name=job.name,
@@ -168,7 +189,10 @@ class SchedulerService:
                 last_run_at=_utc_now(),
                 notes=job.notes,
             )
-            store.save(updated)
+            if job.trigger == "once":
+                store.delete(job.job_id)
+            else:
+                store.save(updated)
             executed.append(updated)
             self.logger.info(
                 "scheduler.run_due_job",

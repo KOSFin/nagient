@@ -1154,6 +1154,8 @@ def _runtime_identity_prompt() -> str:
             "specific GitHub tool function, including repository or project settings updates.",
             "Only say that an action is blocked when a tool, policy, missing configuration, or "
             "provider limitation actually prevents it.",
+            "When reporting tool results to the user, summarize them in a compact human form. "
+            "Do not paste raw JSON arrays unless the user explicitly asks for raw JSON.",
             "Any shell command must be finite and bounded. Prefer forms like `ping -c 4` or "
             "`curl --max-time 10`, and avoid interactive or continuous commands.",
             "For side-effecting tool calls, you may include `approval_context` in arguments. "

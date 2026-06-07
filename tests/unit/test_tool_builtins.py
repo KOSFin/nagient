@@ -139,6 +139,22 @@ class ToolBuiltinsTests(unittest.TestCase):
                 r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$",
             )
 
+            list_result = container.tool_service.invoke(
+                ToolExecutionRequest(
+                    tool_id="system_jobs",
+                    function_name="system.jobs.list",
+                    arguments={},
+                )
+            )
+
+            self.assertEqual(list_result.status, "success")
+            jobs = list_result.output["jobs"]
+            self.assertIsInstance(jobs, list)
+            self.assertEqual(len(jobs), 1)
+            self.assertIn("due_in_seconds", jobs[0])
+            self.assertNotIn("payload", jobs[0])
+            self.assertNotIn("notes", jobs[0])
+
     def test_github_api_tool_uses_structured_requests(self) -> None:
         seen: dict[str, object] = {}
         responses = [
