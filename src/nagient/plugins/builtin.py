@@ -919,7 +919,6 @@ def builtin_plugins() -> list[LoadedTransportPlugin]:
     plugins: list[BaseTransportPlugin] = [
         ConsoleTransportPlugin(),
         WebhookTransportPlugin(),
-        TelegramTransportPlugin(),
     ]
     return [
         LoadedTransportPlugin(

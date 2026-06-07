@@ -33,8 +33,24 @@ class TransportPluginRegistry:
         }
         issues: list[CheckIssue] = []
 
+        bundled_transports_dir = Path(__file__).resolve().parents[1] / "bundled_transports"
+        self._discover_directory(bundled_transports_dir, plugins, issues)
+
         if not plugins_dir.exists():
             return PluginDiscovery(plugins=plugins, issues=issues)
+
+        self._discover_directory(plugins_dir, plugins, issues)
+
+        return PluginDiscovery(plugins=plugins, issues=issues)
+
+    def _discover_directory(
+        self,
+        plugins_dir: Path,
+        plugins: dict[str, LoadedTransportPlugin],
+        issues: list[CheckIssue],
+    ) -> None:
+        if not plugins_dir.exists():
+            return
 
         for entry in sorted(plugins_dir.iterdir()):
             if not entry.is_dir():
@@ -76,8 +92,6 @@ class TransportPluginRegistry:
                 )
                 continue
             plugins[plugin_id] = plugin
-
-        return PluginDiscovery(plugins=plugins, issues=issues)
 
     def _load_plugin(self, directory: Path) -> LoadedTransportPlugin:
         manifest_path = directory / "plugin.toml"

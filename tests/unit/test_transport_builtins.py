@@ -7,19 +7,24 @@ from pathlib import Path
 from typing import Any, cast
 
 from nagient.plugins.base import TransportRuntimeContext
-from nagient.plugins.builtin import builtin_plugins
+from nagient.plugins.registry import TransportPluginRegistry
 
 
 class TransportBuiltinsTests(unittest.TestCase):
+    def test_telegram_is_loaded_as_bundled_transport_plugin_manifest(self) -> None:
+        transport = _telegram_transport()
+
+        self.assertEqual(transport.manifest.plugin_id, "builtin.telegram")
+        self.assertEqual(transport.manifest.entrypoint, "transport.py")
+        self.assertEqual(transport.manifest.config_schema_file, "schema.json")
+        self.assertIn("bundled_transports", transport.source)
+        self.assertIn("telegram.sendTyping", transport.manifest.custom_functions)
+        self.assertIn("telegram.editMessage", transport.manifest.custom_functions)
+        self.assertIn("telegram.deleteMessage", transport.manifest.custom_functions)
+        self.assertIn("telegram.setReaction", transport.manifest.custom_functions)
+
     def test_telegram_accepts_numeric_default_chat_id(self) -> None:
-        plugin = cast(
-            Any,
-            next(
-                transport.implementation
-                for transport in builtin_plugins()
-                if transport.manifest.plugin_id == "builtin.telegram"
-            ),
-        )
+        plugin = _telegram_plugin()
 
         issues = plugin.validate_config(
             "telegram",
@@ -35,14 +40,7 @@ class TransportBuiltinsTests(unittest.TestCase):
         )
 
     def test_telegram_healthcheck_is_clean_when_runtime_support_is_built_in(self) -> None:
-        plugin = cast(
-            Any,
-            next(
-                transport.implementation
-                for transport in builtin_plugins()
-                if transport.manifest.plugin_id == "builtin.telegram"
-            ),
-        )
+        plugin = _telegram_plugin()
 
         class _UnexpectedTelegramHttpClient:
             def post_json(
@@ -68,14 +66,7 @@ class TransportBuiltinsTests(unittest.TestCase):
         self.assertEqual(issues, [])
 
     def test_telegram_validate_config_accepts_proxy_settings(self) -> None:
-        plugin = cast(
-            Any,
-            next(
-                transport.implementation
-                for transport in builtin_plugins()
-                if transport.manifest.plugin_id == "builtin.telegram"
-            ),
-        )
+        plugin = _telegram_plugin()
 
         issues = plugin.validate_config(
             "telegram",
@@ -94,14 +85,7 @@ class TransportBuiltinsTests(unittest.TestCase):
         self.assertEqual(issues, [])
 
     def test_telegram_normalizes_message_event_with_reply_target(self) -> None:
-        plugin = cast(
-            Any,
-            next(
-                transport.implementation
-                for transport in builtin_plugins()
-                if transport.manifest.plugin_id == "builtin.telegram"
-            ),
-        )
+        plugin = _telegram_plugin()
 
         normalized = plugin.normalize_inbound_event(
             {
@@ -120,14 +104,7 @@ class TransportBuiltinsTests(unittest.TestCase):
         self.assertEqual(normalized["reply_target"], {"chat_id": "1522105862"})
 
     def test_telegram_poll_inbound_events_persists_last_update_id(self) -> None:
-        plugin = cast(
-            Any,
-            next(
-                transport.implementation
-                for transport in builtin_plugins()
-                if transport.manifest.plugin_id == "builtin.telegram"
-            ),
-        )
+        plugin = _telegram_plugin()
 
         class _TelegramHttpClient:
             def post_json(
@@ -184,14 +161,7 @@ class TransportBuiltinsTests(unittest.TestCase):
             self.assertEqual(state_payload["last_update_id"], 9)
 
     def test_telegram_send_message_uses_payload_contract(self) -> None:
-        plugin = cast(
-            Any,
-            next(
-                transport.implementation
-                for transport in builtin_plugins()
-                if transport.manifest.plugin_id == "builtin.telegram"
-            ),
-        )
+        plugin = _telegram_plugin()
 
         class _TelegramHttpClient:
             def post_json(
@@ -229,14 +199,7 @@ class TransportBuiltinsTests(unittest.TestCase):
         self.assertEqual(result["chat_id"], "1522105862")
 
     def test_telegram_send_typing_and_edit_delete_reaction_use_runtime_payload(self) -> None:
-        plugin = cast(
-            Any,
-            next(
-                transport.implementation
-                for transport in builtin_plugins()
-                if transport.manifest.plugin_id == "builtin.telegram"
-            ),
-        )
+        plugin = _telegram_plugin()
 
         class _TelegramHttpClient:
             def __init__(self) -> None:
@@ -287,14 +250,7 @@ class TransportBuiltinsTests(unittest.TestCase):
         )
 
     def test_telegram_normalizes_edited_message_event(self) -> None:
-        plugin = cast(
-            Any,
-            next(
-                transport.implementation
-                for transport in builtin_plugins()
-                if transport.manifest.plugin_id == "builtin.telegram"
-            ),
-        )
+        plugin = _telegram_plugin()
 
         normalized = plugin.normalize_inbound_event(
             {
@@ -311,6 +267,15 @@ class TransportBuiltinsTests(unittest.TestCase):
         self.assertEqual(normalized["event_type"], "edited_message")
         self.assertEqual(normalized["message_id"], "9")
         self.assertEqual(normalized["reply_target"], {"chat_id": "1522105862"})
+
+
+def _telegram_transport() -> Any:
+    discovery = TransportPluginRegistry().discover(Path("/missing-user-plugins"))
+    return discovery.plugins["builtin.telegram"]
+
+
+def _telegram_plugin() -> Any:
+    return cast(Any, _telegram_transport().implementation)
 
 
 if __name__ == "__main__":

@@ -24,6 +24,10 @@ class TransportPluginRegistryTests(unittest.TestCase):
             self.assertIn("builtin.webhook", discovery.plugins)
             self.assertIn("builtin.telegram", discovery.plugins)
             self.assertIn("custom.echo", discovery.plugins)
+            telegram = discovery.plugins["builtin.telegram"]
+            self.assertIn("bundled_transports", telegram.source)
+            self.assertEqual(telegram.manifest.config_schema_file, "schema.json")
+            self.assertIn("telegram.sendTyping", telegram.manifest.custom_functions)
             self.assertTrue(discovery.plugins["custom.echo"].manifest.config_fields)
             self.assertEqual(discovery.issues, [])
 

@@ -32,7 +32,10 @@ class _FakePluginRegistry:
 
     def discover(self, plugins_dir: Path) -> SimpleNamespace:
         del plugins_dir
-        return SimpleNamespace(plugins={"custom.demo": self._plugin}, issues=[])
+        return SimpleNamespace(
+            plugins={self._plugin.manifest.plugin_id: self._plugin},
+            issues=[],
+        )
 
 
 class TransportRouterServiceTests(unittest.TestCase):
@@ -182,6 +185,72 @@ class TransportRouterServiceTests(unittest.TestCase):
             self.assertTrue(payload[0]["default_target_available"])
             self.assertEqual(payload[0]["default_target_field"], "chat_id")
             self.assertIn("chat_id may be omitted", payload[0]["send_message_hint"])
+
+    def test_router_sends_telegram_message_with_default_target_and_secret(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir) / "home"
+            settings = Settings.from_env({"NAGIENT_HOME": str(home_dir)})
+            settings.ensure_directories()
+            settings.config_file.write_text(
+                "\n".join(
+                    [
+                        "[transports.telegram]",
+                        'plugin = "builtin.telegram"',
+                        "enabled = true",
+                        'bot_token_secret = "TELEGRAM_BOT_TOKEN"',
+                        'default_chat_id = "1522105862"',
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            settings.secrets_file.write_text(
+                "TELEGRAM_BOT_TOKEN=12345:test-token\n",
+                encoding="utf-8",
+            )
+
+            telegram = TransportPluginRegistry().discover(
+                Path("/missing-user-plugins")
+            ).plugins["builtin.telegram"]
+
+            class _TelegramHttpClient:
+                def post_json(
+                    self,
+                    url: str,
+                    payload: dict[str, object],
+                    *,
+                    headers: dict[str, str] | None = None,
+                    query: dict[str, str] | None = None,
+                    timeout: float | None = None,
+                ) -> dict[str, object]:
+                    del headers, query, timeout
+                    self.seen_url = url
+                    self.seen_payload = dict(payload)
+                    return {
+                        "ok": True,
+                        "result": {
+                            "message_id": 5,
+                            "chat": {"id": payload["chat_id"]},
+                        },
+                    }
+
+            http_client = _TelegramHttpClient()
+            telegram.implementation.http_client = http_client  # type: ignore[attr-defined]
+            service = TransportRouterService(
+                settings=settings,
+                plugin_registry=_FakePluginRegistry(telegram),
+                logger=RuntimeLogger(settings, "router-test"),
+            )
+
+            result = service.send_message(
+                transport_id="telegram",
+                payload={"text": "hello"},
+            )
+
+            self.assertEqual(result["status"], "sent")
+            self.assertEqual(http_client.seen_payload["chat_id"], "1522105862")
+            self.assertEqual(http_client.seen_payload["text"], "hello")
+            self.assertIn("12345:test-token", http_client.seen_url)
 
 
 if __name__ == "__main__":

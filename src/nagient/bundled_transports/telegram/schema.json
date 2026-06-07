@@ -1,0 +1,29 @@
+{
+  "type": "object",
+  "properties": {
+    "bot_token_secret": {
+      "type": "string"
+    },
+    "default_chat_id": {
+      "type": ["string", "integer"]
+    },
+    "poll_timeout_seconds": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "timeout_seconds": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "proxy_url": {
+      "type": "string"
+    },
+    "proxy_username": {
+      "type": "string"
+    },
+    "proxy_password_secret": {
+      "type": "string"
+    }
+  },
+  "required": ["bot_token_secret"]
+}

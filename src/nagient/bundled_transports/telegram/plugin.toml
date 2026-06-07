@@ -1,0 +1,107 @@
+id = "builtin.telegram"
+type = "transport"
+version = "0.1.0"
+display_name = "Telegram Transport"
+namespace = "telegram"
+runtime = "python"
+entrypoint = "transport.py"
+instructions_file = "instructions.md"
+config_schema_file = "schema.json"
+required_config = ["bot_token_secret"]
+optional_config = [
+  "default_chat_id",
+  "poll_timeout_seconds",
+  "timeout_seconds",
+  "proxy_url",
+  "proxy_username",
+  "proxy_password_secret",
+]
+secret_config = ["bot_token_secret", "proxy_password_secret"]
+custom_functions = [
+  "telegram.answerCallback",
+  "telegram.sendChatAction",
+  "telegram.sendTyping",
+  "telegram.editMessage",
+  "telegram.deleteMessage",
+  "telegram.setReaction",
+  "telegram.showPopup",
+]
+
+[[config_fields]]
+key = "bot_token_secret"
+label = "Bot token"
+help_text = "Secret name that stores the Telegram bot token used for polling and replies."
+value_type = "secret"
+category = "connection"
+required = true
+secret = true
+
+[[config_fields]]
+key = "default_chat_id"
+label = "Default chat id"
+help_text = "Fallback chat id used for outbound notices when no reply target exists."
+value_type = "string"
+category = "connection"
+
+[[config_fields]]
+key = "proxy_url"
+label = "Proxy URL"
+help_text = "Optional HTTP or HTTPS proxy used for Telegram Bot API calls."
+value_type = "string"
+category = "connection"
+
+[[config_fields]]
+key = "proxy_username"
+label = "Proxy username"
+help_text = "Optional username for the configured Telegram proxy."
+value_type = "string"
+category = "connection"
+
+[[config_fields]]
+key = "proxy_password_secret"
+label = "Proxy password secret"
+help_text = "Optional secret name that stores the Telegram proxy password."
+value_type = "secret"
+category = "connection"
+secret = true
+
+[[config_fields]]
+key = "poll_timeout_seconds"
+label = "Poll timeout"
+help_text = "How long the long-polling getUpdates call waits before returning."
+value_type = "integer"
+category = "advanced"
+
+[[config_fields]]
+key = "timeout_seconds"
+label = "Request timeout"
+help_text = "Network timeout for outbound Telegram API requests."
+value_type = "integer"
+category = "advanced"
+
+[required_slots]
+send_message = "telegram.sendMessage"
+send_notification = "telegram.sendNotification"
+normalize_inbound_event = "telegram.normalizeInboundEvent"
+poll_inbound_events = "telegram.pollInboundEvents"
+healthcheck = "telegram.healthcheck"
+selftest = "telegram.selftest"
+start = "telegram.start"
+stop = "telegram.stop"
+
+[function_bindings]
+"telegram.sendMessage" = "send_message"
+"telegram.sendNotification" = "send_notification"
+"telegram.normalizeInboundEvent" = "normalize_inbound_event"
+"telegram.pollInboundEvents" = "poll_inbound_events"
+"telegram.healthcheck" = "healthcheck"
+"telegram.selftest" = "self_test"
+"telegram.start" = "start"
+"telegram.stop" = "stop"
+"telegram.answerCallback" = "answer_callback"
+"telegram.sendChatAction" = "send_chat_action"
+"telegram.sendTyping" = "send_typing"
+"telegram.editMessage" = "edit_message"
+"telegram.deleteMessage" = "delete_message"
+"telegram.setReaction" = "set_reaction"
+"telegram.showPopup" = "show_popup"
