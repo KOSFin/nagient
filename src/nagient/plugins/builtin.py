@@ -19,6 +19,9 @@ from nagient.providers.http import (
 )
 from nagient.version import __version__
 
+_TELEGRAM_MAX_MESSAGE_LENGTH = 4096
+_TELEGRAM_SAFE_MESSAGE_LENGTH = 3900
+
 
 class ConsoleTransportPlugin(BaseTransportPlugin):
     manifest = TransportPluginManifest(
@@ -526,37 +529,48 @@ class TelegramTransportPlugin(BaseTransportPlugin):
         if not text:
             raise ValueError("telegram.sendMessage requires a non-empty text field.")
 
-        request_payload: dict[str, object] = {
-            "chat_id": chat_id,
-            "text": text,
-        }
-        for field_name in [
-            "parse_mode",
-            "disable_notification",
-            "reply_markup",
-            "reply_to_message_id",
-            "disable_web_page_preview",
-        ]:
-            if field_name in payload:
-                request_payload[field_name] = payload[field_name]
-        response = self._telegram_request(
-            token,
-            "sendMessage",
-            request_payload,
-            timeout=_telegram_timeout_seconds(config),
-            config=config,
-        )
-        result = _require_telegram_result_object(response, "sendMessage")
-        chat_payload = result.get("chat")
-        resolved_chat_id = (
-            str(chat_payload.get("id", chat_id))
-            if isinstance(chat_payload, dict)
-            else str(chat_id)
-        )
+        chunks = _split_telegram_text(text)
+        message_ids: list[str] = []
+        resolved_chat_id = str(chat_id)
+        for index, chunk in enumerate(chunks):
+            request_payload: dict[str, object] = {
+                "chat_id": chat_id,
+                "text": chunk,
+            }
+            for field_name in [
+                "disable_notification",
+                "reply_to_message_id",
+                "disable_web_page_preview",
+            ]:
+                if field_name in payload:
+                    request_payload[field_name] = payload[field_name]
+            if len(chunks) == 1 and "parse_mode" in payload:
+                request_payload["parse_mode"] = payload["parse_mode"]
+            if index == len(chunks) - 1 and "reply_markup" in payload:
+                request_payload["reply_markup"] = payload["reply_markup"]
+            response = self._telegram_request(
+                token,
+                "sendMessage",
+                request_payload,
+                timeout=_telegram_timeout_seconds(config),
+                config=config,
+            )
+            result = _require_telegram_result_object(response, "sendMessage")
+            chat_payload = result.get("chat")
+            resolved_chat_id = (
+                str(chat_payload.get("id", chat_id))
+                if isinstance(chat_payload, dict)
+                else str(chat_id)
+            )
+            message_id = str(result.get("message_id", ""))
+            if message_id:
+                message_ids.append(message_id)
         return {
             "status": "sent",
             "chat_id": resolved_chat_id,
-            "message_id": str(result.get("message_id", "")),
+            "message_id": message_ids[-1] if message_ids else "",
+            "message_ids": message_ids,
+            "chunks": len(chunks),
         }
 
     def send_notification(self, payload: dict[str, object]) -> dict[str, object]:
@@ -895,7 +909,7 @@ class TelegramTransportPlugin(BaseTransportPlugin):
                 timeout=float(timeout),
             )
         except ProviderHttpError as exc:
-            raise ValueError(str(exc)) from exc
+            raise ValueError(_redact_telegram_error(str(exc), token)) from exc
 
     def _telegram_http_client(self, config: Mapping[str, object]) -> JsonHttpClient:
         proxy_url = _string_config(config, "proxy_url")
@@ -952,6 +966,35 @@ def _require_telegram_result_list(payload: object, method: str) -> list[object]:
     if not isinstance(result, list):
         raise ValueError(f"Telegram method {method} returned an invalid result list.")
     return list(result)
+
+
+def _split_telegram_text(text: str) -> list[str]:
+    if len(text) <= _TELEGRAM_MAX_MESSAGE_LENGTH:
+        return [text]
+
+    chunks: list[str] = []
+    remaining = text
+    while remaining:
+        if len(remaining) <= _TELEGRAM_SAFE_MESSAGE_LENGTH:
+            chunks.append(remaining)
+            break
+        split_at = _telegram_split_index(remaining, _TELEGRAM_SAFE_MESSAGE_LENGTH)
+        chunks.append(remaining[:split_at].rstrip())
+        remaining = remaining[split_at:].lstrip()
+    return chunks or [text[:_TELEGRAM_SAFE_MESSAGE_LENGTH]]
+
+
+def _telegram_split_index(text: str, limit: int) -> int:
+    window = text[:limit]
+    for separator in ("\n\n", "\n", ". ", " "):
+        index = window.rfind(separator)
+        if index >= limit // 2:
+            return index + len(separator)
+    return limit
+
+
+def _redact_telegram_error(message: str, token: str) -> str:
+    return message.replace(token, "<redacted:telegram_bot_token>")
 
 
 def _telegram_message_text(message: Mapping[str, object]) -> str:

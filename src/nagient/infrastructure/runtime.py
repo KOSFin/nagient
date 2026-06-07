@@ -502,6 +502,14 @@ class RuntimeAgent:
 
         reply_text: str | None
         try:
+            self._log(
+                log_path,
+                (
+                    f"Transport {transport.transport_id} dispatching {event_type} "
+                    f"to agent handler (text_length={len(text)})."
+                ),
+                component="agent.runtime",
+            )
             reply_text = self.inbound_message_handler(transport.transport_id, normalized)
         except Exception as exc:
             reply_text = f"Nagient error: {_exception_message(exc)}"
@@ -514,10 +522,22 @@ class RuntimeAgent:
         if not reply_text:
             self._log(
                 log_path,
-                f"Transport {transport.transport_id} handler produced no reply.",
+                (
+                    f"Transport {transport.transport_id} handler produced no direct reply "
+                    "(it may have sent through a transport router)."
+                ),
                 component=_transport_component(transport.transport_id),
             )
             return
+
+        self._log(
+            log_path,
+            (
+                f"Agent handler returned reply for {transport.transport_id} "
+                f"(text_length={len(reply_text)})."
+            ),
+            component="agent.runtime",
+        )
 
         reply_payload = dict(reply_target)
         reply_payload["text"] = reply_text
@@ -536,16 +556,32 @@ class RuntimeAgent:
             reply_payload["_token"] = secrets[secret_name]
 
         try:
-            implementation.send_message(reply_payload)
+            send_result = implementation.send_message(reply_payload)
+            chunk_count = (
+                send_result.get("chunks")
+                if isinstance(send_result, dict)
+                else None
+            )
+            chunk_suffix = (
+                f" in {chunk_count} chunk(s)"
+                if isinstance(chunk_count, int) and chunk_count > 1
+                else ""
+            )
             self._log(
                 log_path,
-                f"Transport {transport.transport_id} sent reply message.",
+                (
+                    f"Transport {transport.transport_id} sent reply message"
+                    f"{chunk_suffix} (text_length={len(reply_text)})."
+                ),
                 component=_transport_component(transport.transport_id),
             )
         except Exception as exc:
             self._log(
                 log_path,
-                f"Transport {transport.transport_id} failed to send a reply: {exc}",
+                (
+                    f"Transport {transport.transport_id} failed to send a reply "
+                    f"(text_length={len(reply_text)}): {exc}"
+                ),
                 component=_transport_component(transport.transport_id),
             )
 

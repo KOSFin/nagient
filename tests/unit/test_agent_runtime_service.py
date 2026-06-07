@@ -22,6 +22,41 @@ from nagient.plugins.registry import TransportPluginRegistry
 from nagient.providers.http import ProviderHttpError
 
 
+class _RecordingTransportRouter:
+    def __init__(self) -> None:
+        self.messages: list[tuple[str, dict[str, object]]] = []
+        self.custom_calls: list[tuple[str, str, dict[str, object]]] = []
+        self.typing: list[tuple[str, dict[str, object]]] = []
+
+    def send_message(
+        self,
+        *,
+        transport_id: str,
+        payload: dict[str, object],
+    ) -> dict[str, object]:
+        self.messages.append((transport_id, dict(payload)))
+        return {"status": "sent", "message_id": "approval-message"}
+
+    def send_typing(
+        self,
+        *,
+        transport_id: str,
+        payload: dict[str, object],
+    ) -> dict[str, object]:
+        self.typing.append((transport_id, dict(payload)))
+        return {"status": "sent"}
+
+    def invoke_custom(
+        self,
+        *,
+        transport_id: str,
+        function_name: str,
+        payload: dict[str, object],
+    ) -> dict[str, object]:
+        self.custom_calls.append((transport_id, function_name, dict(payload)))
+        return {"status": "ok"}
+
+
 class AgentRuntimeServiceTests(unittest.TestCase):
     def test_runtime_can_send_deferred_tool_reply_without_follow_up(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -486,6 +521,149 @@ class AgentRuntimeServiceTests(unittest.TestCase):
             self.assertEqual(approval_reply, "Готово, old.txt удален.")
             self.assertFalse(target_path.exists())
             self.assertEqual(provider_mock.call_count, 1)
+
+    def test_telegram_approval_prompt_uses_inline_buttons(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir) / "home"
+            workspace_root = Path(temp_dir) / "workspace"
+            workspace_root.mkdir(parents=True, exist_ok=True)
+            target_path = workspace_root / "old.txt"
+            target_path.write_text("remove me", encoding="utf-8")
+            settings = Settings.from_env({"NAGIENT_HOME": str(home_dir)})
+            container = build_container(settings)
+            container.configuration_service.initialize(force=True)
+            _set_workspace_root(settings.config_file, workspace_root)
+
+            router = _RecordingTransportRouter()
+            container.agent_runtime_service.transport_router = router
+            object.__setattr__(
+                container.provider_service,
+                "generate_assistant_response",
+                Mock(
+                    return_value=AssistantResponse(
+                        message="I'll remove it after approval.",
+                        tool_calls=[
+                            NormalizedToolCall(
+                                call_id="call-1",
+                                request=ToolExecutionRequest(
+                                    tool_id="workspace_fs",
+                                    function_name="workspace.fs.delete",
+                                    arguments={
+                                        "path": "old.txt",
+                                        "approval_context": {
+                                            "on_success": "message",
+                                            "on_success_message": "Готово.",
+                                        },
+                                    },
+                                ),
+                            )
+                        ],
+                    )
+                ),
+            )
+
+            reply = container.agent_runtime_service.handle_inbound_event(
+                "telegram",
+                {
+                    "event_type": "message",
+                    "session_id": "telegram:demo",
+                    "text": "удали old.txt",
+                    "reply_target": {"chat_id": "1522105862"},
+                },
+            )
+
+            self.assertIsNone(reply)
+            self.assertTrue(target_path.exists())
+            self.assertEqual(len(router.messages), 1)
+            payload = router.messages[0][1]
+            self.assertIn("Нужно подтверждение", str(payload["text"]))
+            keyboard = payload["reply_markup"]
+            assert isinstance(keyboard, dict)
+            inline_keyboard = keyboard["inline_keyboard"]
+            assert isinstance(inline_keyboard, list)
+            first_row = inline_keyboard[0]
+            assert isinstance(first_row, list)
+            first_button = first_row[0]
+            assert isinstance(first_button, dict)
+            callback_data = first_button["callback_data"]
+            self.assertTrue(str(callback_data).startswith("nagient:approval:"))
+
+    def test_telegram_approval_callback_resolves_specific_request(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir) / "home"
+            workspace_root = Path(temp_dir) / "workspace"
+            workspace_root.mkdir(parents=True, exist_ok=True)
+            target_path = workspace_root / "old.txt"
+            target_path.write_text("remove me", encoding="utf-8")
+            settings = Settings.from_env({"NAGIENT_HOME": str(home_dir)})
+            container = build_container(settings)
+            container.configuration_service.initialize(force=True)
+            _set_workspace_root(settings.config_file, workspace_root)
+
+            router = _RecordingTransportRouter()
+            container.agent_runtime_service.transport_router = router
+            object.__setattr__(
+                container.provider_service,
+                "generate_assistant_response",
+                Mock(
+                    return_value=AssistantResponse(
+                        message="I'll remove it after approval.",
+                        tool_calls=[
+                            NormalizedToolCall(
+                                call_id="call-1",
+                                request=ToolExecutionRequest(
+                                    tool_id="workspace_fs",
+                                    function_name="workspace.fs.delete",
+                                    arguments={
+                                        "path": "old.txt",
+                                        "approval_context": {
+                                            "on_success": "message",
+                                            "on_success_message": "Готово.",
+                                        },
+                                    },
+                                ),
+                            )
+                        ],
+                    )
+                ),
+            )
+
+            container.agent_runtime_service.handle_inbound_event(
+                "telegram",
+                {
+                    "event_type": "message",
+                    "session_id": "telegram:demo",
+                    "text": "удали old.txt",
+                    "reply_target": {"chat_id": "1522105862"},
+                },
+            )
+            keyboard = router.messages[0][1]["reply_markup"]
+            assert isinstance(keyboard, dict)
+            inline_keyboard = keyboard["inline_keyboard"]
+            assert isinstance(inline_keyboard, list)
+            first_row = inline_keyboard[0]
+            assert isinstance(first_row, list)
+            first_button = first_row[0]
+            assert isinstance(first_button, dict)
+            callback_data = first_button["callback_data"]
+
+            callback_reply = container.agent_runtime_service.handle_inbound_event(
+                "telegram",
+                {
+                    "event_type": "callback_query",
+                    "session_id": "telegram:demo",
+                    "text": callback_data,
+                    "reply_target": {"chat_id": "1522105862"},
+                    "callback_query_id": "callback-1",
+                    "message_id": "approval-message",
+                },
+            )
+
+            self.assertIsNone(callback_reply)
+            self.assertFalse(target_path.exists())
+            function_names = [item[1] for item in router.custom_calls]
+            self.assertIn("telegram.answerCallback", function_names)
+            self.assertIn("telegram.editMessage", function_names)
 
     def test_runtime_returns_friendly_timeout_before_tool_execution(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

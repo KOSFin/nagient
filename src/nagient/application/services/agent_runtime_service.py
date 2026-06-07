@@ -65,6 +65,7 @@ class AgentRuntimeService:
             layout=layout,
             session_id=session_id,
             transport_id=transport_id,
+            event=event,
             text=text,
             provider_id=provider_id,
             runtime_config=runtime_config,
@@ -220,6 +221,13 @@ class AgentRuntimeService:
                     ),
                     component="agent.runtime",
                 )
+                if self._maybe_send_transport_approval_prompt(
+                    transport_id=transport_id,
+                    event=event,
+                    reply=approval_required_reply,
+                    tool_results=turn_result.tool_results,
+                ):
+                    return None
                 return approval_required_reply
 
             deferred_reply = _render_deferred_assistant_message(
@@ -284,6 +292,7 @@ class AgentRuntimeService:
         layout: object,
         session_id: str,
         transport_id: str,
+        event: dict[str, object],
         text: str,
         provider_id: str | None,
         runtime_config: RuntimeConfiguration,
@@ -292,6 +301,7 @@ class AgentRuntimeService:
         decision = _approval_decision_from_text(text)
         if decision is None:
             return None
+        requested_approval_id = _approval_request_id_from_text(text)
         workflow_service = getattr(self.agent_turn_service, "workflow_service", None)
         if workflow_service is None:
             return None
@@ -306,7 +316,18 @@ class AgentRuntimeService:
         ]
         if not pending:
             return None
-        approval = pending[-1]
+        approval = (
+            next(
+                (
+                    item
+                    for item in pending
+                    if requested_approval_id is not None
+                    and item.request_id == requested_approval_id
+                ),
+                None,
+            )
+            or pending[-1]
+        )
         self.memory_service.append_message(
             layout,
             session_id=session_id,
@@ -367,7 +388,116 @@ class AgentRuntimeService:
                 "approval_request_id": approval.request_id,
             },
         )
+        if (
+            requested_approval_id is not None
+            and self._maybe_finish_transport_approval_callback(
+                transport_id=transport_id,
+                event=event,
+                reply=reply,
+                decision=decision,
+            )
+        ):
+            return None
         return reply
+
+    def _maybe_send_transport_approval_prompt(
+        self,
+        *,
+        transport_id: str,
+        event: dict[str, object],
+        reply: str,
+        tool_results: list[ToolExecutionResult],
+    ) -> bool:
+        if self.transport_router is None or transport_id != "telegram":
+            return False
+        reply_target = event.get("reply_target")
+        if not isinstance(reply_target, dict) or not reply_target:
+            return False
+        approval_id = _latest_approval_request_id(tool_results)
+        if approval_id is None:
+            return False
+        payload = {str(key): value for key, value in reply_target.items()}
+        payload["text"] = reply
+        payload["reply_markup"] = _telegram_approval_reply_markup(approval_id)
+        try:
+            self.transport_router.send_message(
+                transport_id=transport_id,
+                payload=payload,
+            )
+        except Exception as exc:
+            self.logger.warning(
+                "agent_runtime.approval_prompt_failed",
+                "Failed to send transport approval prompt.",
+                transport_id=transport_id,
+                approval_request_id=approval_id,
+                error=str(exc),
+            )
+            return False
+        append_runtime_log(
+            self.settings,
+            f"Sent approval prompt through {transport_id} for {approval_id}.",
+            component="agent.runtime",
+        )
+        return True
+
+    def _maybe_finish_transport_approval_callback(
+        self,
+        *,
+        transport_id: str,
+        event: dict[str, object],
+        reply: str,
+        decision: str,
+    ) -> bool:
+        if self.transport_router is None or transport_id != "telegram":
+            return False
+        callback_id = str(event.get("callback_query_id", "")).strip()
+        reply_target = event.get("reply_target")
+        if not callback_id and not isinstance(reply_target, dict):
+            return False
+        handled = False
+        if callback_id:
+            try:
+                self.transport_router.invoke_custom(
+                    transport_id=transport_id,
+                    function_name="telegram.answerCallback",
+                    payload={
+                        "callback_id": callback_id,
+                        "text": "Approved" if decision == "approve" else "Cancelled",
+                    },
+                )
+                handled = True
+            except Exception as exc:
+                self.logger.debug(
+                    "agent_runtime.approval_callback_answer_failed",
+                    "Failed to answer approval callback.",
+                    transport_id=transport_id,
+                    error=str(exc),
+                )
+        message_id = str(event.get("message_id", "")).strip()
+        if isinstance(reply_target, dict) and message_id:
+            payload = {str(key): value for key, value in reply_target.items()}
+            payload.update(
+                {
+                    "message_id": message_id,
+                    "text": reply,
+                    "reply_markup": {"inline_keyboard": []},
+                }
+            )
+            try:
+                self.transport_router.invoke_custom(
+                    transport_id=transport_id,
+                    function_name="telegram.editMessage",
+                    payload=payload,
+                )
+                handled = True
+            except Exception as exc:
+                self.logger.debug(
+                    "agent_runtime.approval_callback_edit_failed",
+                    "Failed to edit approval callback message.",
+                    transport_id=transport_id,
+                    error=str(exc),
+                )
+        return handled
 
     def _try_provider_resume_after_approval(
         self,
@@ -710,6 +840,9 @@ def _should_retrieve(message: str) -> bool:
 def _approval_decision_from_text(message: str) -> str | None:
     normalized = message.strip().lower()
     normalized = normalized.strip(" .,!?:;")
+    callback_decision = _approval_callback_decision(normalized)
+    if callback_decision is not None:
+        return callback_decision
     approve_words = {
         "approve",
         "approved",
@@ -746,6 +879,51 @@ def _approval_decision_from_text(message: str) -> str | None:
     if normalized in reject_words:
         return "reject" if normalized not in {"cancel", "отмена", "отбой"} else "cancel"
     return None
+
+
+def _approval_callback_decision(normalized: str) -> str | None:
+    parts = normalized.split(":")
+    if len(parts) == 4 and parts[0] == "nagient" and parts[1] == "approval":
+        if parts[3] in {"approve", "reject", "cancel"}:
+            return parts[3]
+    return None
+
+
+def _approval_request_id_from_text(message: str) -> str | None:
+    parts = message.strip().split(":")
+    if len(parts) == 4 and parts[0] == "nagient" and parts[1] == "approval":
+        request_id = parts[2].strip()
+        if request_id:
+            return request_id
+    return None
+
+
+def _latest_approval_request_id(
+    tool_results: list[ToolExecutionResult],
+) -> str | None:
+    pending = [
+        result.approval_request_id
+        for result in tool_results
+        if result.status == "approval_required" and result.approval_request_id
+    ]
+    return pending[-1] if pending else None
+
+
+def _telegram_approval_reply_markup(approval_id: str) -> dict[str, object]:
+    return {
+        "inline_keyboard": [
+            [
+                {
+                    "text": "Approve",
+                    "callback_data": f"nagient:approval:{approval_id}:approve",
+                },
+                {
+                    "text": "Cancel",
+                    "callback_data": f"nagient:approval:{approval_id}:cancel",
+                },
+            ]
+        ]
+    }
 
 
 def _render_tool_approval_required_reply(

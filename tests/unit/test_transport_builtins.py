@@ -8,6 +8,7 @@ from typing import Any, cast
 
 from nagient.plugins.base import TransportRuntimeContext
 from nagient.plugins.registry import TransportPluginRegistry
+from nagient.providers.http import ProviderHttpError
 
 
 class TransportBuiltinsTests(unittest.TestCase):
@@ -197,6 +198,85 @@ class TransportBuiltinsTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "sent")
         self.assertEqual(result["chat_id"], "1522105862")
+        self.assertEqual(result["chunks"], 1)
+
+    def test_telegram_send_message_splits_long_text(self) -> None:
+        plugin = _telegram_plugin()
+
+        class _TelegramHttpClient:
+            def __init__(self) -> None:
+                self.seen_payloads: list[dict[str, object]] = []
+
+            def post_json(
+                self,
+                url: str,
+                payload: dict[str, object],
+                *,
+                headers: dict[str, str] | None = None,
+                query: dict[str, str] | None = None,
+                timeout: float | None = None,
+            ) -> dict[str, object]:
+                del url, headers, query, timeout
+                self.seen_payloads.append(dict(payload))
+                return {
+                    "ok": True,
+                    "result": {
+                        "message_id": len(self.seen_payloads),
+                        "chat": {"id": payload["chat_id"]},
+                    },
+                }
+
+        http_client = _TelegramHttpClient()
+        plugin.http_client = http_client
+        result = plugin.send_message(
+            {
+                "chat_id": "1522105862",
+                "text": "A" * 8500,
+                "reply_markup": {"inline_keyboard": []},
+                "_token": "12345:test-token",
+                "_transport_config": {},
+            }
+        )
+
+        self.assertEqual(result["status"], "sent")
+        self.assertEqual(result["chunks"], 3)
+        self.assertEqual(result["message_ids"], ["1", "2", "3"])
+        self.assertLessEqual(
+            max(len(str(payload["text"])) for payload in http_client.seen_payloads),
+            3900,
+        )
+        self.assertNotIn("reply_markup", http_client.seen_payloads[0])
+        self.assertIn("reply_markup", http_client.seen_payloads[-1])
+
+    def test_telegram_send_message_redacts_token_from_http_errors(self) -> None:
+        plugin = _telegram_plugin()
+
+        class _TelegramHttpClient:
+            def post_json(
+                self,
+                url: str,
+                payload: dict[str, object],
+                *,
+                headers: dict[str, str] | None = None,
+                query: dict[str, str] | None = None,
+                timeout: float | None = None,
+            ) -> dict[str, object]:
+                del payload, headers, query, timeout
+                raise ProviderHttpError(f"HTTP 400 from {url}: bad")
+
+        plugin.http_client = _TelegramHttpClient()
+
+        with self.assertRaisesRegex(ValueError, "<redacted:telegram_bot_token>") as error:
+            plugin.send_message(
+                {
+                    "chat_id": "1522105862",
+                    "text": "hello",
+                    "_token": "12345:test-token",
+                    "_transport_config": {},
+                }
+            )
+
+        self.assertNotIn("12345:test-token", str(error.exception))
 
     def test_telegram_send_typing_and_edit_delete_reaction_use_runtime_payload(self) -> None:
         plugin = _telegram_plugin()

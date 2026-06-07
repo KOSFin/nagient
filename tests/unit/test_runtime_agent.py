@@ -70,6 +70,10 @@ class RuntimeAgentTests(unittest.TestCase):
             self.assertEqual(len(plugin.sent_payloads), 1)
             self.assertEqual(plugin.sent_payloads[0]["channel_id"], "demo")
             self.assertEqual(plugin.sent_payloads[0]["text"], "fake:hello")
+            runtime_log = log_path.read_text(encoding="utf-8")
+            self.assertIn("dispatching message to agent handler", runtime_log)
+            self.assertIn("Agent handler returned reply", runtime_log)
+            self.assertIn("sent reply message", runtime_log)
 
 
 if __name__ == "__main__":
