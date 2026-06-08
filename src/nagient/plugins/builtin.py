@@ -347,7 +347,10 @@ class TelegramTransportPlugin(BaseTransportPlugin):
             ConfigFieldSpec(
                 key="default_parse_mode",
                 label="Default parse mode",
-                help_text="Optional Telegram message formatting mode: MarkdownV2, HTML, or Markdown.",
+                help_text=(
+                    "Optional Telegram message formatting mode: MarkdownV2, HTML, or "
+                    "Markdown."
+                ),
                 value_type="string",
                 category="connection",
             ),

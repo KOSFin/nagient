@@ -342,7 +342,10 @@ def _parse_log_channels(value: object) -> list[PluginLogChannelSpec]:
         seen.add(name)
         level = _optional_string(raw_channel.get("default_level")) or "info"
         if level not in {"debug", "info", "warning", "error"}:
-            raise ValueError("Plugin log channel default_level must be debug, info, warning, or error.")
+            raise ValueError(
+                "Plugin log channel default_level must be debug, info, warning, or "
+                "error."
+            )
         channels.append(
             PluginLogChannelSpec(
                 name=name,
