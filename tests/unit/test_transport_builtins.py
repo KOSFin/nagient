@@ -200,6 +200,38 @@ class TransportBuiltinsTests(unittest.TestCase):
         self.assertEqual(result["chat_id"], "1522105862")
         self.assertEqual(result["chunks"], 1)
 
+    def test_telegram_send_message_uses_generic_scoped_transport_secrets(self) -> None:
+        plugin = _telegram_plugin()
+
+        class _TelegramHttpClient:
+            def post_json(
+                self,
+                url: str,
+                payload: dict[str, object],
+                *,
+                headers: dict[str, str] | None = None,
+                query: dict[str, str] | None = None,
+                timeout: float | None = None,
+            ) -> dict[str, object]:
+                del payload, headers, query, timeout
+                self.seen_url = url
+                return {"ok": True, "result": {"message_id": 5, "chat": {"id": "42"}}}
+
+        http_client = _TelegramHttpClient()
+        plugin.http_client = http_client
+
+        result = plugin.send_message(
+            {
+                "chat_id": "42",
+                "text": "hello",
+                "_transport_config": {"bot_token_secret": "TELEGRAM_BOT_TOKEN"},
+                "_transport_secrets": {"TELEGRAM_BOT_TOKEN": "12345:test-token"},
+            }
+        )
+
+        self.assertEqual(result["status"], "sent")
+        self.assertIn("12345:test-token", http_client.seen_url)
+
     def test_telegram_send_message_splits_long_text(self) -> None:
         plugin = _telegram_plugin()
 
@@ -247,6 +279,68 @@ class TransportBuiltinsTests(unittest.TestCase):
         )
         self.assertNotIn("reply_markup", http_client.seen_payloads[0])
         self.assertIn("reply_markup", http_client.seen_payloads[-1])
+
+    def test_telegram_send_message_keeps_parse_mode_across_chunks(self) -> None:
+        plugin = _telegram_plugin()
+
+        class _TelegramHttpClient:
+            def __init__(self) -> None:
+                self.seen_payloads: list[dict[str, object]] = []
+
+            def post_json(
+                self,
+                url: str,
+                payload: dict[str, object],
+                *,
+                headers: dict[str, str] | None = None,
+                query: dict[str, str] | None = None,
+                timeout: float | None = None,
+            ) -> dict[str, object]:
+                del url, headers, query, timeout
+                self.seen_payloads.append(dict(payload))
+                return {
+                    "ok": True,
+                    "result": {
+                        "message_id": len(self.seen_payloads),
+                        "chat": {"id": payload["chat_id"]},
+                    },
+                }
+
+        http_client = _TelegramHttpClient()
+        plugin.http_client = http_client
+
+        result = plugin.send_message(
+            {
+                "chat_id": "1522105862",
+                "text": "A" * 8500,
+                "_token": "12345:test-token",
+                "_transport_config": {"default_parse_mode": "HTML"},
+            }
+        )
+
+        self.assertEqual(result["chunks"], 3)
+        self.assertTrue(http_client.seen_payloads)
+        self.assertTrue(
+            all(payload["parse_mode"] == "HTML" for payload in http_client.seen_payloads)
+        )
+
+    def test_telegram_standard_commands_do_not_normalize_as_messages(self) -> None:
+        plugin = _telegram_plugin()
+
+        normalized = plugin.normalize_inbound_event(
+            {
+                "update_id": 42,
+                "message": {
+                    "message_id": 7,
+                    "text": "/start",
+                    "chat": {"id": 1522105862},
+                    "from": {"id": 100, "first_name": "D"},
+                },
+            }
+        )
+
+        self.assertEqual(normalized["event_type"], "command")
+        self.assertEqual(normalized["command"], "start")
 
     def test_telegram_send_message_redacts_token_from_http_errors(self) -> None:
         plugin = _telegram_plugin()

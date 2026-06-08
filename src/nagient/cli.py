@@ -146,6 +146,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="List discovered transport, provider, and tool plugins",
     )
     plugins_parser.add_argument("--format", choices=("text", "json"), default="text")
+    plugins_parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Include discovered plugins that are not configured",
+    )
 
     init_parser = subparsers.add_parser("init", help="Write default runtime config files")
     init_parser.add_argument("--force", action="store_true")
@@ -551,7 +556,7 @@ def main(argv: list[str] | None = None) -> int:
         return _emit(payload, args.format, view="paths")
 
     if args.command == "plugins":
-        payload = _plugins_payload(container)
+        payload = _plugins_payload(container, include_available=args.all)
         return _emit(payload, args.format, view="plugins")
 
     if args.command == "doctor":
@@ -1212,7 +1217,7 @@ def _run_agent_setup_menu(container: AppContainer) -> None:
             _run_generic_field_editor(
                 title="Agent logging settings:",
                 current_config=agent.logging.to_dict(),
-                allowed_keys=["level", "json_logs", "log_events"],
+                allowed_keys=["level", "json_logs", "log_events", "components"],
                 save_callback=lambda updates: container.configuration_service.configure_agent(
                     {"logging": updates}
                 ),
@@ -2523,7 +2528,11 @@ def _paths_payload(container: AppContainer) -> dict[str, object]:
     }
 
 
-def _plugins_payload(container: AppContainer) -> dict[str, object]:
+def _plugins_payload(
+    container: AppContainer,
+    *,
+    include_available: bool = False,
+) -> dict[str, object]:
     try:
         runtime_config = load_runtime_configuration(container.settings)
     except AttributeError:
@@ -2552,87 +2561,122 @@ def _plugins_payload(container: AppContainer) -> dict[str, object]:
     enabled_tools = {
         item.plugin_id for item in runtime_config.tools if item.enabled
     } if runtime_config is not None else set()
+    show_available = include_available or runtime_config is None
+
+    transport_plugins = [
+        _plugin_catalog_item(
+            plugin_id=plugin.manifest.plugin_id,
+            display_name=plugin.manifest.display_name,
+            source=plugin.source,
+            namespace=plugin.manifest.namespace,
+            functions=plugin.manifest.exposed_functions,
+            custom_functions=plugin.manifest.custom_functions,
+            config_fields=[
+                field.to_dict()
+                for field in _manifest_config_fields(plugin.manifest)
+            ],
+            log_channels=[
+                channel.to_dict()
+                for channel in getattr(plugin.manifest, "log_channels", [])
+            ],
+            configured=plugin.manifest.plugin_id in configured_transports,
+            enabled=plugin.manifest.plugin_id in enabled_transports,
+        )
+        for plugin in transport_discovery.plugins.values()
+        if show_available
+        or plugin.manifest.plugin_id in configured_transports
+        or plugin.manifest.plugin_id in enabled_transports
+    ]
+    provider_plugins = [
+        _plugin_catalog_item(
+            plugin_id=plugin.manifest.plugin_id,
+            display_name=plugin.manifest.display_name,
+            source=plugin.source,
+            namespace=plugin.manifest.family,
+            functions=plugin.manifest.capabilities,
+            custom_functions=[],
+            config_fields=[
+                field.to_dict()
+                for field in _manifest_config_fields(plugin.manifest)
+            ],
+            log_channels=[
+                channel.to_dict()
+                for channel in getattr(plugin.manifest, "log_channels", [])
+            ],
+            configured=plugin.manifest.plugin_id in configured_providers,
+            enabled=plugin.manifest.plugin_id in enabled_providers,
+        )
+        for plugin in provider_discovery.plugins.values()
+        if show_available
+        or plugin.manifest.plugin_id in configured_providers
+        or plugin.manifest.plugin_id in enabled_providers
+    ]
+    catalog_tool_plugins = [
+        _plugin_catalog_item(
+            plugin_id=_as_text(_as_dict(plugin).get("plugin_id")),
+            display_name=_as_text(_as_dict(plugin).get("display_name")),
+            source=_as_text(_as_dict(plugin).get("source")),
+            namespace=_as_text(_as_dict(plugin).get("namespace")),
+            functions=[
+                _as_text(_as_dict(function).get("function_name"))
+                for function in _as_list(_as_dict(plugin).get("functions"))
+            ],
+            custom_functions=[],
+            config_fields=[
+                _as_dict(field)
+                for field in _as_list(_as_dict(plugin).get("config_fields"))
+            ],
+            log_channels=[
+                _as_dict(channel)
+                for channel in _as_list(_as_dict(plugin).get("log_channels"))
+            ],
+            configured=(
+                _as_text(_as_dict(plugin).get("plugin_id")) in configured_tools
+            ),
+            enabled=(
+                _as_text(_as_dict(plugin).get("plugin_id")) in enabled_tools
+            ),
+        )
+        for plugin in tool_plugins
+        if show_available
+        or _as_text(_as_dict(plugin).get("plugin_id")) in configured_tools
+        or _as_text(_as_dict(plugin).get("plugin_id")) in enabled_tools
+    ]
+    hidden_available = (
+        len(transport_discovery.plugins)
+        + len(provider_discovery.plugins)
+        + len(tool_plugins)
+        - len(transport_plugins)
+        - len(provider_plugins)
+        - len(catalog_tool_plugins)
+    )
 
     return {
         "summary": {
-            "transports": len(transport_discovery.plugins),
-            "providers": len(provider_discovery.plugins),
-            "tools": len(tool_plugins),
+            "transports": len(transport_plugins),
+            "providers": len(provider_plugins),
+            "tools": len(catalog_tool_plugins),
             "issues": (
                 len(transport_discovery.issues)
                 + len(provider_discovery.issues)
                 + len(tool_issues)
             ),
+            "available_hidden": hidden_available,
         },
         "categories": [
             {
                 "kind": "transport",
-                "plugins": [
-                    _plugin_catalog_item(
-                        plugin_id=plugin.manifest.plugin_id,
-                        display_name=plugin.manifest.display_name,
-                        source=plugin.source,
-                        namespace=plugin.manifest.namespace,
-                        functions=plugin.manifest.exposed_functions,
-                        custom_functions=plugin.manifest.custom_functions,
-                        config_fields=[
-                            field.to_dict()
-                            for field in _manifest_config_fields(plugin.manifest)
-                        ],
-                        configured=plugin.manifest.plugin_id in configured_transports,
-                        enabled=plugin.manifest.plugin_id in enabled_transports,
-                    )
-                    for plugin in transport_discovery.plugins.values()
-                ],
+                "plugins": transport_plugins,
                 "issues": [issue.to_dict() for issue in transport_discovery.issues],
             },
             {
                 "kind": "provider",
-                "plugins": [
-                    _plugin_catalog_item(
-                        plugin_id=plugin.manifest.plugin_id,
-                        display_name=plugin.manifest.display_name,
-                        source=plugin.source,
-                        namespace=plugin.manifest.family,
-                        functions=plugin.manifest.capabilities,
-                        custom_functions=[],
-                        config_fields=[
-                            field.to_dict()
-                            for field in _manifest_config_fields(plugin.manifest)
-                        ],
-                        configured=plugin.manifest.plugin_id in configured_providers,
-                        enabled=plugin.manifest.plugin_id in enabled_providers,
-                    )
-                    for plugin in provider_discovery.plugins.values()
-                ],
+                "plugins": provider_plugins,
                 "issues": [issue.to_dict() for issue in provider_discovery.issues],
             },
             {
                 "kind": "tool",
-                "plugins": [
-                    _plugin_catalog_item(
-                        plugin_id=_as_text(_as_dict(plugin).get("plugin_id")),
-                        display_name=_as_text(_as_dict(plugin).get("display_name")),
-                        source=_as_text(_as_dict(plugin).get("source")),
-                        namespace=_as_text(_as_dict(plugin).get("namespace")),
-                        functions=[
-                            _as_text(_as_dict(function).get("function_name"))
-                            for function in _as_list(_as_dict(plugin).get("functions"))
-                        ],
-                        custom_functions=[],
-                        config_fields=[
-                            _as_dict(field)
-                            for field in _as_list(_as_dict(plugin).get("config_fields"))
-                        ],
-                        configured=(
-                            _as_text(_as_dict(plugin).get("plugin_id")) in configured_tools
-                        ),
-                        enabled=(
-                            _as_text(_as_dict(plugin).get("plugin_id")) in enabled_tools
-                        ),
-                    )
-                    for plugin in tool_plugins
-                ],
+                "plugins": catalog_tool_plugins,
                 "issues": tool_issues,
             },
         ],
@@ -2650,6 +2694,7 @@ def _plugin_catalog_item(
     config_fields: Sequence[dict[str, object]],
     configured: bool,
     enabled: bool,
+    log_channels: Sequence[dict[str, object]] = (),
 ) -> dict[str, object]:
     return {
         "plugin_id": plugin_id,
@@ -2661,6 +2706,7 @@ def _plugin_catalog_item(
         "functions": [item for item in functions if item],
         "custom_functions": [item for item in custom_functions if item],
         "config_fields": list(config_fields),
+        "log_channels": list(log_channels),
     }
 
 
@@ -2720,17 +2766,6 @@ def _transport_connection_keys(
     if categorized_keys:
         return _ordered_config_keys(categorized_keys, field_specs)
 
-    preferred = {
-        "telegram": ["bot_token_secret", "default_chat_id"],
-        "webhook": ["path", "shared_secret_name"],
-    }.get(transport_id, [])
-    connection_keys = [
-        key
-        for key in preferred
-        if key in allowed_keys
-    ]
-    if connection_keys:
-        return connection_keys
     return sorted(
         key
         for key in allowed_keys
@@ -3563,6 +3598,9 @@ def _render_plugins_summary(payload: dict[str, object]) -> str:
     issue_count = _as_int(summary.get("issues"))
     if issue_count:
         _append_key_value(lines, "Issues", str(issue_count))
+    hidden_available = _as_int(summary.get("available_hidden"))
+    if hidden_available:
+        _append_key_value(lines, "Available hidden", f"{hidden_available} (use --all)")
 
     for category in _as_list(payload.get("categories")):
         category_payload = _as_dict(category)
@@ -3720,8 +3758,6 @@ def _render_status_summary(payload: dict[str, object]) -> str:
     runtime = _as_dict(payload.get("runtime"))
     workspace = _as_dict(payload.get("workspace"))
     pending = _as_dict(payload.get("pending_workflows"))
-    host_paths = _host_paths()
-
     _append_section(lines, "Overview", colors)
     _append_key_value(
         lines,
@@ -3761,18 +3797,6 @@ def _render_status_summary(payload: dict[str, object]) -> str:
             ),
         )
 
-    if host_paths:
-        _append_section(lines, "Files", colors)
-        for label, key in (
-            ("@home", "home"),
-            ("@config", "config"),
-            ("@secrets", "secrets"),
-            ("@tool_secrets", "tool_secrets"),
-            ("@workspace", "workspace"),
-        ):
-            if key in host_paths:
-                _append_key_value(lines, label, host_paths[key])
-
     _append_section(lines, "Runtime Apply", colors)
     _append_key_value(lines, "Status", _format_status(runtime.get("status"), colors=colors))
     _append_key_value(
@@ -3785,7 +3809,6 @@ def _render_status_summary(payload: dict[str, object]) -> str:
         "Restart required",
         "yes" if _as_bool(runtime.get("needs_restart")) else "no",
     )
-    _append_key_value(lines, "Last change", _as_text(runtime.get("latest_change_path")))
     for note in _as_list(runtime.get("notes"))[:2]:
         _append_line(lines, _as_text(note))
 
@@ -3796,7 +3819,6 @@ def _render_status_summary(payload: dict[str, object]) -> str:
         _format_status(workspace.get("status"), colors=colors),
     )
     _append_key_value(lines, "Mode", _as_text(workspace.get("mode")))
-    _append_key_value(lines, "Root", _as_text(workspace.get("root")))
     _append_key_value(
         lines,
         "Backups",

@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from nagient.domain.entities.config_fields import ConfigFieldSpec
+from nagient.domain.entities.logging import PluginLogChannelSpec
 from nagient.domain.entities.system_state import CheckIssue
 
 REQUIRED_TRANSPORT_SLOTS = (
@@ -36,6 +37,11 @@ class TransportPluginManifest:
     instruction_template: str = ""
     config_schema_file: str | None = None
     runtime: str = "python"
+    default_target_field: str = ""
+    default_target_config_key: str = ""
+    default_target_always_available: bool = False
+    send_message_hint: str = ""
+    log_channels: list[PluginLogChannelSpec] = field(default_factory=list)
 
     @property
     def exposed_functions(self) -> list[str]:

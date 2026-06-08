@@ -7,9 +7,12 @@ runtime = "python"
 entrypoint = "transport.py"
 instructions_file = "instructions.md"
 config_schema_file = "schema.json"
+default_target_field = "chat_id"
+default_target_config_key = "default_chat_id"
 required_config = ["bot_token_secret"]
 optional_config = [
   "default_chat_id",
+  "default_parse_mode",
   "poll_timeout_seconds",
   "timeout_seconds",
   "proxy_url",
@@ -27,6 +30,11 @@ custom_functions = [
   "telegram.showPopup",
 ]
 
+[[log_channels]]
+name = "transport.telegram"
+description = "Telegram polling, normalization, and outbound Bot API delivery."
+default_level = "info"
+
 [[config_fields]]
 key = "bot_token_secret"
 label = "Bot token"
@@ -40,6 +48,13 @@ secret = true
 key = "default_chat_id"
 label = "Default chat id"
 help_text = "Fallback chat id used for outbound notices when no reply target exists."
+value_type = "string"
+category = "connection"
+
+[[config_fields]]
+key = "default_parse_mode"
+label = "Default parse mode"
+help_text = "Optional Telegram message formatting mode: MarkdownV2, HTML, or Markdown."
 value_type = "string"
 category = "connection"
 

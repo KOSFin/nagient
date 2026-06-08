@@ -364,11 +364,24 @@ class CliRuntimeFlowsTests(unittest.TestCase):
 
             self.assertIn("Nagient Status", status_process.stdout)
             self.assertIn("Overview", status_process.stdout)
-            self.assertIn(f"@config: {home_dir / 'config.toml'}", status_process.stdout)
+            self.assertNotIn(f"@config: {home_dir / 'config.toml'}", status_process.stdout)
             self.assertIn("Next Steps", status_process.stdout)
             self.assertNotIn("effective_config.settings.version", status_process.stdout)
             self.assertNotIn("activation.effective_config", status_process.stdout)
             self.assertNotIn("Already up to date", status_process.stdout)
+
+            paths_process = subprocess.run(
+                [sys.executable, "-m", "nagient", "paths"],
+                cwd=PROJECT_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertIn(
+                f"@config: {(home_dir / 'config.toml').resolve()}",
+                paths_process.stdout,
+            )
 
     def test_paths_command_and_interactive_setup_workspace_flow(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

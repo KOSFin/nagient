@@ -92,12 +92,14 @@ class AgentLoggingConfig:
     level: str = "info"
     json_logs: bool = False
     log_events: bool = True
+    component_levels: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, object]:
         return {
             "level": self.level,
             "json_logs": self.json_logs,
             "log_events": self.log_events,
+            "components": dict(self.component_levels),
         }
 
 
@@ -794,7 +796,10 @@ def _resolve_default_provider(
 
 def _has_explicit_default_provider_setting(payload: dict[str, object]) -> bool:
     agent = payload.get("agent")
-    return isinstance(agent, dict) and "default_provider" in agent
+    if not isinstance(agent, dict) or "default_provider" not in agent:
+        return False
+    value = agent.get("default_provider")
+    return isinstance(value, str) and bool(value.strip())
 
 
 def _parse_require_provider(payload: dict[str, object]) -> bool:
@@ -860,6 +865,7 @@ def _parse_agent_config(
             level=_normalize_log_level(logging.get("level", "info")),
             json_logs=_coerce_bool(logging.get("json_logs", False)),
             log_events=_coerce_bool(logging.get("log_events", True)),
+            component_levels=_parse_component_log_levels(logging.get("components")),
         ),
         progress=AgentProgressConfig(
             enabled=_coerce_bool(progress.get("enabled", False)),
@@ -1082,6 +1088,17 @@ def _normalize_log_level(value: object) -> str:
     if normalized in {"debug", "info", "warning", "error"}:
         return normalized
     return "info"
+
+
+def _parse_component_log_levels(value: object) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    levels: dict[str, str] = {}
+    for component, level in value.items():
+        component_name = str(component).strip()
+        if component_name:
+            levels[component_name] = _normalize_log_level(level)
+    return levels
 
 
 def _resolve_optional_path(

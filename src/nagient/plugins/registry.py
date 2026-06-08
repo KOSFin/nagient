@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from nagient.domain.entities.config_fields import ConfigFieldSpec
+from nagient.domain.entities.logging import PluginLogChannelSpec
 from nagient.domain.entities.system_state import CheckIssue
 from nagient.plugins.base import (
     REQUIRED_TRANSPORT_SLOTS,
@@ -15,7 +16,6 @@ from nagient.plugins.base import (
     LoadedTransportPlugin,
     TransportPluginManifest,
 )
-from nagient.plugins.builtin import builtin_plugins
 from nagient.plugins.process_adapter import ExternalProcessTransportPlugin
 
 
@@ -27,10 +27,7 @@ class PluginDiscovery:
 
 class TransportPluginRegistry:
     def discover(self, plugins_dir: Path) -> PluginDiscovery:
-        plugins = {
-            plugin.manifest.plugin_id: plugin
-            for plugin in builtin_plugins()
-        }
+        plugins: dict[str, LoadedTransportPlugin] = {}
         issues: list[CheckIssue] = []
 
         bundled_transports_dir = Path(__file__).resolve().parents[1] / "bundled_transports"
@@ -194,6 +191,15 @@ class TransportPluginRegistry:
             instruction_template=instruction_template,
             config_schema_file=config_schema_file,
             runtime=_runtime_or_default(payload.get("runtime")),
+            default_target_field=_optional_string(payload.get("default_target_field")),
+            default_target_config_key=_optional_string(
+                payload.get("default_target_config_key"),
+            ),
+            default_target_always_available=bool(
+                payload.get("default_target_always_available", False),
+            ),
+            send_message_hint=_optional_string(payload.get("send_message_hint")),
+            log_channels=_parse_log_channels(payload.get("log_channels")),
         )
 
     def _validate_plugin(self, plugin: LoadedTransportPlugin) -> list[CheckIssue]:
@@ -318,6 +324,33 @@ def _parse_config_fields(value: object) -> list[ConfigFieldSpec]:
             )
         )
     return config_fields
+
+
+def _parse_log_channels(value: object) -> list[PluginLogChannelSpec]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError("Plugin log_channels must be a list of TOML tables.")
+    channels: list[PluginLogChannelSpec] = []
+    seen: set[str] = set()
+    for raw_channel in value:
+        if not isinstance(raw_channel, dict):
+            raise ValueError("Each plugin log_channels entry must be a table.")
+        name = _require_string(raw_channel, "name")
+        if name in seen:
+            raise ValueError(f"Duplicate plugin log channel {name!r}.")
+        seen.add(name)
+        level = _optional_string(raw_channel.get("default_level")) or "info"
+        if level not in {"debug", "info", "warning", "error"}:
+            raise ValueError("Plugin log channel default_level must be debug, info, warning, or error.")
+        channels.append(
+            PluginLogChannelSpec(
+                name=name,
+                description=_optional_string(raw_channel.get("description")),
+                default_level=level,
+            )
+        )
+    return channels
 
 
 def _optional_string(value: object) -> str:

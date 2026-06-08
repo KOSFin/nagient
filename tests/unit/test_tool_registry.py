@@ -29,6 +29,10 @@ class ToolPluginRegistryTests(unittest.TestCase):
             self.assertIn("system.backup", discovery.plugins)
             self.assertIn("github.api", discovery.plugins)
             self.assertIn("custom.tool", discovery.plugins)
+            self.assertEqual(
+                discovery.plugins["github.api"].manifest.log_channels[0].name,
+                "tool.github.api",
+            )
             self.assertTrue(discovery.plugins["custom.tool"].manifest.config_fields)
             self.assertEqual(discovery.issues, [])
 

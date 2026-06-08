@@ -8,6 +8,11 @@ entrypoint = "tool.py"
 capabilities = ["github"]
 optional_config = ["token_secret", "base_url", "timeout_seconds"]
 
+[[log_channels]]
+name = "tool.github.api"
+description = "GitHub API requests and tool execution events."
+default_level = "info"
+
 [[config_fields]]
 key = "token_secret"
 label = "GitHub token"
@@ -75,6 +80,7 @@ secret_bindings = ["token_secret"]
 side_effect = "external"
 approval_policy = "required"
 dry_run_supported = true
+auto_approve_when_expected = true
 input_schema = { type = "object" }
 output_schema = { type = "object" }
 
@@ -87,6 +93,7 @@ secret_bindings = ["token_secret"]
 side_effect = "external"
 approval_policy = "required"
 dry_run_supported = true
+auto_approve_when_expected = true
 input_schema = { type = "object" }
 output_schema = { type = "object" }
 

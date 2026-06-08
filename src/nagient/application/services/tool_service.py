@@ -82,6 +82,9 @@ class ToolService:
                     "config_fields": [
                         field_spec.to_dict() for field_spec in plugin.manifest.config_fields
                     ],
+                    "log_channels": [
+                        channel.to_dict() for channel in plugin.manifest.log_channels
+                    ],
                     "functions": [function.to_dict() for function in plugin.manifest.functions],
                 }
                 for plugin in discovery.plugins.values()

@@ -85,6 +85,45 @@ class RuntimeLoggerTests(unittest.TestCase):
             runtime_text = (settings.log_dir / "runtime.log").read_text(encoding="utf-8")
             self.assertIn("[provider.runtime]", runtime_text)
 
+    def test_logger_honors_component_level_override(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir)
+            config_file = home_dir / "config.toml"
+            config_file.write_text(
+                "\n".join(
+                    [
+                        "[agent.logging]",
+                        'level = "error"',
+                        "",
+                        "[agent.logging.components]",
+                        '"tool.github.api" = "debug"',
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            settings = Settings.from_env(
+                {
+                    "NAGIENT_HOME": str(home_dir),
+                    "NAGIENT_CONFIG": str(config_file),
+                }
+            )
+
+            RuntimeLogger(settings, "tool.github.api").info(
+                "github.request",
+                "GitHub request visible.",
+            )
+            RuntimeLogger(settings, "runtime-test").info(
+                "runtime.info",
+                "Runtime info hidden.",
+            )
+
+            self.assertIn(
+                "GitHub request visible.",
+                (settings.log_dir / "tool.github.api.log").read_text(encoding="utf-8"),
+            )
+            self.assertFalse((settings.log_dir / "runtime-test.log").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

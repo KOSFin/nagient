@@ -1,0 +1,38 @@
+id = "builtin.console"
+type = "transport"
+version = "0.1.0"
+display_name = "Console Transport"
+namespace = "console"
+runtime = "python"
+entrypoint = "transport.py"
+instructions_file = "instructions.md"
+config_schema_file = "schema.json"
+optional_config = ["stream"]
+default_target_always_available = true
+send_message_hint = "Use transport.router.send_message with payload.text to print a message into the local console chat."
+
+[[log_channels]]
+name = "transport.console"
+description = "Console transport inbound and outbound events."
+default_level = "info"
+
+[required_slots]
+send_message = "console.sendMessage"
+send_notification = "console.sendNotification"
+normalize_inbound_event = "console.normalizeInboundEvent"
+poll_inbound_events = "console.pollInboundEvents"
+healthcheck = "console.healthcheck"
+selftest = "console.selftest"
+start = "console.start"
+stop = "console.stop"
+
+[function_bindings]
+"console.sendMessage" = "send_message"
+"console.sendNotification" = "send_notification"
+"console.normalizeInboundEvent" = "normalize_inbound_event"
+"console.pollInboundEvents" = "poll_inbound_events"
+"console.healthcheck" = "healthcheck"
+"console.selftest" = "self_test"
+"console.start" = "start"
+"console.stop" = "stop"
+"console.renderNotice" = "render_notice"

@@ -1,0 +1,20 @@
+{
+  "type": "object",
+  "properties": {
+    "path": {
+      "type": "string"
+    },
+    "listen_host": {
+      "type": "string"
+    },
+    "listen_port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    },
+    "shared_secret_name": {
+      "type": "string"
+    }
+  },
+  "required": ["path"]
+}

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from nagient.domain.entities.agent_runtime import AssistantResponse
 from nagient.domain.entities.config_fields import ConfigFieldSpec
+from nagient.domain.entities.logging import PluginLogChannelSpec
 from nagient.domain.entities.system_state import (
     AuthSessionState,
     CheckIssue,
@@ -43,6 +44,7 @@ class ProviderPluginManifest:
     config_fields: list[ConfigFieldSpec] = field(default_factory=list)
     config_schema_file: str | None = None
     runtime: str = "python"
+    log_channels: list[PluginLogChannelSpec] = field(default_factory=list)
 
     @property
     def allowed_config(self) -> set[str]:

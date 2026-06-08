@@ -17,7 +17,7 @@ from nagient.app.configuration import (
 from nagient.app.settings import Settings
 from nagient.domain.entities.system_state import ActivationReport
 from nagient.infrastructure.logging import write_runtime_log
-from nagient.plugins.base import BaseTransportPlugin, TransportRuntimeContext
+from nagient.plugins.base import BaseTransportPlugin, LoadedTransportPlugin, TransportRuntimeContext
 from nagient.plugins.registry import TransportPluginRegistry
 from nagient.workspace.manager import WorkspaceLayout, WorkspaceManager
 
@@ -342,7 +342,7 @@ class RuntimeAgent:
                 started.append(started_transport)
                 self._log(
                     log_path,
-                    self._transport_start_message(transport),
+                    self._transport_start_message(transport, plugin),
                     component=_transport_component(transport.transport_id),
                 )
             except Exception as exc:
@@ -549,13 +549,6 @@ class RuntimeAgent:
             transport.config,
             secrets,
         )
-        secret_name = transport.config.get("bot_token_secret")
-        if (
-            transport.plugin_id == "builtin.telegram"
-            and isinstance(secret_name, str)
-            and secret_name in secrets
-        ):
-            reply_payload["_token"] = secrets[secret_name]
 
         try:
             send_result = implementation.send_message(reply_payload)
@@ -590,29 +583,18 @@ class RuntimeAgent:
     def _format_transport_log(self, transport_id: str, message: str) -> str:
         return f"Transport {transport_id}: {message}"
 
-    def _transport_start_message(self, transport: TransportInstanceConfig) -> str:
-        if transport.transport_id == "telegram":
-            default_chat_id = str(transport.config.get("default_chat_id", "")).strip()
-            if default_chat_id:
-                return (
-                    "Transport telegram loaded with live polling enabled. "
-                    f"Default outbound chat is {default_chat_id}."
-                )
-            return (
-                "Transport telegram loaded with live polling enabled. "
-                "Inbound replies use the chat id from each message."
-            )
-        if transport.transport_id == "webhook":
-            path = str(transport.config.get("path", "/events")).strip() or "/events"
-            port = transport.config.get("listen_port", 8080)
-            return (
-                "Transport webhook loaded in helper-only mode with path "
-                f"{path} on port {port}. The built-in plugin does not open an HTTP listener "
-                "on its own yet."
-            )
-        if transport.transport_id == "console":
-            return "Transport console loaded as the local fallback transport."
-        return f"Transport {transport.transport_id} loaded."
+    def _transport_start_message(
+        self,
+        transport: TransportInstanceConfig,
+        plugin: LoadedTransportPlugin,
+    ) -> str:
+        target_key = plugin.manifest.default_target_config_key
+        target_value = str(transport.config.get(target_key, "")).strip() if target_key else ""
+        target_suffix = " Default outbound target is configured." if target_value else ""
+        return (
+            f"Transport {transport.transport_id} loaded using plugin "
+            f"{plugin.manifest.plugin_id}.{target_suffix}"
+        )
 
     def _log(self, log_path: Path, message: str, *, component: str = "runtime") -> None:
         del log_path

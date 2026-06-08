@@ -62,6 +62,7 @@ class TransportRouterToolPlugin(BaseToolPlugin):
                 output_schema={"type": "object"},
                 permissions=["transport.send"],
                 side_effect="system",
+                auto_approve_when_expected=True,
             ),
             ToolFunctionManifest(
                 function_name="transport.router.send_notification",
@@ -71,6 +72,7 @@ class TransportRouterToolPlugin(BaseToolPlugin):
                 output_schema={"type": "object"},
                 permissions=["transport.send"],
                 side_effect="system",
+                auto_approve_when_expected=True,
             ),
             ToolFunctionManifest(
                 function_name="transport.router.send_typing",
@@ -80,6 +82,7 @@ class TransportRouterToolPlugin(BaseToolPlugin):
                 output_schema={"type": "object"},
                 permissions=["transport.send"],
                 side_effect="system",
+                auto_approve_when_expected=True,
             ),
             ToolFunctionManifest(
                 function_name="transport.router.invoke_custom",
@@ -363,6 +366,7 @@ class SystemJobsToolPlugin(BaseToolPlugin):
                 output_schema={"type": "object"},
                 permissions=["jobs.write"],
                 side_effect="system",
+                auto_approve_when_expected=True,
             ),
             ToolFunctionManifest(
                 function_name="system.jobs.schedule_message",
@@ -389,6 +393,7 @@ class SystemJobsToolPlugin(BaseToolPlugin):
                 permissions=["jobs.write", "transport.send"],
                 side_effect="system",
                 approval_policy="required",
+                auto_approve_when_expected=True,
             ),
             ToolFunctionManifest(
                 function_name="system.jobs.schedule_tool",
@@ -420,6 +425,7 @@ class SystemJobsToolPlugin(BaseToolPlugin):
                 permissions=["jobs.write", "tool.invoke"],
                 side_effect="system",
                 approval_policy="required",
+                auto_approve_when_expected=True,
             ),
             ToolFunctionManifest(
                 function_name="system.jobs.schedule_interval",
@@ -441,6 +447,7 @@ class SystemJobsToolPlugin(BaseToolPlugin):
                 output_schema={"type": "object"},
                 permissions=["jobs.write"],
                 side_effect="system",
+                auto_approve_when_expected=True,
             ),
             ToolFunctionManifest(
                 function_name="system.jobs.list",
@@ -761,6 +768,7 @@ class SystemConfigToolPlugin(BaseToolPlugin):
                 side_effect="system",
                 approval_policy="required",
                 dry_run_supported=True,
+                auto_approve_when_expected=True,
             ),
         ],
     )

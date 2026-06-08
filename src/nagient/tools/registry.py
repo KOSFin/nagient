@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from nagient.domain.entities.config_fields import ConfigFieldSpec
+from nagient.domain.entities.logging import PluginLogChannelSpec
 from nagient.domain.entities.system_state import CheckIssue
 from nagient.domain.entities.tooling import ToolFunctionManifest, ToolPluginManifest
 from nagient.tools.base import BaseToolPlugin, LoadedToolPlugin
@@ -181,6 +182,9 @@ class ToolPluginRegistry:
                         "never",
                     ),
                     dry_run_supported=bool(raw_function.get("dry_run_supported", False)),
+                    auto_approve_when_expected=bool(
+                        raw_function.get("auto_approve_when_expected", False),
+                    ),
                 )
             )
 
@@ -207,6 +211,7 @@ class ToolPluginRegistry:
             selftest_binding=_optional_string(payload.get("selftest_binding")),
             config_schema_file=config_schema_file,
             runtime=_runtime_or_default(payload.get("runtime")),
+            log_channels=_parse_log_channels(payload.get("log_channels")),
         )
 
     def _validate_plugin(self, plugin: LoadedToolPlugin) -> list[CheckIssue]:
@@ -360,6 +365,35 @@ def _parse_config_fields(value: object) -> list[ConfigFieldSpec]:
             )
         )
     return config_fields
+
+
+def _parse_log_channels(value: object) -> list[PluginLogChannelSpec]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError("Tool plugin log_channels must be a list of TOML tables.")
+    channels: list[PluginLogChannelSpec] = []
+    seen: set[str] = set()
+    for raw_channel in value:
+        if not isinstance(raw_channel, dict):
+            raise ValueError("Each tool plugin log_channels entry must be a table.")
+        name = _require_string(raw_channel, "name")
+        if name in seen:
+            raise ValueError(f"Duplicate tool plugin log channel {name!r}.")
+        seen.add(name)
+        level = _optional_string(raw_channel.get("default_level")) or "info"
+        if level not in {"debug", "info", "warning", "error"}:
+            raise ValueError(
+                "Tool plugin log channel default_level must be debug, info, warning, or error."
+            )
+        channels.append(
+            PluginLogChannelSpec(
+                name=name,
+                description=_optional_string(raw_channel.get("description")) or "",
+                default_level=level,
+            )
+        )
+    return channels
 
 
 def _optional_text(value: object) -> str:

@@ -93,7 +93,11 @@ class RuntimeLogger:
             fields=_sanitize_fields(fields),
         )
         logging_config = self._logging_config()
-        if not logging_config.log_events or not _should_emit(level, logging_config.level):
+        configured_level = logging_config.component_levels.get(
+            self.component,
+            logging_config.level,
+        )
+        if not logging_config.log_events or not _should_emit(level, configured_level):
             return payload
         self.settings.ensure_directories()
         if logging_config.json_logs:

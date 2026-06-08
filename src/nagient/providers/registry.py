@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from nagient.domain.entities.config_fields import ConfigFieldSpec
+from nagient.domain.entities.logging import PluginLogChannelSpec
 from nagient.domain.entities.system_state import CheckIssue
 from nagient.providers.base import (
     REQUIRED_PROVIDER_METHODS,
@@ -174,6 +175,7 @@ class ProviderPluginRegistry:
             config_fields=config_fields,
             config_schema_file=config_schema_file,
             runtime=_runtime_or_default(payload.get("runtime")),
+            log_channels=_parse_log_channels(payload.get("log_channels")),
         )
 
     def _validate_plugin(self, plugin: LoadedProviderPlugin) -> list[CheckIssue]:
@@ -252,6 +254,35 @@ def _parse_config_fields(value: object) -> list[ConfigFieldSpec]:
             )
         )
     return config_fields
+
+
+def _parse_log_channels(value: object) -> list[PluginLogChannelSpec]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError("Provider plugin log_channels must be a list of TOML tables.")
+    channels: list[PluginLogChannelSpec] = []
+    seen: set[str] = set()
+    for raw_channel in value:
+        if not isinstance(raw_channel, dict):
+            raise ValueError("Each provider plugin log_channels entry must be a table.")
+        name = _require_string(raw_channel, "name")
+        if name in seen:
+            raise ValueError(f"Duplicate provider plugin log channel {name!r}.")
+        seen.add(name)
+        level = _optional_string(raw_channel.get("default_level")) or "info"
+        if level not in {"debug", "info", "warning", "error"}:
+            raise ValueError(
+                "Provider plugin log channel default_level must be debug, info, warning, or error."
+            )
+        channels.append(
+            PluginLogChannelSpec(
+                name=name,
+                description=_optional_string(raw_channel.get("description")) or "",
+                default_level=level,
+            )
+        )
+    return channels
 
 
 def _optional_string(value: object) -> str:

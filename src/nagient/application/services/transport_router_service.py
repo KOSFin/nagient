@@ -40,17 +40,17 @@ class TransportRouterService:
                         list(plugin.manifest.custom_functions) if plugin else []
                     ),
                     "default_target_available": (
-                        self._default_target_available(transport)
+                        self._default_target_available(transport, plugin)
                         if plugin
                         else False
                     ),
                     "default_target_field": (
-                        self._default_target_field(transport)
+                        self._default_target_field(plugin)
                         if plugin
                         else ""
                     ),
                     "send_message_hint": (
-                        self._send_message_hint(transport)
+                        self._send_message_hint(transport, plugin)
                         if plugin
                         else ""
                     ),
@@ -234,50 +234,44 @@ class TransportRouterService:
             "_transport_secrets",
             _transport_scoped_secrets(transport.config, runtime_config.secrets),
         )
-        if transport.plugin_id == "builtin.telegram":
-            secret_name = transport.config.get("bot_token_secret")
-            if isinstance(secret_name, str) and secret_name in runtime_config.secrets:
-                payload.setdefault("_token", runtime_config.secrets[secret_name])
         return payload
 
     def _default_target_available(
         self,
         transport: TransportInstanceConfig,
+        plugin: LoadedTransportPlugin,
     ) -> bool:
-        if transport.plugin_id == "builtin.telegram":
-            value = transport.config.get("default_chat_id", "")
-            return bool(str(value).strip())
-        if transport.plugin_id == "builtin.console":
+        if plugin.manifest.default_target_always_available:
             return True
+        config_key = plugin.manifest.default_target_config_key
+        if config_key:
+            return bool(str(transport.config.get(config_key, "")).strip())
         return False
 
     def _default_target_field(
         self,
-        transport: TransportInstanceConfig,
+        plugin: LoadedTransportPlugin,
     ) -> str:
-        if transport.plugin_id == "builtin.telegram":
-            return "chat_id"
-        return ""
+        return plugin.manifest.default_target_field
 
     def _send_message_hint(
         self,
         transport: TransportInstanceConfig,
+        plugin: LoadedTransportPlugin,
     ) -> str:
-        if transport.plugin_id == "builtin.telegram":
-            if self._default_target_available(transport):
+        if plugin.manifest.send_message_hint:
+            return plugin.manifest.send_message_hint
+        target_field = plugin.manifest.default_target_field
+        if target_field:
+            if self._default_target_available(transport, plugin):
                 return (
                     "Use transport.router.send_message with payload.text and transport_id "
-                    "telegram. chat_id may be omitted because a default outbound chat is "
-                    "configured."
+                    f"{transport.transport_id}. {target_field} may be omitted because a "
+                    "default target is configured."
                 )
             return (
-                "Use transport.router.send_message with payload.text and an explicit chat_id "
-                "unless you are replying to a Telegram inbound event."
-            )
-        if transport.plugin_id == "builtin.console":
-            return (
-                "Use transport.router.send_message with payload.text to print a message into "
-                "the local console chat."
+                "Use transport.router.send_message with payload.text and an explicit "
+                f"{target_field} unless you are replying to an inbound event."
             )
         return ""
 

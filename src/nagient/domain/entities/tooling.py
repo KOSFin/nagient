@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from nagient.domain.entities.config_fields import ConfigFieldSpec
+from nagient.domain.entities.logging import PluginLogChannelSpec
 from nagient.domain.entities.system_state import CheckIssue
 
 
@@ -22,6 +23,7 @@ class ToolFunctionManifest:
     side_effect: str = "read"
     approval_policy: str = "never"
     dry_run_supported: bool = False
+    auto_approve_when_expected: bool = False
 
     @property
     def allowed_config(self) -> set[str]:
@@ -42,6 +44,7 @@ class ToolFunctionManifest:
             "side_effect": self.side_effect,
             "approval_policy": self.approval_policy,
             "dry_run_supported": self.dry_run_supported,
+            "auto_approve_when_expected": self.auto_approve_when_expected,
         }
 
 
@@ -61,6 +64,7 @@ class ToolPluginManifest:
     selftest_binding: str | None = None
     config_schema_file: str | None = None
     runtime: str = "python"
+    log_channels: list[PluginLogChannelSpec] = field(default_factory=list)
 
     @property
     def allowed_config(self) -> set[str]:

@@ -1223,6 +1223,7 @@ class GitHubApiToolPlugin(BaseToolPlugin):
                     side_effect="external",
                     approval_policy="required",
                     dry_run_supported=True,
+                    auto_approve_when_expected=True,
                 ),
                 ToolFunctionManifest(
                     function_name="github.api.add_issue_comment",
@@ -1235,6 +1236,7 @@ class GitHubApiToolPlugin(BaseToolPlugin):
                     side_effect="external",
                     approval_policy="required",
                     dry_run_supported=True,
+                    auto_approve_when_expected=True,
                 ),
                 ToolFunctionManifest(
                     function_name="github.api.request",

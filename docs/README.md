@@ -27,6 +27,7 @@ powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagient.ps1" status
 - Installation and updates: [install.md](install.md)
 - Runtime and CLI commands: [commands.md](commands.md)
 - Configuration and secrets: [configuration.md](configuration.md)
+- Plugin contracts: [plugin-contracts.md](plugin-contracts.md)
 - Environment variables: [env.md](env.md)
 - Troubleshooting: [troubleshooting.md](troubleshooting.md)
 - Architecture: [architecture.md](architecture.md)

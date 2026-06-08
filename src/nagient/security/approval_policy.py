@@ -61,7 +61,10 @@ class ApprovalPolicyEngine:
         if (
             policy == "required"
             and approval_context.expected_by_user
-            and _can_auto_approve_expected_action(request.function_name, sanitized_arguments)
+            and (
+                function.auto_approve_when_expected
+                or _can_auto_approve_expected_action(request.function_name, sanitized_arguments)
+            )
         ):
             policy = "never"
             reason = approval_context.reason or "Action matches the user's requested plan."

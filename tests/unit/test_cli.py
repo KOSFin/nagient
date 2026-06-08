@@ -275,7 +275,8 @@ class CliTests(unittest.TestCase):
 
         self.assertIn("Nagient Status", status_text)
         self.assertIn("Overview", status_text)
-        self.assertIn("@config: /host/.nagient/config.toml", status_text)
+        self.assertNotIn("@config: /host/.nagient/config.toml", status_text)
+        self.assertNotIn("Root: /workspace", status_text)
         self.assertIn("Runtime Apply", status_text)
         self.assertIn("Restart required: yes", status_text)
         self.assertIn("Status: update available", status_text)
@@ -284,6 +285,7 @@ class CliTests(unittest.TestCase):
 
         self.assertIn("Nagient Doctor", doctor_text)
         self.assertIn("Runtime Files", doctor_text)
+        self.assertIn("@config: /opt/nagient/config.toml", doctor_text)
         self.assertIn("Runtime Apply", doctor_text)
         self.assertIn("Default provider: openai", doctor_text)
         self.assertIn("Provider missing credentials.", doctor_text)

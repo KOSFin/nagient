@@ -1,0 +1,69 @@
+id = "builtin.webhook"
+type = "transport"
+version = "0.1.0"
+display_name = "Webhook Transport"
+namespace = "webhook"
+runtime = "python"
+entrypoint = "transport.py"
+instructions_file = "instructions.md"
+config_schema_file = "schema.json"
+required_config = ["path"]
+optional_config = ["listen_host", "listen_port", "shared_secret_name"]
+secret_config = ["shared_secret_name"]
+
+[[log_channels]]
+name = "transport.webhook"
+description = "Webhook transport normalization and outbound events."
+default_level = "info"
+
+[[config_fields]]
+key = "path"
+label = "Webhook path"
+help_text = "HTTP path where inbound webhook events are expected."
+value_type = "string"
+category = "connection"
+required = true
+
+[[config_fields]]
+key = "listen_host"
+label = "Listen host"
+help_text = "Host interface for webhook listener implementations."
+value_type = "string"
+category = "connection"
+
+[[config_fields]]
+key = "listen_port"
+label = "Listen port"
+help_text = "Port for webhook listener implementations."
+value_type = "integer"
+category = "connection"
+
+[[config_fields]]
+key = "shared_secret_name"
+label = "Shared secret"
+help_text = "Optional secret name used to protect webhook delivery."
+value_type = "secret"
+category = "connection"
+secret = true
+
+[required_slots]
+send_message = "webhook.sendMessage"
+send_notification = "webhook.sendNotification"
+normalize_inbound_event = "webhook.normalizeInboundEvent"
+poll_inbound_events = "webhook.pollInboundEvents"
+healthcheck = "webhook.healthcheck"
+selftest = "webhook.selftest"
+start = "webhook.start"
+stop = "webhook.stop"
+
+[function_bindings]
+"webhook.sendMessage" = "send_message"
+"webhook.sendNotification" = "send_notification"
+"webhook.normalizeInboundEvent" = "normalize_inbound_event"
+"webhook.pollInboundEvents" = "poll_inbound_events"
+"webhook.healthcheck" = "healthcheck"
+"webhook.selftest" = "self_test"
+"webhook.start" = "start"
+"webhook.stop" = "stop"
+"webhook.acceptEvent" = "accept_event"
+"webhook.replyJson" = "reply_json"

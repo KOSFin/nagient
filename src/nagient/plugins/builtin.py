@@ -57,6 +57,11 @@ class ConsoleTransportPlugin(BaseTransportPlugin):
             "Use console.sendMessage for normal replies and console.sendNotification for notices. "
             "The console transport is the universal fallback channel."
         ),
+        default_target_always_available=True,
+        send_message_hint=(
+            "Use transport.router.send_message with payload.text to print a message into "
+            "the local console chat."
+        ),
     )
 
     def validate_config(
@@ -312,6 +317,7 @@ class TelegramTransportPlugin(BaseTransportPlugin):
         required_config=["bot_token_secret"],
         optional_config=[
             "default_chat_id",
+            "default_parse_mode",
             "poll_timeout_seconds",
             "timeout_seconds",
             "proxy_url",
@@ -335,6 +341,13 @@ class TelegramTransportPlugin(BaseTransportPlugin):
                 key="default_chat_id",
                 label="Default chat id",
                 help_text="Fallback chat id used for outbound notices when no reply target exists.",
+                value_type="string",
+                category="connection",
+            ),
+            ConfigFieldSpec(
+                key="default_parse_mode",
+                label="Default parse mode",
+                help_text="Optional Telegram message formatting mode: MarkdownV2, HTML, or Markdown.",
                 value_type="string",
                 category="connection",
             ),
@@ -380,6 +393,8 @@ class TelegramTransportPlugin(BaseTransportPlugin):
             "telegram.sendTyping for presence, and telegram.showPopup for short user-facing "
             "confirmations."
         ),
+        default_target_field="chat_id",
+        default_target_config_key="default_chat_id",
     )
 
     def validate_config(
@@ -419,6 +434,19 @@ class TelegramTransportPlugin(BaseTransportPlugin):
                     message=(
                         f"Transport {transport_id!r} must use a string or integer "
                         "default_chat_id."
+                    ),
+                    source=transport_id,
+                )
+            )
+        parse_mode = str(config.get("default_parse_mode", "")).strip()
+        if parse_mode and parse_mode not in _TELEGRAM_PARSE_MODES:
+            issues.append(
+                CheckIssue(
+                    severity="error",
+                    code="transport.telegram.invalid_parse_mode",
+                    message=(
+                        f"Transport {transport_id!r} must use MarkdownV2, HTML, or Markdown "
+                        "for default_parse_mode."
                     ),
                     source=transport_id,
                 )
@@ -530,6 +558,7 @@ class TelegramTransportPlugin(BaseTransportPlugin):
             raise ValueError("telegram.sendMessage requires a non-empty text field.")
 
         chunks = _split_telegram_text(text)
+        parse_mode = _telegram_parse_mode(payload, config)
         message_ids: list[str] = []
         resolved_chat_id = str(chat_id)
         for index, chunk in enumerate(chunks):
@@ -541,11 +570,13 @@ class TelegramTransportPlugin(BaseTransportPlugin):
                 "disable_notification",
                 "reply_to_message_id",
                 "disable_web_page_preview",
+                "link_preview_options",
+                "protect_content",
             ]:
                 if field_name in payload:
                     request_payload[field_name] = payload[field_name]
-            if len(chunks) == 1 and "parse_mode" in payload:
-                request_payload["parse_mode"] = payload["parse_mode"]
+            if parse_mode:
+                request_payload["parse_mode"] = parse_mode
             if index == len(chunks) - 1 and "reply_markup" in payload:
                 request_payload["reply_markup"] = payload["reply_markup"]
             response = self._telegram_request(
@@ -759,7 +790,10 @@ class TelegramTransportPlugin(BaseTransportPlugin):
             "message_id": message_id,
             "text": text,
         }
-        for field_name in ["parse_mode", "reply_markup", "disable_web_page_preview"]:
+        parse_mode = _telegram_parse_mode(payload, config)
+        if parse_mode:
+            request_payload["parse_mode"] = parse_mode
+        for field_name in ["reply_markup", "disable_web_page_preview", "link_preview_options"]:
             if field_name in payload:
                 request_payload[field_name] = payload[field_name]
         self._telegram_request(
@@ -833,8 +867,23 @@ class TelegramTransportPlugin(BaseTransportPlugin):
 
     def _resolve_token_from_payload(self, payload: dict[str, object]) -> str:
         token = str(payload.get("_token", "")).strip()
+        if token:
+            return token
+        config = self._config_from_payload(payload)
+        scoped_secrets = payload.get("_transport_secrets")
+        if isinstance(scoped_secrets, dict):
+            token = self._resolve_token(
+                config,
+                {
+                    str(key): str(value)
+                    for key, value in scoped_secrets.items()
+                    if isinstance(key, str) and isinstance(value, str)
+                },
+            )
         if not token:
-            raise ValueError("Telegram transport runtime token is not attached to payload.")
+            raise ValueError(
+                "Telegram transport runtime token is not available in scoped secrets."
+            )
         return token
 
     def _config_from_payload(self, payload: dict[str, object]) -> Mapping[str, object]:
@@ -1015,15 +1064,18 @@ def _normalize_telegram_message_payload(
     sender = message.get("from")
     chat_id = _optional_telegram_id(chat, "id")
     text = _telegram_message_text(message)
+    command = _telegram_command_name(text)
     reply_target: dict[str, object] = {"chat_id": chat_id} if chat_id else {}
     normalized: dict[str, object] = {
         "kind": "telegram",
-        "event_type": event_type,
+        "event_type": "command" if command else event_type,
         "session_id": f"telegram:{chat_id}" if chat_id else "telegram:unknown",
         "text": text,
         "reply_target": reply_target,
         "payload": dict(payload),
     }
+    if command:
+        normalized["command"] = command
     sender_id = _optional_telegram_id(sender, "id")
     if sender_id is not None:
         normalized["sender_id"] = sender_id
@@ -1034,6 +1086,30 @@ def _normalize_telegram_message_payload(
     if message_id is not None:
         normalized["message_id"] = str(message_id)
     return normalized
+
+
+_TELEGRAM_PARSE_MODES = {"MarkdownV2", "HTML", "Markdown"}
+
+
+def _telegram_parse_mode(
+    payload: Mapping[str, object],
+    config: Mapping[str, object],
+) -> str:
+    raw_value = payload.get(
+        "parse_mode",
+        payload.get("format", config.get("default_parse_mode", "")),
+    )
+    value = str(raw_value).strip()
+    return value if value in _TELEGRAM_PARSE_MODES else ""
+
+
+def _telegram_command_name(text: str) -> str:
+    stripped = text.strip()
+    if not stripped.startswith("/"):
+        return ""
+    token = stripped.split(maxsplit=1)[0]
+    command = token[1:].split("@", 1)[0].strip().lower()
+    return command if command in {"start", "help", "settings", "stop"} else ""
 
 
 def _optional_telegram_id(payload: object, key: str) -> str | None:

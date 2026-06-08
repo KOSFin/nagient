@@ -116,6 +116,38 @@ class ConfigurationTests(unittest.TestCase):
             self.assertEqual(runtime_config.providers[0].plugin_id, "builtin.openai")
             self.assertEqual(runtime_config.providers[0].config["model"], "gpt-4.1-mini")
 
+    def test_empty_default_provider_allows_single_enabled_provider_autoselect(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir)
+            config_file = home_dir / "config.toml"
+            config_file.write_text(
+                "\n".join(
+                    [
+                        "[agent]",
+                        'default_provider = ""',
+                        "",
+                        "[providers.openai]",
+                        'plugin = "builtin.openai"',
+                        "enabled = true",
+                        'auth = "api_key"',
+                        'api_key_secret = "OPENAI_API_KEY"',
+                        'model = "gpt-4.1-mini"',
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            settings = Settings.from_env(
+                {
+                    "NAGIENT_HOME": str(home_dir),
+                    "NAGIENT_CONFIG": str(config_file),
+                }
+            )
+
+            runtime_config = load_runtime_configuration(settings)
+
+            self.assertEqual(runtime_config.default_provider, "openai")
+
     def test_configuration_merges_partial_tool_overrides_with_default_catalog(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             home_dir = Path(temp_dir)

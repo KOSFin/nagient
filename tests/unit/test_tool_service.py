@@ -8,10 +8,38 @@ from typing import cast
 
 from nagient.app.container import build_container
 from nagient.app.settings import Settings
-from nagient.domain.entities.tooling import ToolExecutionRequest
+from nagient.domain.entities.tooling import ToolExecutionRequest, ToolFunctionManifest
+from nagient.security.approval_policy import ApprovalPolicyEngine
+from nagient.tools.base import ToolRiskDecision
 
 
 class ToolServiceTests(unittest.TestCase):
+    def test_manifest_can_auto_approve_expected_custom_tool_action(self) -> None:
+        decision = ApprovalPolicyEngine().decide(
+            request=ToolExecutionRequest(
+                tool_id="custom_tool",
+                function_name="custom.vendor.deploy",
+                arguments={
+                    "approval_context": {
+                        "expected_by_user": True,
+                        "reason": "User explicitly asked to deploy this target.",
+                    }
+                },
+            ),
+            function=ToolFunctionManifest(
+                function_name="custom.vendor.deploy",
+                binding="deploy",
+                description="Deploy a custom target.",
+                side_effect="external",
+                approval_policy="required",
+                auto_approve_when_expected=True,
+            ),
+            risk=ToolRiskDecision(approval_policy="inherit"),
+        )
+
+        self.assertEqual(decision.policy, "never")
+        self.assertEqual(decision.reason, "User explicitly asked to deploy this target.")
+
     def test_workspace_write_read_and_delete_requires_approval(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             home_dir = Path(temp_dir) / "home"

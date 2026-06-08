@@ -7,6 +7,10 @@
     "default_chat_id": {
       "type": ["string", "integer"]
     },
+    "default_parse_mode": {
+      "type": "string",
+      "enum": ["MarkdownV2", "HTML", "Markdown"]
+    },
     "poll_timeout_seconds": {
       "type": "integer",
       "minimum": 1
