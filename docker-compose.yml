@@ -1,0 +1,54 @@
+# Nagient — self-hosted Docker Compose deployment.
+#
+# This is a ready-to-run compose file for deploying Nagient on your own server
+# without the hosted installer. It pulls the published image from Docker Hub and
+# persists all runtime data under ./data on the host.
+#
+# Quick start:
+#   1. cp .env.example .env        # optional: pin an image tag / project name
+#   2. docker compose up -d        # first run seeds ./data/config.toml + secrets.env
+#   3. Edit ./data/secrets.env     # add provider API keys and transport tokens
+#   4. Edit ./data/config.toml     # enable a provider + transport, set default_provider
+#   5. docker compose restart
+#
+# Inspect status and logs:
+#   docker compose exec nagient nagient status
+#   docker compose logs -f nagient
+#
+# The container seeds config.toml and secrets.env into ./data on first start,
+# so no host files need to exist beforehand.
+
+services:
+  nagient:
+    image: ${NAGIENT_IMAGE:-docker.io/parampo/nagient:latest}
+    container_name: ${NAGIENT_CONTAINER_NAME:-nagient}
+    restart: unless-stopped
+    working_dir: /workspace
+    environment:
+      NAGIENT_HOME: /opt/nagient
+      NAGIENT_CONFIG: /opt/nagient/config.toml
+      NAGIENT_SECRETS_FILE: /opt/nagient/secrets.env
+      NAGIENT_TOOL_SECRETS_FILE: /opt/nagient/tool-secrets.env
+      NAGIENT_PROMPTS_DIR: /opt/nagient/prompts
+      NAGIENT_PLUGINS_DIR: /opt/nagient/plugins
+      NAGIENT_TOOLS_DIR: /opt/nagient/tools
+      NAGIENT_PROVIDERS_DIR: /opt/nagient/providers
+      NAGIENT_CREDENTIALS_DIR: /opt/nagient/credentials
+      NAGIENT_STATE_DIR: /opt/nagient/state
+      NAGIENT_LOG_DIR: /opt/nagient/logs
+      NAGIENT_RELEASES_DIR: /opt/nagient/releases
+      NAGIENT_WORKSPACE_ROOT: /workspace
+      NAGIENT_HEARTBEAT_INTERVAL: ${NAGIENT_HEARTBEAT_INTERVAL:-30}
+      NAGIENT_SAFE_MODE: ${NAGIENT_SAFE_MODE:-true}
+    volumes:
+      # Single data directory holds config, secrets, state, logs, plugins, etc.
+      # The entrypoint seeds config.toml and secrets.env here on first run.
+      - ./data:/opt/nagient
+      # Bounded workspace the agent operates in.
+      - ./workspace:/workspace
+    healthcheck:
+      test: ["CMD", "python", "-m", "nagient", "doctor", "--format", "json"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

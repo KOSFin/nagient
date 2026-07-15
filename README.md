@@ -37,6 +37,23 @@ docker pull docker.io/parampo/nagient:latest
 
 The installer creates a local runtime in `~/.nagient` and starts Nagient via Docker Compose.
 
+### Deploy on a server (Docker Compose)
+
+To run Nagient on your own server without the hosted installer, use the
+ready-to-run [docker-compose.yml](docker-compose.yml) in the repository root:
+
+```bash
+git clone https://github.com/KOSFin/nagient.git
+cd nagient
+cp .env.example .env        # optional: pin an image tag
+docker compose up -d        # first run seeds ./data/config.toml + secrets.env
+# edit ./data/secrets.env (API keys, bot token), then ./data/config.toml
+docker compose restart
+docker compose exec nagient nagient status
+```
+
+Full walkthrough: [docs/deploy.md](docs/deploy.md) ([Русский](docs/deploy.ru.md)).
+
 After installation, use one short control command instead of long Docker Compose commands:
 
 ```bash

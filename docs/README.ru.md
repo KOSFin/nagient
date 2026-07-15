@@ -25,6 +25,7 @@ powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagient.ps1" status
 ## Навигация
 
 - Установка и обновления: [install.ru.md](install.ru.md)
+- Развёртывание через Docker Compose: [deploy.ru.md](deploy.ru.md)
 - Команды runtime и CLI: [commands.ru.md](commands.ru.md)
 - Конфигурация и секреты: [configuration.ru.md](configuration.ru.md)
 - Контракты плагинов: [plugin-contracts.ru.md](plugin-contracts.ru.md)
