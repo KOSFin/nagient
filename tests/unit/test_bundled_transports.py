@@ -4,14 +4,20 @@ import unittest
 
 from nagient.bundled_transports.console.transport import (
     ConsoleTransportPlugin,
+)
+from nagient.bundled_transports.console.transport import (
     build_plugin as build_console_plugin,
 )
 from nagient.bundled_transports.telegram.transport import (
     TelegramTransportPlugin,
+)
+from nagient.bundled_transports.telegram.transport import (
     build_plugin as build_telegram_plugin,
 )
 from nagient.bundled_transports.webhook.transport import (
     WebhookTransportPlugin,
+)
+from nagient.bundled_transports.webhook.transport import (
     build_plugin as build_webhook_plugin,
 )
 from nagient.plugins.base import BaseTransportPlugin
