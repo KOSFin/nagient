@@ -5,69 +5,52 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.8.4] - 2026-07-15
+## [0.8.5] - 2026-07-15
 
 ### Added
 
-- **Git Integration:** Added `workspace.git.clone()` for cloning repositories
-- **Git Integration:** Added `workspace.git.push()` for pushing commits to remotes
-- **Git Integration:** Added `workspace.git.pull()` for pulling changes from remotes
-- **Documentation:** Added `CONTRIBUTING.md` with contribution guidelines
-- **Documentation:** Added `SECURITY.md` with security policy and best practices
-- **Documentation:** Added `docs/PLUGIN_DEVELOPMENT.md` - comprehensive plugin development guide
-- **Documentation:** Added `.claude/` directory with project analysis and development docs
-- **Tests:** Added unit tests for bundled transport plugins (`tests/unit/test_bundled_transports.py`)
-- **Tests:** Added unit tests for plugin registry (`tests/unit/test_plugin_registry.py`)
+- `workspace.git.clone` — clone a remote repository into the workspace using the
+  configured git identity and credentials.
+- `workspace.git.push` — push commits to a remote with credential support.
+- `workspace.git.pull` — pull changes from a remote with credential support.
+- `CONTRIBUTING.md` — contribution workflow, commit conventions, and quality gates.
+- `SECURITY.md` — security policy, reporting process, and secret-handling guidance.
+- `docs/PLUGIN_DEVELOPMENT.md` — end-to-end guide for authoring transport, provider,
+  and tool plugins.
+- Unit tests for the bundled transport plugins and the transport plugin registry.
 
 ### Changed
 
-- **BREAKING:** Refactored bundled transports to use manifest-driven plugin system
-  - Moved `TelegramTransportPlugin` from `plugins/builtin.py` to `bundled_transports/telegram/transport.py`
-  - Moved `ConsoleTransportPlugin` from `plugins/builtin.py` to `bundled_transports/console/transport.py`
-  - Moved `WebhookTransportPlugin` from `plugins/builtin.py` to `bundled_transports/webhook/transport.py`
-  - All bundled transports now load through standard plugin discovery
-  - `plugins/builtin.py` simplified to compatibility stub
+- Bundled transports now load exclusively through the manifest-driven plugin
+  discovery path, identical to user-authored plugins:
+  - `TelegramTransportPlugin` now lives in `bundled_transports/telegram/transport.py`.
+  - `ConsoleTransportPlugin` now lives in `bundled_transports/console/transport.py`.
+  - `WebhookTransportPlugin` now lives in `bundled_transports/webhook/transport.py`.
+  - `plugins/builtin.py` no longer ships hardcoded transport implementations.
 
 ### Fixed
 
-- Git operations now properly handle clone, push, and pull with credentials
-- Plugin loading is now consistent between bundled and user plugins
-- Improved error messages for Git authentication failures
+- Git authentication failures now surface clearer, redacted error messages.
+- Plugin loading behaves consistently for bundled and user plugins.
 
-### Improved
-
-- **Architecture:** Manifest-driven plugin system is now fully consistent
-- **Documentation:** Comprehensive guides for contributors and plugin developers
-- **Security:** Documented security best practices and vulnerability reporting process
-- **Developer Experience:** Bundled plugins serve as reference implementations
-
-## [0.8.3] - 2024-06-09
+## [0.8.3] - 2026-06-09
 
 ### Added
 
-- Direct scheduled actions and progress broadcasts
-- Agent progress setup menu
+- Direct scheduled actions and progress broadcasts.
+- Agent progress setup menu.
 
 ### Changed
 
-- Made transport and plugin contracts manifest-driven
+- Made transport and plugin contracts manifest-driven.
 
-### Fixed
-
-- Lint issues
-
-## [0.1.0] - 2024-04-26
+## [0.1.0] - 2026-04-26
 
 ### Added
 
-- Initial release
-- Basic agent runtime
-- Transport plugin framework
-- Provider plugin framework
-- Tool plugin framework
-- Docker support
-- CLI interface
+- Initial release: agent runtime, transport/provider/tool plugin frameworks,
+  Docker support, and CLI interface.
 
-[0.8.4]: https://github.com/YOUR_ORG/nagient/compare/v0.8.3...v0.8.4
-[0.8.3]: https://github.com/YOUR_ORG/nagient/compare/v0.1.0...v0.8.3
-[0.1.0]: https://github.com/YOUR_ORG/nagient/releases/tag/v0.1.0
+[0.8.5]: https://github.com/KOSFin/nagient/compare/v0.8.4...v0.8.5
+[0.8.3]: https://github.com/KOSFin/nagient/compare/v0.1.0...v0.8.3
+[0.1.0]: https://github.com/KOSFin/nagient/releases/tag/v0.1.0

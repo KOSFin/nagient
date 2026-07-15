@@ -20,3 +20,4 @@ runtime/
 state/
 tmp/
 .nagient/
+.claude/

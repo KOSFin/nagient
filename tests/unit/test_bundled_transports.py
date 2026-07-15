@@ -1,79 +1,63 @@
-"""
-Unit tests for bundled transport plugins.
-"""
-
 from __future__ import annotations
 
-from nagient.bundled_transports.console.transport import ConsoleTransportPlugin
-from nagient.bundled_transports.telegram.transport import TelegramTransportPlugin
-from nagient.bundled_transports.webhook.transport import WebhookTransportPlugin
+import unittest
+
+from nagient.bundled_transports.console.transport import (
+    ConsoleTransportPlugin,
+    build_plugin as build_console_plugin,
+)
+from nagient.bundled_transports.telegram.transport import (
+    TelegramTransportPlugin,
+    build_plugin as build_telegram_plugin,
+)
+from nagient.bundled_transports.webhook.transport import (
+    WebhookTransportPlugin,
+    build_plugin as build_webhook_plugin,
+)
 from nagient.plugins.base import BaseTransportPlugin
 
 
-class TestConsoleTransport:
-    """Test console transport plugin."""
+class ConsoleTransportTests(unittest.TestCase):
+    def test_build_plugin_returns_transport(self) -> None:
+        plugin = build_console_plugin()
+        self.assertIsInstance(plugin, ConsoleTransportPlugin)
+        self.assertIsInstance(plugin, BaseTransportPlugin)
 
-    def test_build_plugin(self):
-        """Test plugin factory function."""
-        from nagient.bundled_transports.console.transport import build_plugin
-
-        plugin = build_plugin()
-        assert isinstance(plugin, ConsoleTransportPlugin)
-        assert isinstance(plugin, BaseTransportPlugin)
-
-    def test_validate_config_valid(self):
-        """Test config validation with valid stream."""
+    def test_validate_config_accepts_valid_stream(self) -> None:
         plugin = ConsoleTransportPlugin()
-        issues = plugin.validate_config(
-            "test_console",
-            {"stream": "stdout"},
-            {},
-        )
-        assert len(issues) == 0
+        issues = plugin.validate_config("console", {"stream": "stdout"}, {})
+        self.assertEqual(issues, [])
 
-    def test_validate_config_invalid_stream(self):
-        """Test config validation with invalid stream."""
+    def test_validate_config_rejects_invalid_stream(self) -> None:
         plugin = ConsoleTransportPlugin()
-        issues = plugin.validate_config(
-            "test_console",
-            {"stream": "invalid"},
-            {},
-        )
-        assert len(issues) == 1
-        assert issues[0].severity == "error"
-        assert "invalid_stream" in issues[0].code
+        issues = plugin.validate_config("console", {"stream": "invalid"}, {})
+        self.assertEqual(len(issues), 1)
+        self.assertEqual(issues[0].severity, "error")
+        self.assertIn("invalid_stream", issues[0].code)
 
-    def test_send_message(self):
-        """Test sending a message."""
+    def test_send_message_queues_payload(self) -> None:
         plugin = ConsoleTransportPlugin()
         result = plugin.send_message({"text": "Hello, world!"})
-        assert result["status"] == "queued"
-        assert "payload" in result
+        self.assertEqual(result["status"], "queued")
+        self.assertIn("payload", result)
 
-    def test_normalize_inbound_event(self):
-        """Test event normalization."""
+    def test_normalize_inbound_event(self) -> None:
         plugin = ConsoleTransportPlugin()
         result = plugin.normalize_inbound_event({"test": "data"})
-        assert result["kind"] == "console"
-        assert result["event_type"] == "unknown"
+        self.assertEqual(result["kind"], "console")
+        self.assertEqual(result["event_type"], "unknown")
 
 
-class TestWebhookTransport:
-    """Test webhook transport plugin."""
+class WebhookTransportTests(unittest.TestCase):
+    def test_build_plugin_returns_transport(self) -> None:
+        plugin = build_webhook_plugin()
+        self.assertIsInstance(plugin, WebhookTransportPlugin)
+        self.assertIsInstance(plugin, BaseTransportPlugin)
 
-    def test_build_plugin(self):
-        """Test plugin factory function."""
-        from nagient.bundled_transports.webhook.transport import build_plugin
-
-        plugin = build_plugin()
-        assert isinstance(plugin, WebhookTransportPlugin)
-        assert isinstance(plugin, BaseTransportPlugin)
-
-    def test_validate_config_valid(self):
-        """Test config validation with valid settings."""
+    def test_validate_config_accepts_valid_settings(self) -> None:
         plugin = WebhookTransportPlugin()
         issues = plugin.validate_config(
-            "test_webhook",
+            "webhook",
             {
                 "path": "/webhook",
                 "listen_port": 8080,
@@ -81,151 +65,127 @@ class TestWebhookTransport:
             },
             {"WEBHOOK_SECRET": "test-secret"},
         )
-        assert len(issues) == 0
+        self.assertEqual(issues, [])
 
-    def test_validate_config_invalid_path(self):
-        """Test config validation with invalid path."""
+    def test_validate_config_rejects_invalid_path(self) -> None:
+        plugin = WebhookTransportPlugin()
+        issues = plugin.validate_config("webhook", {"path": "invalid-path"}, {})
+        self.assertTrue(any("invalid_path" in issue.code for issue in issues))
+
+    def test_validate_config_flags_missing_secret(self) -> None:
         plugin = WebhookTransportPlugin()
         issues = plugin.validate_config(
-            "test_webhook",
-            {"path": "invalid-path"},
+            "webhook",
+            {"path": "/webhook", "shared_secret_name": "MISSING_SECRET"},
             {},
         )
-        assert len(issues) > 0
-        assert any("invalid_path" in issue.code for issue in issues)
+        self.assertTrue(any("missing_secret" in issue.code for issue in issues))
 
-    def test_validate_config_missing_secret(self):
-        """Test config validation with missing secret."""
+    def test_normalize_inbound_event_dict(self) -> None:
         plugin = WebhookTransportPlugin()
-        issues = plugin.validate_config(
-            "test_webhook",
+        result = plugin.normalize_inbound_event(
             {
-                "path": "/webhook",
-                "shared_secret_name": "MISSING_SECRET",
-            },
-            {},
+                "event_type": "message",
+                "text": "Hello",
+                "session_id": "test-session",
+            }
         )
-        assert len(issues) > 0
-        assert any("missing_secret" in issue.code for issue in issues)
-
-    def test_normalize_inbound_event_dict(self):
-        """Test event normalization with dict payload."""
-        plugin = WebhookTransportPlugin()
-        result = plugin.normalize_inbound_event({
-            "event_type": "message",
-            "text": "Hello",
-            "session_id": "test-session",
-        })
-        assert result["kind"] == "webhook"
-        assert result["event_type"] == "message"
-        assert result["text"] == "Hello"
+        self.assertEqual(result["kind"], "webhook")
+        self.assertEqual(result["event_type"], "message")
+        self.assertEqual(result["text"], "Hello")
 
 
-class TestTelegramTransport:
-    """Test Telegram transport plugin."""
+class TelegramTransportTests(unittest.TestCase):
+    def test_build_plugin_returns_transport(self) -> None:
+        plugin = build_telegram_plugin()
+        self.assertIsInstance(plugin, TelegramTransportPlugin)
+        self.assertIsInstance(plugin, BaseTransportPlugin)
 
-    def test_build_plugin(self):
-        """Test plugin factory function."""
-        from nagient.bundled_transports.telegram.transport import build_plugin
+    def test_validate_config_requires_secret_ref(self) -> None:
+        plugin = TelegramTransportPlugin()
+        issues = plugin.validate_config("telegram", {}, {})
+        self.assertTrue(any("missing_secret_ref" in issue.code for issue in issues))
 
-        plugin = build_plugin()
-        assert isinstance(plugin, TelegramTransportPlugin)
-        assert isinstance(plugin, BaseTransportPlugin)
-
-    def test_validate_config_missing_secret_ref(self):
-        """Test config validation with missing secret reference."""
+    def test_validate_config_flags_missing_secret(self) -> None:
         plugin = TelegramTransportPlugin()
         issues = plugin.validate_config(
-            "test_telegram",
-            {},
-            {},
-        )
-        assert len(issues) > 0
-        assert any("missing_secret_ref" in issue.code for issue in issues)
-
-    def test_validate_config_secret_not_found(self):
-        """Test config validation with secret not found."""
-        plugin = TelegramTransportPlugin()
-        issues = plugin.validate_config(
-            "test_telegram",
+            "telegram",
             {"bot_token_secret": "TELEGRAM_TOKEN"},
             {},
         )
-        assert len(issues) > 0
-        assert any("secret_not_found" in issue.code for issue in issues)
+        self.assertTrue(any("secret_not_found" in issue.code for issue in issues))
 
-    def test_validate_config_valid(self):
-        """Test config validation with valid settings."""
+    def test_validate_config_accepts_valid_settings(self) -> None:
         plugin = TelegramTransportPlugin()
         issues = plugin.validate_config(
-            "test_telegram",
+            "telegram",
             {"bot_token_secret": "TELEGRAM_TOKEN"},
             {"TELEGRAM_TOKEN": "123456:ABC-DEF"},
         )
-        assert len(issues) == 0
+        self.assertEqual(issues, [])
 
-    def test_validate_config_invalid_parse_mode(self):
-        """Test config validation with invalid parse mode."""
+    def test_validate_config_rejects_invalid_parse_mode(self) -> None:
         plugin = TelegramTransportPlugin()
         issues = plugin.validate_config(
-            "test_telegram",
+            "telegram",
             {
                 "bot_token_secret": "TELEGRAM_TOKEN",
                 "default_parse_mode": "InvalidMode",
             },
             {"TELEGRAM_TOKEN": "123456:ABC-DEF"},
         )
-        assert len(issues) > 0
-        assert any("invalid_parse_mode" in issue.code for issue in issues)
+        self.assertTrue(any("invalid_parse_mode" in issue.code for issue in issues))
 
-    def test_normalize_message_event(self):
-        """Test normalization of message event."""
+    def test_normalize_message_event(self) -> None:
         plugin = TelegramTransportPlugin()
-        result = plugin.normalize_inbound_event({
-            "message": {
-                "message_id": 123,
-                "text": "Hello",
-                "chat": {"id": 456, "type": "private"},
-                "from": {"id": 789, "first_name": "Test"},
+        result = plugin.normalize_inbound_event(
+            {
+                "message": {
+                    "message_id": 123,
+                    "text": "Hello",
+                    "chat": {"id": 456, "type": "private"},
+                    "from": {"id": 789, "first_name": "Test"},
+                }
             }
-        })
-        assert result["kind"] == "telegram"
-        assert result["event_type"] == "message"
-        assert result["text"] == "Hello"
-        assert result["session_id"] == "telegram:456"
+        )
+        self.assertEqual(result["kind"], "telegram")
+        self.assertEqual(result["event_type"], "message")
+        self.assertEqual(result["text"], "Hello")
+        self.assertEqual(result["session_id"], "telegram:456")
 
-    def test_normalize_command_event(self):
-        """Test normalization of command event."""
+    def test_normalize_command_event(self) -> None:
         plugin = TelegramTransportPlugin()
-        result = plugin.normalize_inbound_event({
-            "message": {
-                "message_id": 123,
-                "text": "/start",
-                "chat": {"id": 456},
-                "from": {"id": 789},
+        result = plugin.normalize_inbound_event(
+            {
+                "message": {
+                    "message_id": 123,
+                    "text": "/start",
+                    "chat": {"id": 456},
+                    "from": {"id": 789},
+                }
             }
-        })
-        assert result["kind"] == "telegram"
-        assert result["event_type"] == "command"
-        assert result["command"] == "start"
+        )
+        self.assertEqual(result["event_type"], "command")
+        self.assertEqual(result["command"], "start")
 
-    def test_self_test_invalid_token_format(self):
-        """Test self-test with invalid token format."""
+    def test_self_test_rejects_invalid_token_format(self) -> None:
         plugin = TelegramTransportPlugin()
         issues = plugin.self_test(
-            "test_telegram",
+            "telegram",
             {"bot_token_secret": "TELEGRAM_TOKEN"},
             {"TELEGRAM_TOKEN": "invalid-token"},
         )
-        assert len(issues) > 0
-        assert any("invalid_token_format" in issue.code for issue in issues)
+        self.assertTrue(any("invalid_token_format" in issue.code for issue in issues))
 
-    def test_self_test_valid_token_format(self):
-        """Test self-test with valid token format."""
+    def test_self_test_accepts_valid_token_format(self) -> None:
         plugin = TelegramTransportPlugin()
         issues = plugin.self_test(
-            "test_telegram",
+            "telegram",
             {"bot_token_secret": "TELEGRAM_TOKEN"},
             {"TELEGRAM_TOKEN": "123456:ABC-DEF"},
         )
-        assert len(issues) == 0
+        self.assertEqual(issues, [])
+
+
+if __name__ == "__main__":
+    unittest.main()

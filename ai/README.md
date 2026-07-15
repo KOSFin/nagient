@@ -55,6 +55,30 @@ Core references:
 - `src/nagient/security/`
 - `src/nagient/migrations/`
 
+Bundled extensions (manifest-driven, loaded exactly like user plugins):
+
+- `src/nagient/bundled_transports/telegram/`
+- `src/nagient/bundled_transports/console/`
+- `src/nagient/bundled_transports/webhook/`
+- `src/nagient/bundled_tools/github_api/`
+
+## 3a. Plugin Architecture Convention (Important)
+
+Bundled transports and tools are NOT special-cased. Each one is a self-contained
+directory with a `plugin.toml`/`tool.toml` manifest and an `entrypoint` module that
+exports `build_plugin()`. The registries in `src/nagient/plugins/registry.py` and
+`src/nagient/tools/registry.py` discover the bundled directories first, then the
+user plugin/tool directories, using the same code path.
+
+Rules to preserve:
+
+- Do not reintroduce hardcoded transport/tool classes into `plugins/builtin.py`
+  or a central registry. `plugins/builtin.py` is only a thin compatibility stub.
+- A new bundled transport is added as a new directory under `bundled_transports/`
+  with a manifest and a `transport.py` exposing `build_plugin()`.
+- Bundled plugins double as reference implementations for users writing their own,
+  so keep them clean and idiomatic.
+
 Delivery references:
 
 - `scripts/install.sh`, `scripts/install.ps1`
