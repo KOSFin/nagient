@@ -22,21 +22,38 @@ git clone https://github.com/KOSFin/nagient.git
 cd nagient
 ```
 
-## 2. Configure (optional)
+## 2. Configure through environment variables
 
-The defaults work out of the box. To pin a specific image version or rename the
-container, copy the example environment file and edit it:
+Copy the example and set everything the runtime needs in one file:
 
 ```bash
 cp .env.example .env
+chmod 600 .env
 ```
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `NAGIENT_IMAGE` | `docker.io/parampo/nagient:latest` | Image and tag to run. Pin to a version like `:0.8.8` in production. |
-| `NAGIENT_CONTAINER_NAME` | `nagient` | Container name. |
-| `NAGIENT_HEARTBEAT_INTERVAL` | `30` | Heartbeat write interval, seconds. |
-| `NAGIENT_SAFE_MODE` | `true` | Keep workspace path guards on. |
+For example, an OpenAI provider with Telegram needs only these uncommented
+values in `.env`:
+
+```dotenv
+NAGIENT_AGENT_DEFAULT_PROVIDER=openai
+NAGIENT_AGENT_REQUIRE_PROVIDER=true
+NAGIENT_PROVIDER__OPENAI__PLUGIN=builtin.openai
+NAGIENT_PROVIDER__OPENAI__ENABLED=true
+NAGIENT_PROVIDER__OPENAI__AUTH=api_key
+NAGIENT_PROVIDER__OPENAI__API_KEY_SECRET=OPENAI_API_KEY
+NAGIENT_PROVIDER__OPENAI__MODEL=gpt-4.1-mini
+OPENAI_API_KEY=sk-...
+
+NAGIENT_TRANSPORT__CONSOLE__ENABLED=false
+NAGIENT_TRANSPORT__TELEGRAM__PLUGIN=builtin.telegram
+NAGIENT_TRANSPORT__TELEGRAM__ENABLED=true
+NAGIENT_TRANSPORT__TELEGRAM__BOT_TOKEN_SECRET=TELEGRAM_BOT_TOKEN
+NAGIENT_TRANSPORT__TELEGRAM__DEFAULT_CHAT_ID=123456789
+TELEGRAM_BOT_TOKEN=123456:ABC...
+```
+
+The compose service loads the entire `.env` into the container. You do not need
+to run `nagient setup`, edit TOML, or edit a generated secrets file.
 
 ## 3. First start
 
@@ -44,43 +61,11 @@ cp .env.example .env
 docker compose up -d
 ```
 
-On first start the container seeds `config.toml` and `secrets.env` into `./data`
-on the host. No host files need to exist beforehand.
+On first start the container also seeds compatibility files under `./data`.
+They are useful for persistence and CLI workflows, but environment values take
+precedence and no manual interaction with those files is required.
 
-## 4. Add secrets
-
-Edit `./data/secrets.env` and add the keys for the providers and transports you
-plan to use:
-
-```dotenv
-OPENAI_API_KEY=sk-...
-ANTHROPIC_API_KEY=sk-ant-...
-TELEGRAM_BOT_TOKEN=123456:ABC...
-```
-
-## 5. Enable a provider and a transport
-
-Edit `./data/config.toml`:
-
-```toml
-[agent]
-default_provider = "openai"
-
-[providers.openai]
-enabled = true
-
-[transports.telegram]
-enabled = true
-default_chat_id = "123456789"
-```
-
-Then apply the changes:
-
-```bash
-docker compose restart
-```
-
-## 6. Verify
+## 4. Verify
 
 ```bash
 docker compose exec nagient nagient status
@@ -97,6 +82,32 @@ Everything lives under two host directories, both easy to back up:
 
 - `./data` — config, secrets, state, logs, credentials, and installed plugins.
 - `./workspace` — the bounded workspace the agent reads and writes.
+
+## Configuration model
+
+Every current configuration field is available without CLI interaction:
+
+- common settings use variables such as `NAGIENT_SAFE_MODE`,
+  `NAGIENT_WORKSPACE_MODE`, and `NAGIENT_AGENT__MAX_TURNS`;
+- provider, transport, and tool fields use
+  `NAGIENT_PROVIDER__<ID>__<FIELD>`, `NAGIENT_TRANSPORT__<ID>__<FIELD>`, and
+  `NAGIENT_TOOL__<ID>__<FIELD>`;
+- referenced secrets such as `OPENAI_API_KEY`, `TELEGRAM_BOT_TOKEN`, and custom
+  plugin secret names are read directly from the container environment;
+- `NAGIENT_CONFIG_JSON` deep-merges a complete TOML-shaped JSON object for
+  nested or future fields;
+- `NAGIENT_SECRETS_JSON` and `NAGIENT_TOOL_SECRETS_JSON` accept arbitrary
+  secret-name/value objects.
+
+Precedence is: granular environment variables, JSON environment configuration,
+persisted files, built-in defaults. See [env.md](env.md) for the full reference.
+
+To use a differently named environment file:
+
+```bash
+NAGIENT_ENV_FILE=/srv/nagient/production.env \
+  docker compose --env-file /srv/nagient/production.env up -d
+```
 
 ## Upgrade
 
@@ -119,9 +130,9 @@ To also delete runtime data, remove the host directories:
 rm -rf ./data ./workspace
 ```
 
-## Notes
+## Webhook exposure
 
-- Secrets are read from `./data/secrets.env`, not from shell environment
-  variables. Keep that file out of version control.
-- To expose the webhook transport, publish its port by adding a `ports:` entry
-  to the `nagient` service and enabling `[transports.webhook]` in `config.toml`.
+Compose publishes the configured webhook container port on `127.0.0.1:8080` by
+default. Set `NAGIENT_WEBHOOK_BIND_ADDRESS=0.0.0.0` and
+`NAGIENT_WEBHOOK_PORT=<host-port>` only when external access is required and the
+endpoint is protected by a firewall or reverse proxy.

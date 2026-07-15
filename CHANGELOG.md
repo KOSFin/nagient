@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - 2026-07-16
+
+### Added
+
+- Complete env-only Docker Compose deployment: provider, transport, agent, tool,
+  workspace, and secret settings can be supplied through `.env` without running
+  the Nagient CLI or editing generated TOML/secret files.
+- `NAGIENT_CONFIG_JSON`, `NAGIENT_SECRETS_JSON`, and
+  `NAGIENT_TOOL_SECRETS_JSON` for complete and future-compatible environment
+  configuration, including arbitrary plugin fields and secret names.
+- A safe-by-default webhook port mapping, bound to `127.0.0.1` unless explicitly
+  exposed through `NAGIENT_WEBHOOK_BIND_ADDRESS`.
+
+### Changed
+
+- Environment values take precedence over persisted configuration and secrets.
+- Server deployment documentation now uses one `.env` plus
+  `docker compose up -d` as the primary installation path.
+
 ## [0.9.0] - 2026-07-15
 
 ### Added
@@ -94,6 +113,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial release: agent runtime, transport/provider/tool plugin frameworks,
   Docker support, and CLI interface.
 
+[0.9.1]: https://github.com/KOSFin/nagient/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/KOSFin/nagient/compare/v0.8.7...v0.9.0
 [0.8.7]: https://github.com/KOSFin/nagient/compare/v0.8.6...v0.8.7
 [0.8.6]: https://github.com/KOSFin/nagient/compare/v0.8.5...v0.8.6

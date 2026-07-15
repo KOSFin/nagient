@@ -244,7 +244,10 @@ class RenderReleaseAssetsTests(unittest.TestCase):
             self.assertNotIn("./config.toml:/opt/nagient/config.toml:ro", compose_file)
             self.assertIn("./secrets.env:/opt/nagient/secrets.env", compose_file)
             self.assertNotIn("./secrets.env:/opt/nagient/secrets.env:ro", compose_file)
-            self.assertIn("NAGIENT_PROMPTS_DIR: /opt/nagient/prompts", compose_file)
+            self.assertIn(
+                "NAGIENT_PROMPTS_DIR: ${NAGIENT_PROMPTS_DIR:-/opt/nagient/prompts}",
+                compose_file,
+            )
             self.assertIn(
                 "NAGIENT_WORKSPACE_ROOT: ${NAGIENT_WORKSPACE_ROOT:-/workspace}",
                 compose_file,

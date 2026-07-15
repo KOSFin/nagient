@@ -4,19 +4,17 @@
 # without the hosted installer. It pulls the published image from Docker Hub and
 # persists all runtime data under ./data on the host.
 #
-# Quick start:
-#   1. cp .env.example .env        # optional: pin an image tag / project name
-#   2. docker compose up -d        # first run seeds ./data/config.toml + secrets.env
-#   3. Edit ./data/secrets.env     # add provider API keys and transport tokens
-#   4. Edit ./data/config.toml     # enable a provider + transport, set default_provider
-#   5. docker compose restart
+# Quick start (no CLI or generated-file editing required):
+#   1. cp .env.example .env
+#   2. Set provider/transport variables and secrets in .env
+#   3. docker compose up -d
 #
 # Inspect status and logs:
 #   docker compose exec nagient nagient status
 #   docker compose logs -f nagient
 #
-# The container seeds config.toml and secrets.env into ./data on first start,
-# so no host files need to exist beforehand.
+# The container still seeds config.toml and secrets.env for persistence and CLI
+# compatibility, but values from the env file take precedence.
 
 services:
   nagient:
@@ -24,25 +22,30 @@ services:
     container_name: ${NAGIENT_CONTAINER_NAME:-nagient}
     restart: unless-stopped
     working_dir: /workspace
+    env_file:
+      - ${NAGIENT_ENV_FILE:-.env}
     environment:
-      NAGIENT_HOME: /opt/nagient
-      NAGIENT_CONFIG: /opt/nagient/config.toml
-      NAGIENT_SECRETS_FILE: /opt/nagient/secrets.env
-      NAGIENT_TOOL_SECRETS_FILE: /opt/nagient/tool-secrets.env
-      NAGIENT_PROMPTS_DIR: /opt/nagient/prompts
-      NAGIENT_PLUGINS_DIR: /opt/nagient/plugins
-      NAGIENT_TOOLS_DIR: /opt/nagient/tools
-      NAGIENT_PROVIDERS_DIR: /opt/nagient/providers
-      NAGIENT_CREDENTIALS_DIR: /opt/nagient/credentials
-      NAGIENT_STATE_DIR: /opt/nagient/state
-      NAGIENT_LOG_DIR: /opt/nagient/logs
-      NAGIENT_RELEASES_DIR: /opt/nagient/releases
-      NAGIENT_WORKSPACE_ROOT: /workspace
+      NAGIENT_HOME: ${NAGIENT_HOME:-/opt/nagient}
+      NAGIENT_CONFIG: ${NAGIENT_CONFIG:-/opt/nagient/config.toml}
+      NAGIENT_SECRETS_FILE: ${NAGIENT_SECRETS_FILE:-/opt/nagient/secrets.env}
+      NAGIENT_TOOL_SECRETS_FILE: ${NAGIENT_TOOL_SECRETS_FILE:-/opt/nagient/tool-secrets.env}
+      NAGIENT_PROMPTS_DIR: ${NAGIENT_PROMPTS_DIR:-/opt/nagient/prompts}
+      NAGIENT_PLUGINS_DIR: ${NAGIENT_PLUGINS_DIR:-/opt/nagient/plugins}
+      NAGIENT_TOOLS_DIR: ${NAGIENT_TOOLS_DIR:-/opt/nagient/tools}
+      NAGIENT_PROVIDERS_DIR: ${NAGIENT_PROVIDERS_DIR:-/opt/nagient/providers}
+      NAGIENT_CREDENTIALS_DIR: ${NAGIENT_CREDENTIALS_DIR:-/opt/nagient/credentials}
+      NAGIENT_STATE_DIR: ${NAGIENT_STATE_DIR:-/opt/nagient/state}
+      NAGIENT_LOG_DIR: ${NAGIENT_LOG_DIR:-/opt/nagient/logs}
+      NAGIENT_RELEASES_DIR: ${NAGIENT_RELEASES_DIR:-/opt/nagient/releases}
+      NAGIENT_WORKSPACE_ROOT: ${NAGIENT_WORKSPACE_ROOT:-/workspace}
       NAGIENT_HEARTBEAT_INTERVAL: ${NAGIENT_HEARTBEAT_INTERVAL:-30}
       NAGIENT_SAFE_MODE: ${NAGIENT_SAFE_MODE:-true}
+    ports:
+      # Safe localhost default. Set NAGIENT_WEBHOOK_BIND_ADDRESS=0.0.0.0 to expose it.
+      - "${NAGIENT_WEBHOOK_BIND_ADDRESS:-127.0.0.1}:${NAGIENT_WEBHOOK_PORT:-8080}:${NAGIENT_TRANSPORT__WEBHOOK__LISTEN_PORT:-8080}"
     volumes:
       # Single data directory holds config, secrets, state, logs, plugins, etc.
-      # The entrypoint seeds config.toml and secrets.env here on first run.
+      # The entrypoint seeds compatibility files here; environment overrides win.
       - ./data:/opt/nagient
       # Bounded workspace the agent operates in.
       - ./workspace:/workspace

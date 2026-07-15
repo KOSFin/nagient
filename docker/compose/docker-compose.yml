@@ -9,24 +9,26 @@ services:
     env_file:
       - .env
     environment:
-      NAGIENT_HOME: /opt/nagient
-      NAGIENT_CONFIG: /opt/nagient/config.toml
-      NAGIENT_SECRETS_FILE: /opt/nagient/secrets.env
-      NAGIENT_TOOL_SECRETS_FILE: /opt/nagient/tool-secrets.env
-      NAGIENT_PROMPTS_DIR: /opt/nagient/prompts
-      NAGIENT_PLUGINS_DIR: /opt/nagient/plugins
-      NAGIENT_TOOLS_DIR: /opt/nagient/tools
-      NAGIENT_PROVIDERS_DIR: /opt/nagient/providers
-      NAGIENT_CREDENTIALS_DIR: /opt/nagient/credentials
-      NAGIENT_STATE_DIR: /opt/nagient/state
-      NAGIENT_LOG_DIR: /opt/nagient/logs
-      NAGIENT_RELEASES_DIR: /opt/nagient/releases
+      NAGIENT_HOME: ${NAGIENT_HOME:-/opt/nagient}
+      NAGIENT_CONFIG: ${NAGIENT_CONFIG:-/opt/nagient/config.toml}
+      NAGIENT_SECRETS_FILE: ${NAGIENT_SECRETS_FILE:-/opt/nagient/secrets.env}
+      NAGIENT_TOOL_SECRETS_FILE: ${NAGIENT_TOOL_SECRETS_FILE:-/opt/nagient/tool-secrets.env}
+      NAGIENT_PROMPTS_DIR: ${NAGIENT_PROMPTS_DIR:-/opt/nagient/prompts}
+      NAGIENT_PLUGINS_DIR: ${NAGIENT_PLUGINS_DIR:-/opt/nagient/plugins}
+      NAGIENT_TOOLS_DIR: ${NAGIENT_TOOLS_DIR:-/opt/nagient/tools}
+      NAGIENT_PROVIDERS_DIR: ${NAGIENT_PROVIDERS_DIR:-/opt/nagient/providers}
+      NAGIENT_CREDENTIALS_DIR: ${NAGIENT_CREDENTIALS_DIR:-/opt/nagient/credentials}
+      NAGIENT_STATE_DIR: ${NAGIENT_STATE_DIR:-/opt/nagient/state}
+      NAGIENT_LOG_DIR: ${NAGIENT_LOG_DIR:-/opt/nagient/logs}
+      NAGIENT_RELEASES_DIR: ${NAGIENT_RELEASES_DIR:-/opt/nagient/releases}
       NAGIENT_WORKSPACE_ROOT: ${NAGIENT_WORKSPACE_ROOT:-/workspace}
       NAGIENT_CHANNEL: ${NAGIENT_CHANNEL:-__NAGIENT_DEFAULT_CHANNEL__}
       NAGIENT_UPDATE_BASE_URL: ${NAGIENT_UPDATE_BASE_URL:-__NAGIENT_UPDATE_BASE_URL__}
       NAGIENT_HEARTBEAT_INTERVAL: ${NAGIENT_HEARTBEAT_INTERVAL:-30}
       NAGIENT_DOCKER_PROJECT_NAME: ${NAGIENT_DOCKER_PROJECT_NAME:-__NAGIENT_DOCKER_PROJECT_NAME__}
       NAGIENT_SAFE_MODE: ${NAGIENT_SAFE_MODE:-true}
+    ports:
+      - "${NAGIENT_WEBHOOK_BIND_ADDRESS:-127.0.0.1}:${NAGIENT_WEBHOOK_PORT:-8080}:${NAGIENT_TRANSPORT__WEBHOOK__LISTEN_PORT:-8080}"
     volumes:
       - ./workspace:/workspace
       - ./state:/opt/nagient/state

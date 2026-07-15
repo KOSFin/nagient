@@ -12,9 +12,10 @@
 
 Установщик также принимает `UPDATE_BASE_URL` как совместимый override, если вы запускаете уже сгенерированный скрипт вручную.
 
-## 2. Переменные Docker Compose `.env`
+## 2. Env-only запуск через Docker Compose
 
-Файл: `~/.nagient/.env`
+Корневой `docker-compose.yml` передаёт весь `.env` внутрь контейнера. Для файла
+с другим именем задайте `NAGIENT_ENV_FILE` перед `docker compose up`.
 
 | Переменная | Назначение | Пример |
 | --- | --- | --- |
@@ -26,6 +27,8 @@
 | `NAGIENT_SAFE_MODE` | Safe mode | `true` |
 | `NAGIENT_WORKSPACE_ROOT` | Рабочая директория | `/workspace` |
 | `NAGIENT_HEARTBEAT_INTERVAL` | Heartbeat в секундах | `30` |
+| `NAGIENT_WEBHOOK_BIND_ADDRESS` | Интерфейс хоста для webhook | `127.0.0.1` |
+| `NAGIENT_WEBHOOK_PORT` | Публикуемый порт webhook | `8080` |
 
 ## 3. Runtime-переменные (используются приложением)
 
@@ -58,14 +61,28 @@
 - `NAGIENT_WORKSPACE_MODE` (`bounded` или `unsafe`)
 - `NAGIENT_AGENT_DEFAULT_PROVIDER`
 - `NAGIENT_AGENT_REQUIRE_PROVIDER`
+- `NAGIENT_AGENT__<FIELD>` для любого прямого поля `[agent]`, например
+  `NAGIENT_AGENT__MAX_TURNS=20`
+- `NAGIENT_AGENT_MEMORY__<FIELD>`
+- `NAGIENT_AGENT_LOGGING__<FIELD>`
+- `NAGIENT_AGENT_PROGRESS__<FIELD>`
 
-## 4. Dynamic overrides
+## 4. Dynamic overrides провайдеров, транспортов и инструментов
 
 Provider override:
 
 ```env
 NAGIENT_PROVIDER__OPENAI__ENABLED=true
 NAGIENT_PROVIDER__OPENAI__MODEL=gpt-4.1-mini
+```
+
+Transport override:
+
+```env
+NAGIENT_TRANSPORT__TELEGRAM__PLUGIN=builtin.telegram
+NAGIENT_TRANSPORT__TELEGRAM__ENABLED=true
+NAGIENT_TRANSPORT__TELEGRAM__BOT_TOKEN_SECRET=TELEGRAM_BOT_TOKEN
+NAGIENT_TRANSPORT__TELEGRAM__DEFAULT_CHAT_ID=123456789
 ```
 
 Tool override:
@@ -79,3 +96,43 @@ NAGIENT_TOOL__WORKSPACE_GIT__AUTHOR_EMAIL=agent@example.com
 NAGIENT_TOOL__WORKSPACE_GIT__USERNAME=git-user
 NAGIENT_TOOL__WORKSPACE_GIT__TOKEN_SECRET=GIT_ACCESS_TOKEN
 ```
+
+ID и имена полей в переменных регистронезависимы. ID провайдера с дефисом можно
+записать через подчёркивание: `OPENAI_CODEX` сопоставится существующему профилю
+`openai-codex`.
+
+## 5. Секреты из окружения
+
+Если поле провайдера, транспорта или инструмента ссылается на имя секрета,
+одноимённая переменная читается прямо из окружения контейнера:
+
+```env
+NAGIENT_PROVIDER__OPENAI__API_KEY_SECRET=OPENAI_API_KEY
+OPENAI_API_KEY=sk-...
+NAGIENT_TRANSPORT__TELEGRAM__BOT_TOKEN_SECRET=TELEGRAM_BOT_TOKEN
+TELEGRAM_BOT_TOKEN=123456:ABC...
+```
+
+Для произвольных имён можно использовать JSON-объекты:
+
+```env
+NAGIENT_SECRETS_JSON={"CUSTOM_PROVIDER_KEY":"value"}
+NAGIENT_TOOL_SECRETS_JSON={"CUSTOM_TOOL_TOKEN":"value"}
+```
+
+## 6. Полная JSON-конфигурация
+
+`NAGIENT_CONFIG_JSON` принимает JSON с той же иерархией, что и `config.toml`.
+Объекты объединяются рекурсивно, поэтому через эту переменную доступны любые
+существующие вложенные поля и будущие настройки плагинов:
+
+```env
+NAGIENT_CONFIG_JSON={"agent":{"max_turns":20,"progress":{"enabled":true}},"workspace":{"mode":"bounded"}}
+```
+
+Приоритет, от самого высокого:
+
+1. отдельные env-переменные;
+2. `NAGIENT_CONFIG_JSON` и JSON-переменные секретов;
+3. persistent-файлы `config.toml`, `secrets.env`, `tool-secrets.env`;
+4. встроенные значения.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import tomllib
 from dataclasses import dataclass, field
@@ -206,8 +207,21 @@ def load_runtime_configuration(
         transports=transports,
         providers=providers,
         tools=tools,
-        secrets=load_secrets(settings.secrets_file),
-        tool_secrets=load_secrets(settings.tool_secrets_file),
+        secrets=_load_runtime_secrets(
+            settings.secrets_file,
+            env,
+            json_env_key="NAGIENT_SECRETS_JSON",
+            referenced_names=_collect_secret_references(
+                raw_config,
+                sections=("transports", "providers"),
+            ),
+        ),
+        tool_secrets=_load_runtime_secrets(
+            settings.tool_secrets_file,
+            env,
+            json_env_key="NAGIENT_TOOL_SECRETS_JSON",
+            referenced_names=_collect_secret_references(raw_config, sections=("tools",)),
+        ),
         raw_config=raw_config,
     )
 
@@ -250,6 +264,68 @@ def load_secrets(secrets_file: Path) -> dict[str, str]:
             normalized_value = normalized_value[1:-1]
         secrets[key.strip()] = normalized_value
     return secrets
+
+
+def load_json_secrets(value: str, *, source: str) -> dict[str, str]:
+    """Parse a JSON object used to inject secrets without a secrets file."""
+    if not value.strip():
+        return {}
+    try:
+        payload = json.loads(value)
+    except json.JSONDecodeError as exc:
+        msg = f"{source} must contain a valid JSON object: {exc.msg}."
+        raise ValueError(msg) from exc
+    if not isinstance(payload, dict):
+        msg = f"{source} must contain a JSON object."
+        raise ValueError(msg)
+    secrets: dict[str, str] = {}
+    for key, secret_value in payload.items():
+        if not isinstance(key, str) or not isinstance(secret_value, str):
+            msg = f"{source} keys and values must be strings."
+            raise ValueError(msg)
+        secrets[key] = secret_value
+    return secrets
+
+
+def _load_runtime_secrets(
+    secrets_file: Path,
+    environ: dict[str, str],
+    *,
+    json_env_key: str,
+    referenced_names: set[str],
+) -> dict[str, str]:
+    secrets = load_secrets(secrets_file)
+    secrets.update(load_json_secrets(environ.get(json_env_key, ""), source=json_env_key))
+    for name in referenced_names:
+        if name in environ:
+            secrets[name] = environ[name]
+    return secrets
+
+
+def _collect_secret_references(
+    payload: dict[str, object],
+    *,
+    sections: tuple[str, ...],
+) -> set[str]:
+    names: set[str] = set()
+    for section_name in sections:
+        section = payload.get(section_name)
+        if not isinstance(section, dict):
+            continue
+        for values in section.values():
+            if not isinstance(values, dict):
+                continue
+            for key, value in values.items():
+                normalized_key = str(key).lower()
+                if not isinstance(value, str) or not value.strip():
+                    continue
+                if (
+                    normalized_key.endswith("_secret")
+                    or normalized_key.endswith("_secret_name")
+                    or normalized_key in {"secret", "secret_name"}
+                ):
+                    names.add(value.strip())
+    return names
 
 
 def render_default_config(settings: Settings) -> str:
@@ -901,7 +977,10 @@ def merge_runtime_config(
     payload: dict[str, object],
     environ: dict[str, str],
 ) -> dict[str, object]:
-    merged: dict[str, object] = dict(payload)
+    merged: dict[str, object] = _deep_merge_mapping(
+        payload,
+        _load_json_config(environ.get("NAGIENT_CONFIG_JSON", "")),
+    )
     transports = merged.get("transports")
     if not isinstance(transports, dict):
         transports = {}
@@ -1023,6 +1102,34 @@ def merge_runtime_config(
         merged["providers"] = providers
     if tools:
         merged["tools"] = tools
+    return merged
+
+
+def _load_json_config(value: str) -> dict[str, object]:
+    if not value.strip():
+        return {}
+    try:
+        payload = json.loads(value)
+    except json.JSONDecodeError as exc:
+        msg = f"NAGIENT_CONFIG_JSON must contain a valid JSON object: {exc.msg}."
+        raise ValueError(msg) from exc
+    if not isinstance(payload, dict):
+        msg = "NAGIENT_CONFIG_JSON must contain a JSON object."
+        raise ValueError(msg)
+    return {str(key): value for key, value in payload.items()}
+
+
+def _deep_merge_mapping(
+    base: dict[str, object],
+    override: dict[str, object],
+) -> dict[str, object]:
+    merged: dict[str, object] = dict(base)
+    for key, value in override.items():
+        current = merged.get(key)
+        if isinstance(current, dict) and isinstance(value, dict):
+            merged[key] = _deep_merge_mapping(current, value)
+        else:
+            merged[key] = value
     return merged
 
 

@@ -45,10 +45,9 @@ ready-to-run [docker-compose.yml](docker-compose.yml) in the repository root:
 ```bash
 git clone https://github.com/KOSFin/nagient.git
 cd nagient
-cp .env.example .env        # optional: pin an image tag
-docker compose up -d        # first run seeds ./data/config.toml + secrets.env
-# edit ./data/secrets.env (API keys, bot token), then ./data/config.toml
-docker compose restart
+cp .env.example .env
+${EDITOR:-vi} .env          # set provider/transport variables and secrets
+docker compose up -d        # no Nagient CLI or generated-file editing required
 docker compose exec nagient nagient status
 ```
 

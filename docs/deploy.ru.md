@@ -22,21 +22,37 @@ git clone https://github.com/KOSFin/nagient.git
 cd nagient
 ```
 
-## 2. Настройка (необязательно)
+## 2. Настройка через переменные окружения
 
-Значения по умолчанию работают сразу. Чтобы закрепить конкретную версию образа
-или переименовать контейнер, скопируйте пример env-файла и отредактируйте его:
+Скопируйте пример и задайте всё необходимое рантайму в одном файле:
 
 ```bash
 cp .env.example .env
+chmod 600 .env
 ```
 
-| Переменная | По умолчанию | Назначение |
-| --- | --- | --- |
-| `NAGIENT_IMAGE` | `docker.io/parampo/nagient:latest` | Образ и тег. В проде закрепляйте версию, например `:0.8.8`. |
-| `NAGIENT_CONTAINER_NAME` | `nagient` | Имя контейнера. |
-| `NAGIENT_HEARTBEAT_INTERVAL` | `30` | Интервал записи heartbeat, секунды. |
-| `NAGIENT_SAFE_MODE` | `true` | Оставляет защиту путей workspace включённой. |
+Например, для OpenAI и Telegram достаточно раскомментировать в `.env`:
+
+```dotenv
+NAGIENT_AGENT_DEFAULT_PROVIDER=openai
+NAGIENT_AGENT_REQUIRE_PROVIDER=true
+NAGIENT_PROVIDER__OPENAI__PLUGIN=builtin.openai
+NAGIENT_PROVIDER__OPENAI__ENABLED=true
+NAGIENT_PROVIDER__OPENAI__AUTH=api_key
+NAGIENT_PROVIDER__OPENAI__API_KEY_SECRET=OPENAI_API_KEY
+NAGIENT_PROVIDER__OPENAI__MODEL=gpt-4.1-mini
+OPENAI_API_KEY=sk-...
+
+NAGIENT_TRANSPORT__CONSOLE__ENABLED=false
+NAGIENT_TRANSPORT__TELEGRAM__PLUGIN=builtin.telegram
+NAGIENT_TRANSPORT__TELEGRAM__ENABLED=true
+NAGIENT_TRANSPORT__TELEGRAM__BOT_TOKEN_SECRET=TELEGRAM_BOT_TOKEN
+NAGIENT_TRANSPORT__TELEGRAM__DEFAULT_CHAT_ID=123456789
+TELEGRAM_BOT_TOKEN=123456:ABC...
+```
+
+Compose передаёт весь `.env` внутрь контейнера. Запускать `nagient setup`,
+редактировать TOML или сгенерированный файл секретов не требуется.
 
 ## 3. Первый запуск
 
@@ -44,43 +60,11 @@ cp .env.example .env
 docker compose up -d
 ```
 
-При первом запуске контейнер создаёт `config.toml` и `secrets.env` в `./data` на
-хосте. Заранее создавать файлы не нужно.
+При первом запуске контейнер также создаёт совместимые файлы в `./data`. Они
+нужны для persistent- и CLI-сценариев, но переменные окружения имеют приоритет,
+поэтому вручную работать с этими файлами не требуется.
 
-## 4. Добавить секреты
-
-Отредактируйте `./data/secrets.env` и добавьте ключи провайдеров и транспортов,
-которые собираетесь использовать:
-
-```dotenv
-OPENAI_API_KEY=sk-...
-ANTHROPIC_API_KEY=sk-ant-...
-TELEGRAM_BOT_TOKEN=123456:ABC...
-```
-
-## 5. Включить провайдер и транспорт
-
-Отредактируйте `./data/config.toml`:
-
-```toml
-[agent]
-default_provider = "openai"
-
-[providers.openai]
-enabled = true
-
-[transports.telegram]
-enabled = true
-default_chat_id = "123456789"
-```
-
-Затем примените изменения:
-
-```bash
-docker compose restart
-```
-
-## 6. Проверка
+## 4. Проверка
 
 ```bash
 docker compose exec nagient nagient status
@@ -97,6 +81,32 @@ docker compose logs -f nagient
 
 - `./data` — конфиг, секреты, состояние, логи, учётные данные и установленные плагины.
 - `./workspace` — ограниченный workspace, в котором агент читает и пишет.
+
+## Модель конфигурации
+
+Любое текущее поле конфигурации доступно без CLI:
+
+- общие настройки задаются через `NAGIENT_SAFE_MODE`,
+  `NAGIENT_WORKSPACE_MODE`, `NAGIENT_AGENT__MAX_TURNS` и аналогичные переменные;
+- поля провайдеров, транспортов и инструментов задаются как
+  `NAGIENT_PROVIDER__<ID>__<FIELD>`, `NAGIENT_TRANSPORT__<ID>__<FIELD>` и
+  `NAGIENT_TOOL__<ID>__<FIELD>`;
+- связанные секреты (`OPENAI_API_KEY`, `TELEGRAM_BOT_TOKEN` и произвольные
+  имена секретов плагинов) читаются прямо из окружения контейнера;
+- `NAGIENT_CONFIG_JSON` позволяет передать полный TOML-образный JSON для
+  вложенных и будущих полей;
+- `NAGIENT_SECRETS_JSON` и `NAGIENT_TOOL_SECRETS_JSON` принимают произвольные
+  JSON-объекты с секретами.
+
+Приоритет: отдельные env-переменные, JSON-конфигурация из env, persistent-файлы,
+встроенные значения. Полный справочник: [env.ru.md](env.ru.md).
+
+Чтобы использовать env-файл с другим именем:
+
+```bash
+NAGIENT_ENV_FILE=/srv/nagient/production.env \
+  docker compose --env-file /srv/nagient/production.env up -d
+```
 
 ## Обновление
 
@@ -119,9 +129,9 @@ docker compose down
 rm -rf ./data ./workspace
 ```
 
-## Примечания
+## Доступ к webhook
 
-- Секреты читаются из `./data/secrets.env`, а не из переменных окружения
-  оболочки. Не добавляйте этот файл в систему контроля версий.
-- Чтобы открыть webhook-транспорт, добавьте `ports:` в сервис `nagient` и
-  включите `[transports.webhook]` в `config.toml`.
+По умолчанию Compose публикует порт webhook на `127.0.0.1:8080`. Задавайте
+`NAGIENT_WEBHOOK_BIND_ADDRESS=0.0.0.0` и
+`NAGIENT_WEBHOOK_PORT=<порт-на-хосте>` только когда внешний доступ действительно
+нужен, а endpoint защищён firewall или reverse proxy.

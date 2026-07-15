@@ -215,6 +215,57 @@ class ConfigurationTests(unittest.TestCase):
             self.assertEqual(runtime_config.providers[0].provider_id, "openai")
             self.assertTrue(runtime_config.providers[0].enabled)
 
+    def test_environment_only_configuration_loads_direct_and_json_secrets(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir)
+            settings = Settings.from_env({"NAGIENT_HOME": str(home_dir)})
+
+            runtime_config = load_runtime_configuration(
+                settings,
+                environ={
+                    "NAGIENT_CONFIG_JSON": (
+                        '{"agent":{"max_turns":20},'
+                        '"providers":{"openai":{"plugin":"builtin.openai",'
+                        '"enabled":true,"api_key_secret":"OPENAI_API_KEY"}},'
+                        '"tools":{"github_api":{"token_secret":"GITHUB_TOKEN"}}}'
+                    ),
+                    "NAGIENT_AGENT_DEFAULT_PROVIDER": "openai",
+                    "OPENAI_API_KEY": "sk-from-environment",
+                    "NAGIENT_TOOL_SECRETS_JSON": '{"GITHUB_TOKEN":"github-from-json"}',
+                },
+            )
+
+            self.assertEqual(runtime_config.agent.max_turns, 20)
+            self.assertEqual(runtime_config.default_provider, "openai")
+            self.assertEqual(
+                runtime_config.secrets["OPENAI_API_KEY"],
+                "sk-from-environment",
+            )
+            self.assertEqual(
+                runtime_config.tool_secrets["GITHUB_TOKEN"],
+                "github-from-json",
+            )
+
+    def test_granular_environment_override_wins_over_json_configuration(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir)
+            settings = Settings.from_env({"NAGIENT_HOME": str(home_dir)})
+
+            runtime_config = load_runtime_configuration(
+                settings,
+                environ={
+                    "NAGIENT_CONFIG_JSON": (
+                        '{"providers":{"openai":{"plugin":"builtin.openai",'
+                        '"enabled":false,"model":"json-model"}}}'
+                    ),
+                    "NAGIENT_PROVIDER__OPENAI__ENABLED": "true",
+                    "NAGIENT_PROVIDER__OPENAI__MODEL": "env-model",
+                },
+            )
+
+            self.assertTrue(runtime_config.providers[0].enabled)
+            self.assertEqual(runtime_config.providers[0].config["model"], "env-model")
+
     def test_environment_transport_overrides_are_merged(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             home_dir = Path(temp_dir)

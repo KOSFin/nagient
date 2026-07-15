@@ -45,11 +45,9 @@ docker pull docker.io/parampo/nagient:latest
 ```bash
 git clone https://github.com/KOSFin/nagient.git
 cd nagient
-cp .env.example .env        # опционально: закрепить тег образа
-docker compose up -d        # первый запуск создаёт ./data/config.toml и secrets.env
-# добавьте ключи провайдера в ./data/secrets.env, включите провайдер и транспорт
-# в ./data/config.toml, затем:
-docker compose restart
+cp .env.example .env
+${EDITOR:-vi} .env          # задайте провайдер, транспорт и секреты
+docker compose up -d        # CLI и правка сгенерированных файлов не нужны
 ```
 
 Полное руководство: [docs/deploy.ru.md](docs/deploy.ru.md).

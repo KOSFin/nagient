@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from nagient.app.configuration import load_secrets, secret_metadata_path
+from nagient.app.configuration import (
+    load_json_secrets,
+    load_runtime_configuration,
+    load_secrets,
+    secret_metadata_path,
+)
 from nagient.app.settings import Settings
 from nagient.domain.entities.security import SecretBinding, SecretMetadata
 from nagient.domain.entities.system_state import CheckIssue
@@ -139,10 +145,7 @@ class SecretBroker:
     def self_check(self) -> list[CheckIssue]:
         issues: list[CheckIssue] = []
         metadata = self._load_metadata()
-        secrets = {
-            **load_secrets(self.settings.secrets_file),
-            **load_secrets(self.settings.tool_secrets_file),
-        }
+        secrets = self._all_runtime_secrets()
         for name, record in metadata.items():
             if record.exists and name not in secrets:
                 issues.append(
@@ -158,10 +161,7 @@ class SecretBroker:
     def redact_text(self, text: str) -> str:
         redacted = text
         secrets = sorted(
-            {
-                **load_secrets(self.settings.secrets_file),
-                **load_secrets(self.settings.tool_secrets_file),
-            }.items(),
+            self._all_runtime_secrets().items(),
             key=lambda item: len(item[1]),
             reverse=True,
         )
@@ -180,16 +180,42 @@ class SecretBroker:
         return value
 
     def _resolve_optional(self, name: str, scope_hint: str | None = None) -> str | None:
+        if name in os.environ:
+            return os.environ[name]
         if scope_hint == "core":
-            return load_secrets(self.settings.secrets_file).get(name)
+            return self._scope_secrets("core").get(name)
         if scope_hint == "tool":
-            return load_secrets(self.settings.tool_secrets_file).get(name)
+            return self._scope_secrets("tool").get(name)
 
-        core = load_secrets(self.settings.secrets_file)
+        core = self._scope_secrets("core")
         if name in core:
             return core[name]
-        tool = load_secrets(self.settings.tool_secrets_file)
+        tool = self._scope_secrets("tool")
         return tool.get(name)
+
+    def _scope_secrets(self, scope: str) -> dict[str, str]:
+        secret_file = self._scope_file(scope)
+        json_env_key = (
+            "NAGIENT_SECRETS_JSON" if scope == "core" else "NAGIENT_TOOL_SECRETS_JSON"
+        )
+        secrets = load_secrets(secret_file)
+        secrets.update(load_json_secrets(os.environ.get(json_env_key, ""), source=json_env_key))
+        return secrets
+
+    def _runtime_scope_secrets(self, scope: str) -> dict[str, str]:
+        runtime_config = load_runtime_configuration(self.settings)
+        if scope == "core":
+            return runtime_config.secrets
+        if scope == "tool":
+            return runtime_config.tool_secrets
+        raise ValueError(f"Unsupported secret scope {scope!r}.")
+
+    def _all_runtime_secrets(self) -> dict[str, str]:
+        runtime_config = load_runtime_configuration(self.settings)
+        return {
+            **runtime_config.secrets,
+            **runtime_config.tool_secrets,
+        }
 
     def _scope_file(self, scope: str) -> Path:
         if scope == "core":
@@ -218,11 +244,8 @@ class SecretBroker:
 
     def _load_metadata_with_env_fallbacks(self) -> dict[str, SecretMetadata]:
         metadata = self._load_metadata()
-        for scope, secret_file in [
-            ("core", self.settings.secrets_file),
-            ("tool", self.settings.tool_secrets_file),
-        ]:
-            for name in load_secrets(secret_file):
+        for scope in ["core", "tool"]:
+            for name in self._runtime_scope_secrets(scope):
                 if name not in metadata:
                     metadata[name] = SecretMetadata(
                         name=name,
