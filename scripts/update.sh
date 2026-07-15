@@ -9,6 +9,7 @@ NAGIENT_CHANNEL="${NAGIENT_CHANNEL:-$DEFAULT_CHANNEL}"
 NAGIENT_HOME="${NAGIENT_HOME:-$HOME/.nagient}"
 NAGIENT_UPDATE_BASE_URL="${NAGIENT_UPDATE_BASE_URL:-${UPDATE_BASE_URL:-$DEFAULT_UPDATE_BASE_URL}}"
 NAGIENT_WORKSPACE_DIR="${NAGIENT_WORKSPACE_DIR:-}"
+FORCE_UPDATE="false"
 
 refresh_paths() {
   NAGIENT_COMPOSE_FILE="${NAGIENT_HOME}/docker-compose.yml"
@@ -30,6 +31,7 @@ Options:
   --home, --install-dir <path>  Use a custom Nagient installation directory
   --channel <name>              Override the release channel
   --update-base-url <url>       Override the update center base URL
+  --force                       Re-run the update even when metadata matches
   -h, --help                    Show this help
 EOF
 }
@@ -50,6 +52,9 @@ while [ "$#" -gt 0 ]; do
     --update-base-url)
       NAGIENT_UPDATE_BASE_URL="${2:-}"
       shift
+      ;;
+    --force)
+      FORCE_UPDATE="true"
       ;;
     -h|--help)
       update_usage
@@ -1305,7 +1310,7 @@ run_control_command() {
       compose exec "$NAGIENT_SERVICE" "$@"
       ;;
     update)
-      exec "${NAGIENT_HOME}/bin/nagient-update"
+      exec "${NAGIENT_HOME}/bin/nagient-update" "$@"
       ;;
     remove|uninstall)
       exec "${NAGIENT_HOME}/bin/nagient-uninstall"
@@ -1340,12 +1345,8 @@ run_cli_command() {
       run_control_command "$command_name" "$@"
       ;;
     update)
-      if [ "$#" -eq 0 ]; then
-        run_control_command update
-        return
-      fi
-      require_compose_files
-      compose_exec nagient update "$@"
+      run_control_command update "$@"
+      return
       ;;
     *)
       require_compose_files
@@ -1391,7 +1392,7 @@ log_step "Downloading target release manifest"
 fetch_url "$manifest_url" >"$manifest_payload"
 target_version="$(json_field version "$manifest_payload")"
 
-if [ "$current_version" = "$target_version" ]; then
+if [ "$current_version" = "$target_version" ] && [ "$FORCE_UPDATE" != "true" ]; then
   echo "Nagient is already on ${current_version}"
   exit 0
 fi
@@ -1403,7 +1404,6 @@ uninstall_url="$(artifact_url uninstall.sh "$manifest_payload")"
 log_step "Refreshing local runtime assets"
 fetch_url "$compose_url" >"$NAGIENT_COMPOSE_FILE"
 sync_codex_mountpoint
-cp "$manifest_payload" "$CURRENT_MANIFEST"
 cp "$manifest_payload" "${NAGIENT_RELEASES_DIR}/${target_version}.json"
 fetch_url "$update_url" >"${NAGIENT_HOME}/bin/nagient-update"
 fetch_url "$uninstall_url" >"${NAGIENT_HOME}/bin/nagient-uninstall"
@@ -1424,6 +1424,7 @@ log_step "Pulling Docker image ${image}"
 run_compose_update_step pull
 log_step "Restarting Nagient container"
 run_compose_update_step up -d
+cp "$manifest_payload" "$CURRENT_MANIFEST"
 
 echo "Nagient upgraded: ${current_version} -> ${target_version}"
 echo "Quick start: ${NAGIENT_HOME}/bin/nagient status"

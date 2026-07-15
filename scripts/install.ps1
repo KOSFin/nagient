@@ -231,7 +231,7 @@ function Invoke-ControlCommand {
       break
     }
     "update" {
-      & (Join-Path $NagientHome "bin/nagient-update.ps1")
+      & (Join-Path $NagientHome "bin/nagient-update.ps1") @Rest
       break
     }
     { $_ -in @("remove", "uninstall") } {
@@ -273,12 +273,7 @@ function Invoke-CliCommand {
       break
     }
     "update" {
-      if ($Rest.Count -eq 0) {
-        Invoke-ControlCommand -Command "update" -Rest @()
-        break
-      }
-      Assert-ComposeFiles
-      Compose-ExecNagient nagient update @Rest
+      Invoke-ControlCommand -Command "update" -Rest $Rest
       break
     }
     default {

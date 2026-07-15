@@ -116,6 +116,28 @@ def _write_arm64_mismatch_docker(fake_bin: Path) -> None:
     mock_docker.chmod(0o755)
 
 
+def _write_failing_pull_docker(fake_bin: Path) -> None:
+    mock_docker = fake_bin / "docker"
+    mock_docker.write_text(
+        "#!/usr/bin/env bash\n"
+        "if [ \"$1\" = \"compose\" ] && [ \"$2\" = \"version\" ]; then\n"
+        "  exit 0\n"
+        "fi\n"
+        "if [ \"$1\" = \"info\" ]; then\n"
+        "  exit 0\n"
+        "fi\n"
+        "for arg in \"$@\"; do\n"
+        "  if [ \"$1\" = \"compose\" ] && [ \"$arg\" = \"pull\" ]; then\n"
+        "    echo \"Cannot connect to the Docker daemon\" >&2\n"
+        "    exit 1\n"
+        "  fi\n"
+        "done\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    mock_docker.chmod(0o755)
+
+
 def _isolated_script_env(
     *,
     home_dir: Path,
@@ -334,6 +356,94 @@ class RenderReleaseAssetsTests(unittest.TestCase):
             )
             self.assertTrue((bin_dir / "nagient").exists())
             self.assertFalse((bin_dir / "nagientctl").exists())
+
+    def test_rendered_release_updater_keeps_current_manifest_when_compose_pull_fails(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir) / "out"
+            fixtures_dir = Path(temp_dir) / "fixtures"
+            fake_bin = Path(temp_dir) / "bin"
+            home_dir = Path(temp_dir) / "home"
+            runtime_root = home_dir / ".nagient"
+            bin_dir = runtime_root / "bin"
+            releases_dir = runtime_root / "releases"
+            _render_release_assets(output_dir)
+            fixtures_dir.mkdir()
+            fake_bin.mkdir()
+            bin_dir.mkdir(parents=True)
+            releases_dir.mkdir(parents=True)
+
+            (releases_dir / "current.json").write_text('{"version":"9.9.8"}\n', encoding="utf-8")
+
+            mapping_path = _write_release_fixture_map(output_dir, fixtures_dir)
+            _write_mock_curl(fake_bin)
+            _write_failing_pull_docker(fake_bin)
+
+            env = _isolated_script_env(
+                home_dir=home_dir,
+                path_prefix=fake_bin,
+                mapping_path=mapping_path,
+            )
+
+            process = subprocess.run(
+                ["bash", str(output_dir / "update.sh")],
+                cwd=PROJECT_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertNotEqual(process.returncode, 0)
+            self.assertIn("Cannot connect to the Docker daemon", process.stdout)
+            self.assertIn(
+                '"version":"9.9.8"',
+                (releases_dir / "current.json").read_text(encoding="utf-8"),
+            )
+            self.assertTrue((releases_dir / "9.9.9.json").exists())
+
+    def test_rendered_release_updater_force_retries_matching_version(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir) / "out"
+            fixtures_dir = Path(temp_dir) / "fixtures"
+            fake_bin = Path(temp_dir) / "bin"
+            home_dir = Path(temp_dir) / "home"
+            runtime_root = home_dir / ".nagient"
+            bin_dir = runtime_root / "bin"
+            releases_dir = runtime_root / "releases"
+            _render_release_assets(output_dir)
+            fixtures_dir.mkdir()
+            fake_bin.mkdir()
+            bin_dir.mkdir(parents=True)
+            releases_dir.mkdir(parents=True)
+
+            (releases_dir / "current.json").write_text('{"version":"9.9.9"}\n', encoding="utf-8")
+
+            mapping_path = _write_release_fixture_map(output_dir, fixtures_dir)
+            _write_mock_curl(fake_bin)
+            _write_failing_pull_docker(fake_bin)
+
+            env = _isolated_script_env(
+                home_dir=home_dir,
+                path_prefix=fake_bin,
+                mapping_path=mapping_path,
+            )
+
+            process = subprocess.run(
+                ["bash", str(output_dir / "update.sh"), "--force"],
+                cwd=PROJECT_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertNotEqual(process.returncode, 0)
+            self.assertNotIn("Nagient is already on 9.9.9", process.stdout)
+            self.assertIn("Cannot connect to the Docker daemon", process.stdout)
+            self.assertIn(
+                '"version":"9.9.9"',
+                (releases_dir / "current.json").read_text(encoding="utf-8"),
+            )
 
     def test_rendered_release_installer_reports_unavailable_docker_daemon(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

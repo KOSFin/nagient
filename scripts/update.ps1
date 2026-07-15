@@ -20,6 +20,13 @@ $CurrentManifest = Join-Path $NagientHome "releases/current.json"
 $WorkspaceDir = if ($env:NAGIENT_WORKSPACE_DIR) { $env:NAGIENT_WORKSPACE_DIR } else { Join-Path $NagientHome "workspace" }
 $PromptsDir = Join-Path $NagientHome "prompts"
 $SafeMode = if ($env:NAGIENT_SAFE_MODE) { $env:NAGIENT_SAFE_MODE } else { "true" }
+$ForceUpdate = $false
+
+foreach ($arg in $args) {
+  if ($arg -eq "--force") {
+    $ForceUpdate = $true
+  }
+}
 
 New-Item -ItemType Directory -Force -Path (Join-Path $NagientHome "bin"), (Join-Path $NagientHome "releases"), $PromptsDir, $WorkspaceDir | Out-Null
 
@@ -243,7 +250,7 @@ function Invoke-ControlCommand {
       break
     }
     "update" {
-      & (Join-Path $NagientHome "bin/nagient-update.ps1")
+      & (Join-Path $NagientHome "bin/nagient-update.ps1") @Rest
       break
     }
     { $_ -in @("remove", "uninstall") } {
@@ -285,12 +292,7 @@ function Invoke-CliCommand {
       break
     }
     "update" {
-      if ($Rest.Count -eq 0) {
-        Invoke-ControlCommand -Command "update" -Rest @()
-        break
-      }
-      Assert-ComposeFiles
-      Compose-ExecNagient nagient update @Rest
+      Invoke-ControlCommand -Command "update" -Rest $Rest
       break
     }
     default {
@@ -341,7 +343,7 @@ Write-Step "Downloading target release manifest"
 Invoke-WebRequest -UseBasicParsing -Uri $manifestUrl -OutFile $manifestPayload
 
 $targetVersion = Get-JsonField -Path $manifestPayload -Field "version"
-if ($currentVersion -eq $targetVersion) {
+if (($currentVersion -eq $targetVersion) -and (-not $ForceUpdate)) {
   Write-Host "Nagient is already on $currentVersion"
   exit 0
 }
@@ -355,7 +357,6 @@ Invoke-WebRequest -UseBasicParsing -Uri $composeUrl -OutFile $ComposeFile
 Invoke-WebRequest -UseBasicParsing -Uri $updateUrl -OutFile (Join-Path $NagientHome "bin/nagient-update.ps1")
 Invoke-WebRequest -UseBasicParsing -Uri $uninstallUrl -OutFile (Join-Path $NagientHome "bin/nagient-uninstall.ps1")
 Write-NagientCtl
-Copy-Item -Force -Path $manifestPayload -Destination $CurrentManifest
 
 @"
 NAGIENT_IMAGE=$image
@@ -371,6 +372,7 @@ Write-Step "Pulling Docker image $image"
 Invoke-ComposeUpdateStep pull
 Write-Step "Restarting Nagient container"
 Invoke-ComposeUpdateStep up -d
+Copy-Item -Force -Path $manifestPayload -Destination $CurrentManifest
 
 Write-Host "Nagient upgraded: $currentVersion -> $targetVersion"
 Write-Host "Status: $(Join-Path $NagientHome 'bin/nagient.ps1') status"

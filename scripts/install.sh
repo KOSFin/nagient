@@ -1487,7 +1487,7 @@ run_control_command() {
       compose exec "$NAGIENT_SERVICE" "$@"
       ;;
     update)
-      exec "${NAGIENT_HOME}/bin/nagient-update"
+      exec "${NAGIENT_HOME}/bin/nagient-update" "$@"
       ;;
     remove|uninstall)
       exec "${NAGIENT_HOME}/bin/nagient-uninstall"
@@ -1522,12 +1522,8 @@ run_cli_command() {
       run_control_command "$command_name" "$@"
       ;;
     update)
-      if [ "$#" -eq 0 ]; then
-        run_control_command update
-        return
-      fi
-      require_compose_files
-      compose_exec nagient update "$@"
+      run_control_command update "$@"
+      return
       ;;
     *)
       require_compose_files
