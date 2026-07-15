@@ -334,6 +334,8 @@ function Invoke-ComposeUpdateStep {
 
 $channelPayload = Join-Path ([System.IO.Path]::GetTempPath()) "nagient-channel.json"
 $manifestPayload = Join-Path ([System.IO.Path]::GetTempPath()) "nagient-manifest.json"
+$updatePayload = Join-Path $NagientHome "bin/nagient-update.$([System.Guid]::NewGuid().ToString('N')).ps1"
+$uninstallPayload = Join-Path $NagientHome "bin/nagient-uninstall.$([System.Guid]::NewGuid().ToString('N')).ps1"
 
 $currentVersion = Get-CurrentVersionOrDefault
 Write-Step "Resolving update channel metadata"
@@ -354,8 +356,10 @@ $updateUrl = Get-ArtifactUrl -Path $manifestPayload -Name "update.ps1"
 $uninstallUrl = Get-ArtifactUrl -Path $manifestPayload -Name "uninstall.ps1"
 Write-Step "Refreshing local runtime assets"
 Invoke-WebRequest -UseBasicParsing -Uri $composeUrl -OutFile $ComposeFile
-Invoke-WebRequest -UseBasicParsing -Uri $updateUrl -OutFile (Join-Path $NagientHome "bin/nagient-update.ps1")
-Invoke-WebRequest -UseBasicParsing -Uri $uninstallUrl -OutFile (Join-Path $NagientHome "bin/nagient-uninstall.ps1")
+Invoke-WebRequest -UseBasicParsing -Uri $updateUrl -OutFile $updatePayload
+Invoke-WebRequest -UseBasicParsing -Uri $uninstallUrl -OutFile $uninstallPayload
+Move-Item -Force -Path $updatePayload -Destination (Join-Path $NagientHome "bin/nagient-update.ps1")
+Move-Item -Force -Path $uninstallPayload -Destination (Join-Path $NagientHome "bin/nagient-uninstall.ps1")
 Write-NagientCtl
 
 @"

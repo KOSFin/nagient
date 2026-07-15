@@ -1382,7 +1382,9 @@ run_compose_update_step() {
 
 channel_payload="$(mktemp)"
 manifest_payload="$(mktemp)"
-trap 'rm -f "$channel_payload" "$manifest_payload"' EXIT
+update_payload="$(mktemp "${NAGIENT_BIN_DIR}/nagient-update.XXXXXX")"
+uninstall_payload="$(mktemp "${NAGIENT_BIN_DIR}/nagient-uninstall.XXXXXX")"
+trap 'rm -f "$channel_payload" "$manifest_payload" "$update_payload" "$uninstall_payload"' EXIT
 
 current_version="$(current_version_or_default)"
 log_step "Resolving update channel metadata"
@@ -1405,9 +1407,11 @@ log_step "Refreshing local runtime assets"
 fetch_url "$compose_url" >"$NAGIENT_COMPOSE_FILE"
 sync_codex_mountpoint
 cp "$manifest_payload" "${NAGIENT_RELEASES_DIR}/${target_version}.json"
-fetch_url "$update_url" >"${NAGIENT_HOME}/bin/nagient-update"
-fetch_url "$uninstall_url" >"${NAGIENT_HOME}/bin/nagient-uninstall"
-chmod +x "${NAGIENT_HOME}/bin/nagient-update" "${NAGIENT_HOME}/bin/nagient-uninstall"
+fetch_url "$update_url" >"$update_payload"
+fetch_url "$uninstall_url" >"$uninstall_payload"
+chmod +x "$update_payload" "$uninstall_payload"
+mv "$update_payload" "${NAGIENT_HOME}/bin/nagient-update"
+mv "$uninstall_payload" "${NAGIENT_HOME}/bin/nagient-uninstall"
 write_nagient_launcher
 
 cat >"$NAGIENT_ENV_FILE" <<EOF

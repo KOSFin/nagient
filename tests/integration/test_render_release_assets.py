@@ -255,6 +255,19 @@ class RenderReleaseAssetsTests(unittest.TestCase):
             self.assertIn(DOCKER_IMAGE, compose_file)
             self.assertNotIn("__NAGIENT_DOCKER_IMAGE__", compose_file)
 
+    def test_rendered_shell_assets_are_syntax_valid(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir)
+            _render_release_assets(output_dir)
+
+            for script_name in ("install.sh", "update.sh", "uninstall.sh"):
+                with self.subTest(script=script_name):
+                    subprocess.run(
+                        ["bash", "-n", str(output_dir / script_name)],
+                        cwd=PROJECT_ROOT,
+                        check=True,
+                    )
+
     def test_rendered_release_installer_runs_with_mocked_dependencies(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             output_dir = Path(temp_dir) / "out"
@@ -356,6 +369,55 @@ class RenderReleaseAssetsTests(unittest.TestCase):
             )
             self.assertTrue((bin_dir / "nagient").exists())
             self.assertFalse((bin_dir / "nagientctl").exists())
+
+    def test_rendered_release_updater_can_replace_itself_while_running(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir) / "out"
+            fixtures_dir = Path(temp_dir) / "fixtures"
+            fake_bin = Path(temp_dir) / "bin"
+            home_dir = Path(temp_dir) / "home"
+            runtime_root = home_dir / ".nagient"
+            bin_dir = runtime_root / "bin"
+            releases_dir = runtime_root / "releases"
+            _render_release_assets(output_dir)
+            fixtures_dir.mkdir()
+            fake_bin.mkdir()
+            bin_dir.mkdir(parents=True)
+            releases_dir.mkdir(parents=True)
+
+            installed_updater = bin_dir / "nagient-update"
+            installed_updater.write_text(
+                (output_dir / "update.sh").read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            installed_updater.chmod(0o755)
+            (releases_dir / "current.json").write_text('{"version":"9.9.8"}\n', encoding="utf-8")
+
+            mapping_path = _write_release_fixture_map(output_dir, fixtures_dir)
+            _write_mock_curl(fake_bin)
+            _write_mock_docker(fake_bin)
+
+            env = _isolated_script_env(
+                home_dir=home_dir,
+                path_prefix=fake_bin,
+                mapping_path=mapping_path,
+            )
+
+            process = subprocess.run(
+                [str(installed_updater)],
+                cwd=PROJECT_ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            self.assertIn("Nagient upgraded: 9.9.8 -> 9.9.9", process.stdout)
+            self.assertIn(
+                '"version": "9.9.9"',
+                (releases_dir / "current.json").read_text(encoding="utf-8"),
+            )
+            subprocess.run(["bash", "-n", str(installed_updater)], cwd=PROJECT_ROOT, check=True)
 
     def test_rendered_release_updater_keeps_current_manifest_when_compose_pull_fails(
         self,
