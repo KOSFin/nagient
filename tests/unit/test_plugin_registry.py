@@ -6,8 +6,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from nagient.plugins.registry import TransportPluginRegistry
 
 
@@ -69,7 +67,7 @@ class TestTransportPluginRegistry:
         registry = TransportPluginRegistry()
         discovery = registry.discover(Path("/nonexistent"))
 
-        for plugin_id, plugin in discovery.plugins.items():
+        for _plugin_id, plugin in discovery.plugins.items():
             # Implementation should be already loaded
             assert plugin.implementation is not None
             # Should have required methods

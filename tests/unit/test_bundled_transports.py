@@ -4,8 +4,6 @@ Unit tests for bundled transport plugins.
 
 from __future__ import annotations
 
-import pytest
-
 from nagient.bundled_transports.console.transport import ConsoleTransportPlugin
 from nagient.bundled_transports.telegram.transport import TelegramTransportPlugin
 from nagient.bundled_transports.webhook.transport import WebhookTransportPlugin
