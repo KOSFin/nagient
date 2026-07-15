@@ -602,6 +602,60 @@ class WorkspaceGitToolPlugin(BaseToolPlugin):
                 approval_policy="required",
                 dry_run_supported=True,
             ),
+            ToolFunctionManifest(
+                function_name="workspace.git.clone",
+                binding="clone",
+                description="Clone a git repository into the workspace.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string"},
+                        "path": {"type": "string"},
+                        "branch": {"type": "string"},
+                    },
+                    "required": ["url", "path"],
+                },
+                output_schema={"type": "object"},
+                permissions=["workspace.git.write", "workspace.fs.write"],
+                side_effect="external",
+                approval_policy="required",
+                dry_run_supported=True,
+            ),
+            ToolFunctionManifest(
+                function_name="workspace.git.push",
+                binding="push",
+                description="Push commits to a remote git repository.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "remote": {"type": "string"},
+                        "branch": {"type": "string"},
+                        "force": {"type": "boolean"},
+                    },
+                },
+                output_schema={"type": "object"},
+                permissions=["workspace.git.write"],
+                side_effect="external",
+                approval_policy="required",
+                dry_run_supported=True,
+            ),
+            ToolFunctionManifest(
+                function_name="workspace.git.pull",
+                binding="pull",
+                description="Pull changes from a remote git repository.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "remote": {"type": "string"},
+                        "branch": {"type": "string"},
+                    },
+                },
+                output_schema={"type": "object"},
+                permissions=["workspace.git.write"],
+                side_effect="external",
+                approval_policy="required",
+                dry_run_supported=True,
+            ),
         ],
     )
 
@@ -875,6 +929,187 @@ class WorkspaceGitToolPlugin(BaseToolPlugin):
             context=context,
         )
         return {"path": relative, "restored": True, "git_root": str(git_root)}
+
+    def clone(
+        self,
+        arguments: Mapping[str, object],
+        context: ToolExecutionContext,
+    ) -> dict[str, object]:
+        url = arguments.get("url")
+        if not isinstance(url, str) or not url.strip():
+            raise ValueError("workspace.git.clone requires a non-empty url string.")
+        url = url.strip()
+
+        path_arg = arguments.get("path")
+        if not isinstance(path_arg, str) or not path_arg.strip():
+            raise ValueError("workspace.git.clone requires a non-empty path string.")
+
+        target_path = context.workspace_manager.guard_path(context.workspace, path_arg.strip())
+
+        if target_path.exists():
+            raise ValueError(f"Clone target path {target_path} already exists.")
+
+        branch = arguments.get("branch")
+        branch_arg = str(branch).strip() if isinstance(branch, str) else ""
+
+        if context.dry_run:
+            return {
+                "url": url,
+                "path": str(target_path),
+                "branch": branch_arg or "default",
+                "cloned": False,
+                "dry_run": True,
+            }
+
+        _log_tool_info(
+            context,
+            "workspace_git.clone",
+            "Cloning git repository into workspace.",
+            url=url,
+            path=str(target_path),
+            branch=branch_arg or "default",
+            workspace_root=context.workspace.root,
+        )
+
+        args = ["clone"]
+        if branch_arg:
+            args.extend(["--branch", branch_arg])
+        args.extend([url, str(target_path)])
+
+        process = _run_workspace_git_process(args, context=context)
+
+        if process.returncode != 0:
+            raise ValueError(
+                f"Git clone failed: {process.stderr.strip() or process.stdout.strip()}"
+            )
+
+        return {
+            "url": url,
+            "path": str(target_path),
+            "branch": branch_arg or "default",
+            "cloned": True,
+            "stdout": process.stdout,
+            "stderr": process.stderr,
+        }
+
+    def push(
+        self,
+        arguments: Mapping[str, object],
+        context: ToolExecutionContext,
+    ) -> dict[str, object]:
+        git_root = context.workspace_manager.git_root(context.workspace)
+        if git_root is None:
+            raise ValueError("The current workspace is not a git repository.")
+
+        remote = arguments.get("remote", "origin")
+        if not isinstance(remote, str):
+            remote = "origin"
+        remote = remote.strip() or "origin"
+
+        branch = arguments.get("branch")
+        branch_arg = str(branch).strip() if isinstance(branch, str) and branch else ""
+
+        force = bool(arguments.get("force", False))
+
+        if context.dry_run:
+            return {
+                "remote": remote,
+                "branch": branch_arg or "current",
+                "force": force,
+                "pushed": False,
+                "dry_run": True,
+                "git_root": str(git_root),
+            }
+
+        _log_tool_info(
+            context,
+            "workspace_git.push",
+            "Pushing commits to remote repository.",
+            remote=remote,
+            branch=branch_arg or "current",
+            force=force,
+            workspace_root=context.workspace.root,
+            git_root=git_root,
+        )
+
+        args = ["push", remote]
+        if branch_arg:
+            args.append(branch_arg)
+        if force:
+            args.append("--force")
+
+        process = _run_workspace_git_process(args, context=context)
+
+        if process.returncode != 0:
+            raise ValueError(
+                f"Git push failed: {process.stderr.strip() or process.stdout.strip()}"
+            )
+
+        return {
+            "remote": remote,
+            "branch": branch_arg or "current",
+            "force": force,
+            "pushed": True,
+            "git_root": str(git_root),
+            "stdout": process.stdout,
+            "stderr": process.stderr,
+        }
+
+    def pull(
+        self,
+        arguments: Mapping[str, object],
+        context: ToolExecutionContext,
+    ) -> dict[str, object]:
+        git_root = context.workspace_manager.git_root(context.workspace)
+        if git_root is None:
+            raise ValueError("The current workspace is not a git repository.")
+
+        remote = arguments.get("remote", "origin")
+        if not isinstance(remote, str):
+            remote = "origin"
+        remote = remote.strip() or "origin"
+
+        branch = arguments.get("branch")
+        branch_arg = str(branch).strip() if isinstance(branch, str) and branch else ""
+
+        if context.dry_run:
+            return {
+                "remote": remote,
+                "branch": branch_arg or "current",
+                "pulled": False,
+                "dry_run": True,
+                "git_root": str(git_root),
+            }
+
+        _log_tool_info(
+            context,
+            "workspace_git.pull",
+            "Pulling changes from remote repository.",
+            remote=remote,
+            branch=branch_arg or "current",
+            workspace_root=context.workspace.root,
+            git_root=git_root,
+        )
+
+        args = ["pull", remote]
+        if branch_arg:
+            args.append(branch_arg)
+
+        process = _run_workspace_git_process(args, context=context)
+
+        if process.returncode != 0:
+            raise ValueError(
+                f"Git pull failed: {process.stderr.strip() or process.stdout.strip()}"
+            )
+
+        return {
+            "remote": remote,
+            "branch": branch_arg or "current",
+            "pulled": True,
+            "git_root": str(git_root),
+            "stdout": process.stdout,
+            "stderr": process.stderr,
+        }
 
 
 class TransportInteractionToolPlugin(BaseToolPlugin):
