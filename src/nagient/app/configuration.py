@@ -118,7 +118,7 @@ class AgentConfig:
     default_provider: str | None
     require_provider: bool
     system_prompt_file: Path | None
-    max_turns: int = 4
+    max_turns: int = 12
     memory: AgentMemoryConfig = field(default_factory=AgentMemoryConfig)
     logging: AgentLoggingConfig = field(default_factory=AgentLoggingConfig)
     progress: AgentProgressConfig = field(default_factory=AgentProgressConfig)
@@ -287,7 +287,7 @@ def render_default_config(settings: Settings) -> str:
             'default_provider = ""',
             "require_provider = false",
             'system_prompt_file = "@prompts/system.md"',
-            "max_turns = 4",
+            "max_turns = 12",
             "",
             "[agent.memory]",
             "hard_message_limit = 100",
@@ -834,7 +834,7 @@ def _parse_agent_config(
         settings=settings,
         fallback=default_system_prompt_file(settings),
     )
-    max_turns = _positive_int(agent.get("max_turns"), default=4)
+    max_turns = _positive_int(agent.get("max_turns"), default=12)
     return AgentConfig(
         default_provider=default_provider,
         require_provider=require_provider,

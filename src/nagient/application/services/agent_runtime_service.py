@@ -286,11 +286,38 @@ class AgentRuntimeService:
 
         self.logger.warning(
             "agent_runtime.max_turns_reached",
-            "Agent runtime stopped after reaching max_turns.",
+            "Agent runtime reached max_turns; composing a final summary from results.",
             session_id=session_id,
             transport_id=transport_id,
             max_turns=runtime_config.agent.max_turns,
         )
+        append_runtime_log(
+            self.settings,
+            (
+                f"Reached max_turns={runtime_config.agent.max_turns}; composing a final "
+                "summary from the latest tool results instead of stopping mid-plan."
+            ),
+            component="agent.runtime",
+        )
+        finalized = self._finalize_after_max_turns(
+            layout=layout,
+            session_id=session_id,
+            transport_id=transport_id,
+            provider_id=provider_id,
+            runtime_config=runtime_config,
+            system_prompt_override=system_prompt_override,
+            previous_results=previous_results,
+        )
+        if finalized is not None:
+            self.memory_service.append_message(
+                layout,
+                session_id=session_id,
+                transport_id=transport_id,
+                role="assistant",
+                content=finalized,
+                metadata={"max_turns_summary": True},
+            )
+            return finalized
         return last_message
 
     def _maybe_resolve_transport_approval(
@@ -572,6 +599,68 @@ class AgentRuntimeService:
                 ],
             )
         return resumed_message
+
+    def _finalize_after_max_turns(
+        self,
+        *,
+        layout: object,
+        session_id: str,
+        transport_id: str,
+        provider_id: str | None,
+        runtime_config: RuntimeConfiguration,
+        system_prompt_override: str | None,
+        previous_results: list[dict[str, object]],
+    ) -> str | None:
+        """Compose a final answer from accumulated results without more tool calls.
+
+        When the agent loop exhausts ``max_turns`` mid-plan, returning the last
+        intermediate message strands the user with a plan and no result. This makes
+        one bounded summary-only provider call so the user still gets a real answer
+        built from the tool results already gathered.
+        """
+        prompt_context = self.memory_service.build_prompt_context(
+            layout,
+            session_id=session_id,
+            config=runtime_config.agent.memory,
+            retrieval_query=None,
+        )
+        try:
+            assistant_response = self.provider_service.generate_assistant_response(
+                message=(
+                    "You have reached the maximum number of tool-execution steps for this "
+                    "task. Do not request any more tool calls. Using the tool results already "
+                    "gathered, write the best possible final answer for the user now. If the "
+                    "task is only partially complete, clearly summarize what you accomplished, "
+                    "what remains, and the concrete next step."
+                ),
+                provider_id=provider_id,
+                session_id=session_id,
+                transport_id=transport_id,
+                system_prompt=self._system_prompt(
+                    runtime_config,
+                    override=system_prompt_override,
+                ),
+                prompt_context=prompt_context,
+                tool_catalog=[],
+                transport_catalog=self._transport_catalog(),
+                previous_results=previous_results,
+                runtime_log=self._provider_runtime_log,
+            )
+        except Exception as exc:
+            self.logger.warning(
+                "agent_runtime.max_turns_summary_failed",
+                "Failed to compose a final summary after reaching max_turns.",
+                session_id=session_id,
+                transport_id=transport_id,
+                error=str(exc),
+            )
+            summary = _summarize_tool_results(previous_results)
+            return summary or None
+        final_message = str(assistant_response.message).strip()
+        if not final_message:
+            summary = _summarize_tool_results(previous_results)
+            return summary or None
+        return final_message
 
     def handle_scheduled_job(self, job: JobRecord) -> str | None:
         action_type = str(job.payload.get("action_type", "")).strip()
@@ -1276,6 +1365,9 @@ def _runtime_identity_prompt() -> str:
             "durable notes.",
             "If a user asks what you can do, describe your real runtime capabilities.",
             "If a user asks you to perform an action, prefer tool use over saying you cannot.",
+            "Batch independent tool calls together in one step instead of one per turn; the "
+            "runtime runs them as a batch. This keeps multi-step tasks within the step budget "
+            "and gets the user a complete answer faster.",
             "Prefer the dedicated workspace.git tools for git operations when possible so the "
             "configured git identity and credentials are applied consistently.",
             "For repository commit/push workflows, use workspace.git.run with git subcommands "

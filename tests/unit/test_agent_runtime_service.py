@@ -873,6 +873,63 @@ class AgentRuntimeServiceTests(unittest.TestCase):
                 "Начинаю: сейчас выполню команду.",
             )
 
+    def test_runtime_finalizes_with_summary_when_max_turns_reached(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir) / "home"
+            workspace_root = Path(temp_dir) / "workspace"
+            workspace_root.mkdir(parents=True, exist_ok=True)
+            settings = Settings.from_env({"NAGIENT_HOME": str(home_dir)})
+            container = build_container(settings)
+            container.configuration_service.initialize(force=True)
+            _set_workspace_root(settings.config_file, workspace_root)
+            container.configuration_service.configure_agent({"max_turns": 2})
+
+            def _tool_step(message: str) -> AssistantResponse:
+                return AssistantResponse(
+                    message=message,
+                    tool_calls=[
+                        NormalizedToolCall(
+                            call_id="call-1",
+                            request=ToolExecutionRequest(
+                                tool_id="workspace_shell",
+                                function_name="workspace.shell.run",
+                                arguments={"command": "printf step", "read_only": True},
+                            ),
+                        )
+                    ],
+                )
+
+            provider_mock = Mock(
+                side_effect=[
+                    _tool_step("Шаг 1: собираю данные."),
+                    _tool_step("Шаг 2: продолжаю собирать."),
+                    AssistantResponse(message="Итог: задача выполнена, вот результат."),
+                ]
+            )
+            object.__setattr__(
+                container.provider_service,
+                "generate_assistant_response",
+                provider_mock,
+            )
+
+            reply = container.agent_runtime_service.handle_inbound_event(
+                "console",
+                {
+                    "event_type": "message",
+                    "session_id": "console:demo",
+                    "text": "Выполни многошаговую задачу",
+                },
+            )
+
+            # Two tool turns exhaust max_turns, then a third summary-only call
+            # composes the real answer instead of returning the mid-plan message.
+            self.assertEqual(reply, "Итог: задача выполнена, вот результат.")
+            self.assertEqual(provider_mock.call_count, 3)
+            final_call = provider_mock.call_args_list[-1]
+            self.assertEqual(final_call.kwargs["tool_catalog"], [])
+            runtime_log = (settings.log_dir / "runtime.log").read_text(encoding="utf-8")
+            self.assertIn("Reached max_turns", runtime_log)
+
     def test_runtime_returns_friendly_timeout_before_tool_execution(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             home_dir = Path(temp_dir) / "home"

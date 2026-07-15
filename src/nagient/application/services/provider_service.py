@@ -847,6 +847,13 @@ def _build_structured_assistant_prompt(
                 "needed, return an empty tool_calls array."
             ),
             (
+                "Batch independent tool calls into a single response instead of issuing them "
+                "one per turn. The runtime executes all listed tool_calls together, so "
+                "requesting several read-only lookups at once is faster and avoids exhausting "
+                "the step budget. Only split calls across turns when a later call genuinely "
+                "depends on an earlier call's result."
+            ),
+            (
                 "Use message_mode='after_tools' when the current message should be sent only "
                 "after the listed tool_calls finish. This avoids an extra provider round-trip."
             ),

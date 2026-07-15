@@ -32,7 +32,7 @@ mode = "bounded"
 default_provider = ""
 require_provider = false
 system_prompt_file = "@prompts/system.md"
-max_turns = 4
+max_turns = 12
 
 [agent.memory]
 hard_message_limit = 100
