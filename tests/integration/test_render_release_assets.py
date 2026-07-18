@@ -235,15 +235,10 @@ class RenderReleaseAssetsTests(unittest.TestCase):
             compose_file = (output_dir / "docker-compose.yml").read_text(encoding="utf-8")
 
             self.assertNotIn("./runtime:/var/lib/nagient", compose_file)
-            self.assertIn("./state:/opt/nagient/state", compose_file)
-            self.assertIn("./logs:/opt/nagient/logs", compose_file)
-            self.assertIn("./releases:/opt/nagient/releases", compose_file)
-            self.assertIn("./prompts:/opt/nagient/prompts", compose_file)
-            self.assertIn("./.codex-host:/root/.codex:ro", compose_file)
-            self.assertIn("./config.toml:/opt/nagient/config.toml", compose_file)
-            self.assertNotIn("./config.toml:/opt/nagient/config.toml:ro", compose_file)
-            self.assertIn("./secrets.env:/opt/nagient/secrets.env", compose_file)
-            self.assertNotIn("./secrets.env:/opt/nagient/secrets.env:ro", compose_file)
+            self.assertIn("./data:/opt/nagient", compose_file)
+            self.assertNotIn("./state:/opt/nagient/state", compose_file)
+            self.assertNotIn("./config.toml:/opt/nagient/config.toml", compose_file)
+            self.assertNotIn("./secrets.env:/opt/nagient/secrets.env", compose_file)
             self.assertIn(
                 "NAGIENT_PROMPTS_DIR: ${NAGIENT_PROMPTS_DIR:-/opt/nagient/prompts}",
                 compose_file,

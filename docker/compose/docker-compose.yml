@@ -31,19 +31,10 @@ services:
     ports:
       - "${NAGIENT_WEBHOOK_BIND_ADDRESS:-127.0.0.1}:${NAGIENT_WEBHOOK_PORT:-8080}:${NAGIENT_TRANSPORT__WEBHOOK__LISTEN_PORT:-8080}"
     volumes:
+      # Keep the complete runtime state in one host directory. The entrypoint
+      # creates config, secret, plugin, prompt, state, log, and release paths.
       - ./workspace:/workspace
-      - ./state:/opt/nagient/state
-      - ./logs:/opt/nagient/logs
-      - ./releases:/opt/nagient/releases
-      - ./.codex-host:/root/.codex:ro
-      - ./config.toml:/opt/nagient/config.toml
-      - ./secrets.env:/opt/nagient/secrets.env
-      - ./tool-secrets.env:/opt/nagient/tool-secrets.env
-      - ./prompts:/opt/nagient/prompts
-      - ./plugins:/opt/nagient/plugins
-      - ./tools:/opt/nagient/tools
-      - ./providers:/opt/nagient/providers
-      - ./credentials:/opt/nagient/credentials
+      - ./data:/opt/nagient
     healthcheck:
       test: ["CMD", "python", "-m", "nagient", "doctor", "--format", "json"]
       interval: 30s
