@@ -65,6 +65,17 @@ nagient <command> [subcommand] [options]
 
 `nagient chat` — это консольная точка входа для общения из CLI. Команда использует выбранный provider или `[agent].default_provider`, если `--provider` не передан.
 
+При первой настройке нового provider профиль автоматически включается и становится
+default provider, если default ещё не выбран. Для явного выбора используйте:
+
+```bash
+nagient setup provider openai --default --enable \
+  --auth api_key --secret-name OPENAI_API_KEY
+```
+
+Автоматический выбор не перезаписывает уже выбранный default. `--not-default`
+снимает выбор, а `--disable` отключает профиль.
+
 ### 2.1.1 Интерактивные команды setup
 
 - `nagient setup provider <provider_id> ...`

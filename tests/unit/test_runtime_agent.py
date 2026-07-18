@@ -39,6 +39,23 @@ class _FakePollingTransport(BaseTransportPlugin):
 
 
 class RuntimeAgentTests(unittest.TestCase):
+    def test_write_heartbeat_creates_missing_parent_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            settings = Settings.from_env({"NAGIENT_HOME": str(root / ".nagient")})
+            agent = RuntimeAgent(settings=settings)
+            heartbeat_path = root / "missing" / "state" / "heartbeat.json"
+
+            agent._write_heartbeat(  # noqa: SLF001
+                heartbeat_path,
+                None,
+                started_at="2026-07-18T13:00:00Z",
+                started_at_epoch=1784379600.0,
+                latest_change=None,
+            )
+
+            self.assertTrue(heartbeat_path.exists())
+
     def test_handle_polled_transport_event_routes_reply_through_generic_payload_contract(
         self,
     ) -> None:

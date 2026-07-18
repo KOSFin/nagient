@@ -64,6 +64,10 @@ nagient <command> [subcommand] [options]
 
 `nagient chat` is the CLI console entrypoint. It uses the selected provider, or `[agent].default_provider` when `--provider` is omitted.
 
+When a new provider is configured for the first time, Nagient enables the profile
+and selects it as the default provider if no default has been chosen yet. Choose
+one explicitly with `--default`; existing defaults are never overwritten.
+
 ### 2.1.1 Interactive setup shortcuts
 
 - `nagient setup provider <provider_id> ...`

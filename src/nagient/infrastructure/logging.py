@@ -171,7 +171,7 @@ def append_runtime_log(
     component: str = "runtime",
 ) -> str:
     line = _runtime_log_line(message, component=component)
-    settings.ensure_directories()
+    settings.log_dir.mkdir(parents=True, exist_ok=True)
     log_path = settings.log_dir / "runtime.log"
     with log_path.open("a", encoding="utf-8") as handle:
         handle.write(line + "\n")

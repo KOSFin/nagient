@@ -164,6 +164,7 @@ class RuntimeAgent:
                 if activation_report.workspace is not None
                 else None
             )
+        heartbeat_path.parent.mkdir(parents=True, exist_ok=True)
         heartbeat_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
     def _log_activation_summary(
