@@ -55,6 +55,28 @@ class ConfigurationServiceTests(unittest.TestCase):
             config_text = settings.config_file.read_text(encoding="utf-8")
             self.assertIn('default_provider = "openai"', config_text)
 
+    def test_new_provider_is_enabled_and_selected_without_enable_flags(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir) / ".nagient"
+            settings = Settings.from_env({"NAGIENT_HOME": str(home_dir)})
+            container = build_container(settings)
+            container.configuration_service.initialize(force=True)
+
+            payload = container.configuration_service.configure_provider(
+                "openai",
+                config_updates={
+                    "auth": "api_key",
+                    "api_key_secret": "OPENAI_API_KEY",
+                },
+            )
+
+            self.assertTrue(payload["enabled"])
+            self.assertTrue(payload["auto_enabled"])
+            self.assertTrue(payload["auto_defaulted"])
+            config_text = settings.config_file.read_text(encoding="utf-8")
+            self.assertIn("enabled = true", config_text)
+            self.assertIn('default_provider = "openai"', config_text)
+
     def test_configure_paths_accepts_runtime_dirs_and_writes_aliases(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             home_dir = Path(temp_dir) / ".nagient"

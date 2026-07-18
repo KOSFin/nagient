@@ -128,6 +128,12 @@ class ConfigurationService:
         raw_config = read_raw_config(self.settings.config_file)
         providers = _ensure_mapping(raw_config, "providers")
         profile = providers.get(provider_id)
+        has_enabled_provider = any(
+            isinstance(candidate_profile, dict)
+            and _coerce_bool(candidate_profile.get("enabled", False))
+            for candidate_profile in providers.values()
+        )
+        auto_enable = enabled is None and not has_enabled_provider and bool(config_updates)
         if not isinstance(profile, dict):
             profile = {}
 
@@ -155,11 +161,14 @@ class ConfigurationService:
         profile["plugin"] = resolved_plugin_id
         if enabled is not None:
             profile["enabled"] = enabled
+        elif auto_enable:
+            profile["enabled"] = True
         for key, value in (config_updates or {}).items():
             profile[key] = value
         providers[provider_id] = profile
 
         agent = _ensure_mapping(raw_config, "agent")
+        auto_defaulted = False
         if default is True:
             agent["default_provider"] = provider_id
             agent["require_provider"] = True
@@ -176,6 +185,7 @@ class ConfigurationService:
             ]
             if len(enabled_provider_ids) == 1:
                 agent["default_provider"] = enabled_provider_ids[0]
+                auto_defaulted = True
 
         write_raw_config(self.settings.config_file, raw_config)
         return {
@@ -183,6 +193,8 @@ class ConfigurationService:
             "provider_id": provider_id,
             "plugin_id": resolved_plugin_id,
             "enabled": profile.get("enabled", False),
+            "auto_enabled": auto_enable,
+            "auto_defaulted": auto_defaulted,
             "default": str(agent.get("default_provider", "")).strip() == provider_id,
             "config": {str(key): value for key, value in profile.items() if key != "plugin"},
             "required_config": manifest.required_config,

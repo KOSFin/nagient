@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.4] - 2026-07-18
+
+### Changed
+
+- The first provider configured with real settings is enabled automatically when
+  no provider is active.
+- The first active provider is selected as the default only when no default was
+  chosen manually.
+- Explicit `--enable`, `--disable`, `--default`, and `--not-default` flags retain
+  priority over automatic selection.
+
 ## [0.9.3] - 2026-07-18
 
 ### Added
