@@ -6,6 +6,23 @@
 Compose без хостед-установщика. Подходит, когда нужен полный контроль над
 рантаймом или когда машина не может достучаться до центра обновлений.
 
+## Что выбрать: `docker pull` или Compose
+
+`docker pull` только скачивает образ. Он не создаёт контейнер, тома,
+автоперезапуск, env-файл или каталог для плагинов. Поэтому для постоянного
+сервера рекомендуется Compose: один файл описывает весь повторяемый запуск.
+
+Быстро проверить сам образ можно без клонирования репозитория:
+
+```bash
+docker pull docker.io/parampo/nagient:latest
+docker run --rm docker.io/parampo/nagient:latest nagient version
+```
+
+Для production обычный `docker run` пришлось бы вручную дополнить теми же
+настройками, которые уже есть в Compose: `--env-file`, `--restart`, томами
+`./data:/opt/nagient` и `./workspace:/workspace`, портом и healthcheck.
+
 ## Требования
 
 - Docker Engine 24+
@@ -22,6 +39,9 @@ git clone https://github.com/KOSFin/nagient.git
 cd nagient
 ```
 
+Клонировать весь репозиторий не обязательно: достаточно скачать
+`docker-compose.yml` и `.env.example.ru` в один каталог.
+
 ## 2. Настройка через переменные окружения
 
 Скопируйте пример и задайте всё необходимое рантайму в одном файле:
@@ -30,6 +50,8 @@ cd nagient
 cp .env.example .env
 chmod 600 .env
 ```
+
+Если нужен русский шаблон, используйте `cp .env.example.ru .env`.
 
 Например, для OpenAI и Telegram достаточно раскомментировать в `.env`:
 
@@ -74,6 +96,36 @@ docker compose logs -f nagient
 
 `nagient doctor` также используется в healthcheck контейнера, поэтому
 `docker compose ps` покажет `healthy`, когда рантайм готов.
+
+## 5. Установка внешних плагинов
+
+В `.env` можно перечислить Git-репозитории:
+
+```dotenv
+NAGIENT_PLUGIN_SPECS=provider:https://github.com/example/nagient-provider.git#v1.0.0,tool:https://github.com/example/nagient-tool.git#8f31abc
+```
+
+При первом запуске entrypoint клонирует репозитории, проверяет манифест и
+кладёт их в правильный каталог. Список обработанных источников хранится в
+`data/state/installed-plugin-specs`, поэтому обычный перезапуск не скачивает
+их заново.
+
+```bash
+docker compose exec nagient nagient plugin list
+docker compose exec nagient nagient plugins --all
+```
+
+Плагин обязан содержать один манифест: `plugin.toml` для transport,
+`provider.toml` для provider или `tool.toml` для tool. Переменные задаются
+ключами `NAGIENT_PROVIDER__ID__...`, `NAGIENT_TOOL__ID__...` или
+`NAGIENT_TRANSPORT__ID__...`; секреты передаются через имя секрета в `.env`.
+
+Ручная установка без изменения Compose:
+
+```bash
+docker compose exec nagient nagient plugin install provider:https://github.com/owner/repo.git#v1.0.0
+docker compose restart nagient
+```
 
 ## Расположение данных
 

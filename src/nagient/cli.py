@@ -30,6 +30,11 @@ from nagient.domain.entities.agent_runtime import AgentTurnRequest
 from nagient.domain.entities.config_fields import ConfigFieldSpec
 from nagient.domain.entities.tooling import ToolExecutionRequest
 from nagient.infrastructure.manifests import release_to_dict
+from nagient.plugins.installer import (
+    install_plugin,
+    list_installed_plugins,
+    remove_plugin,
+)
 from nagient.version import __version__
 
 _SECRET_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -151,6 +156,34 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Include discovered plugins that are not configured",
     )
+
+    plugin_parser = subparsers.add_parser(
+        "plugin",
+        help="Install and manage external plugins",
+    )
+    plugin_subparsers = plugin_parser.add_subparsers(dest="plugin_command", required=True)
+    plugin_install_parser = plugin_subparsers.add_parser(
+        "install",
+        help="Install a plugin from a Git repository",
+    )
+    plugin_install_parser.add_argument(
+        "source",
+        help="URL, optionally prefixed with transport:/provider:/tool: and suffixed with #ref",
+    )
+    plugin_install_parser.add_argument("--ref", help="Git branch, tag, or commit")
+    plugin_install_parser.add_argument("--force", action="store_true")
+    plugin_install_parser.add_argument("--format", choices=("text", "json"), default="text")
+    plugin_list_parser = plugin_subparsers.add_parser(
+        "list",
+        help="List plugins installed from external repositories",
+    )
+    plugin_list_parser.add_argument("--format", choices=("text", "json"), default="text")
+    plugin_remove_parser = plugin_subparsers.add_parser(
+        "remove",
+        help="Remove an externally installed plugin",
+    )
+    plugin_remove_parser.add_argument("plugin_id")
+    plugin_remove_parser.add_argument("--format", choices=("text", "json"), default="text")
 
     init_parser = subparsers.add_parser("init", help="Write default runtime config files")
     init_parser.add_argument("--force", action="store_true")
@@ -558,6 +591,34 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "plugins":
         payload = _plugins_payload(container, include_available=args.all)
         return _emit(payload, args.format, view="plugins")
+
+    if args.command == "plugin" and args.plugin_command == "install":
+        result = install_plugin(
+            args.source,
+            plugins_dir=container.settings.plugins_dir,
+            providers_dir=container.settings.providers_dir,
+            tools_dir=container.settings.tools_dir,
+            ref=args.ref,
+            force=args.force,
+        )
+        return _emit(result.to_dict(), args.format)
+
+    if args.command == "plugin" and args.plugin_command == "list":
+        payload = {"plugins": list_installed_plugins(
+            plugins_dir=container.settings.plugins_dir,
+            providers_dir=container.settings.providers_dir,
+            tools_dir=container.settings.tools_dir,
+        )}
+        return _emit(payload, args.format)
+
+    if args.command == "plugin" and args.plugin_command == "remove":
+        payload = remove_plugin(
+            args.plugin_id,
+            plugins_dir=container.settings.plugins_dir,
+            providers_dir=container.settings.providers_dir,
+            tools_dir=container.settings.tools_dir,
+        )
+        return _emit(payload, args.format)
 
     if args.command == "doctor":
         payload = container.status_service.collect()

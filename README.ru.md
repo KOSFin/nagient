@@ -35,22 +35,34 @@ irm https://ngnt-in.ruka.me/install.ps1 | iex
 docker pull docker.io/parampo/nagient:latest
 ```
 
+`docker pull` только скачивает образ. Для постоянного запуска на сервере
+используйте Compose: он сразу задаёт тома, env-файл, автоперезапуск,
+healthcheck и каталог плагинов. Быстрая проверка образа:
+
+```bash
+docker run --rm docker.io/parampo/nagient:latest nagient version
+```
+
 Установщик создаёт локальный runtime в `~/.nagient` и поднимает сервис через Docker Compose.
 
 ### Развёртывание на сервере (Docker Compose)
 
 Чтобы поставить Nagient на свой сервер без хостед-установщика, используйте
-готовый [`docker-compose.yml`](docker-compose.yml) в корне репозитория:
+готовый [`docker-compose.yml`](docker-compose.yml) и русскую заготовку
+`.env.example.ru` в корне репозитория:
 
 ```bash
 git clone https://github.com/KOSFin/nagient.git
 cd nagient
-cp .env.example .env
+cp .env.example.ru .env
 ${EDITOR:-vi} .env          # задайте провайдер, транспорт и секреты
 docker compose up -d        # CLI и правка сгенерированных файлов не нужны
 ```
 
 Полное руководство: [docs/deploy.ru.md](docs/deploy.ru.md).
+
+Установка внешних Git-плагинов через Compose описана в разделе
+[«Внешние плагины»](docs/deploy.ru.md#5-установка-внешних-плагинов).
 
 После установки используйте одну короткую команду управления:
 
@@ -62,6 +74,7 @@ nagient help
 
 - Индекс на английском: [docs/README.md](docs/README.md)
 - Индекс на русском: [docs/README.ru.md](docs/README.ru.md)
+- Разработка и установка плагинов: [docs/PLUGIN_DEVELOPMENT.ru.md](docs/PLUGIN_DEVELOPMENT.ru.md)
 
 ## Обновление и удаление
 

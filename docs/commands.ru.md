@@ -47,6 +47,7 @@ nagient <command> [subcommand] [options]
 - `nagient init [--force] [--format text|json]`
 - `nagient help`
 - `nagient plugins [--format text|json]`
+- `nagient plugin install <url>[#ref]`, `nagient plugin list`, `nagient plugin remove <id>`
 - `nagient status [--format text|json]`
 - `nagient doctor [--format text|json]`
 - `nagient paths [--format text|json]`

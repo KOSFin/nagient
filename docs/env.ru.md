@@ -29,6 +29,7 @@
 | `NAGIENT_HEARTBEAT_INTERVAL` | Heartbeat в секундах | `30` |
 | `NAGIENT_WEBHOOK_BIND_ADDRESS` | Интерфейс хоста для webhook | `127.0.0.1` |
 | `NAGIENT_WEBHOOK_PORT` | Публикуемый порт webhook | `8080` |
+| `NAGIENT_PLUGIN_SPECS` | Git-репозитории внешних плагинов | пусто |
 
 ## 3. Runtime-переменные (используются приложением)
 
@@ -120,7 +121,38 @@ NAGIENT_SECRETS_JSON={"CUSTOM_PROVIDER_KEY":"value"}
 NAGIENT_TOOL_SECRETS_JSON={"CUSTOM_TOOL_TOKEN":"value"}
 ```
 
-## 6. Полная JSON-конфигурация
+## 6. Провайдеры и ключи
+
+Встроенные профили используют одинаковую схему. Меняется только ID профиля,
+модель и имя ключа:
+
+| Профиль | Плагин | Переменная ключа |
+| --- | --- | --- |
+| `openai` | `builtin.openai` | `OPENAI_API_KEY` |
+| `openai-codex` | `builtin.openai_codex` | ключ или auth-файл Codex |
+| `anthropic` | `builtin.anthropic` | `ANTHROPIC_API_KEY` |
+| `deepseek` | `builtin.deepseek` | `DEEPSEEK_API_KEY` |
+| `gemini` | `builtin.gemini` | `GEMINI_API_KEY` |
+| `ollama` | `builtin.ollama` | ключ не нужен |
+
+Минимальный пример для DeepSeek:
+
+```env
+NAGIENT_AGENT_DEFAULT_PROVIDER=deepseek
+NAGIENT_AGENT_REQUIRE_PROVIDER=true
+NAGIENT_PROVIDER__DEEPSEEK__PLUGIN=builtin.deepseek
+NAGIENT_PROVIDER__DEEPSEEK__ENABLED=true
+NAGIENT_PROVIDER__DEEPSEEK__AUTH=api_key
+NAGIENT_PROVIDER__DEEPSEEK__API_KEY_SECRET=DEEPSEEK_API_KEY
+NAGIENT_PROVIDER__DEEPSEEK__MODEL=deepseek-chat
+DEEPSEEK_API_KEY=...
+```
+
+Плагин может объявить собственные поля в манифесте. Для них действует тот же
+шаблон `NAGIENT_<FAMILY>__<ID>__<FIELD>`, поэтому отдельный код в Compose не
+нужен.
+
+## 7. Полная JSON-конфигурация
 
 `NAGIENT_CONFIG_JSON` принимает JSON с той же иерархией, что и `config.toml`.
 Объекты объединяются рекурсивно, поэтому через эту переменную доступны любые

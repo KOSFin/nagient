@@ -29,6 +29,7 @@ powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagient.ps1" status
 - Команды runtime и CLI: [commands.ru.md](commands.ru.md)
 - Конфигурация и секреты: [configuration.ru.md](configuration.ru.md)
 - Контракты плагинов: [plugin-contracts.ru.md](plugin-contracts.ru.md)
+- Разработка и установка плагинов: [PLUGIN_DEVELOPMENT.ru.md](PLUGIN_DEVELOPMENT.ru.md)
 - Переменные окружения: [env.ru.md](env.ru.md)
 - Диагностика проблем: [troubleshooting.ru.md](troubleshooting.ru.md)
 - Архитектура: [architecture.ru.md](architecture.ru.md)

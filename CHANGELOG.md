@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.2] - 2026-07-18
+
+### Added
+
+- Unified `nagient plugin install|list|remove` commands for Git-based transport,
+  provider, and tool plugins.
+- `NAGIENT_PLUGIN_SPECS` for idempotent plugin installation from Docker Compose.
+- Russian deployment, environment, plugin-development, and secret templates.
+
+### Changed
+
+- Docker documentation now explains the difference between pulling an image and
+  running a persistent Compose deployment.
+- Compose restarts preserve installed plugin sources and do not clone them again.
+
 ## [0.9.1] - 2026-07-16
 
 ### Added

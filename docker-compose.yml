@@ -40,6 +40,9 @@ services:
       NAGIENT_WORKSPACE_ROOT: ${NAGIENT_WORKSPACE_ROOT:-/workspace}
       NAGIENT_HEARTBEAT_INTERVAL: ${NAGIENT_HEARTBEAT_INTERVAL:-30}
       NAGIENT_SAFE_MODE: ${NAGIENT_SAFE_MODE:-true}
+      # Comma-separated Git sources, for example:
+      # provider:https://github.com/acme/nagient-provider.git#v1.0.0
+      NAGIENT_PLUGIN_SPECS: ${NAGIENT_PLUGIN_SPECS:-}
     ports:
       # Safe localhost default. Set NAGIENT_WEBHOOK_BIND_ADDRESS=0.0.0.0 to expose it.
       - "${NAGIENT_WEBHOOK_BIND_ADDRESS:-127.0.0.1}:${NAGIENT_WEBHOOK_PORT:-8080}:${NAGIENT_TRANSPORT__WEBHOOK__LISTEN_PORT:-8080}"
