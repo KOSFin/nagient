@@ -12,6 +12,7 @@ from nagient.domain.entities.config_fields import ConfigFieldSpec
 from nagient.domain.entities.logging import PluginLogChannelSpec
 from nagient.domain.entities.system_state import CheckIssue
 from nagient.domain.entities.tooling import ToolFunctionManifest, ToolPluginManifest
+from nagient.plugins.dependencies import activate_plugin_dependencies, plugin_python
 from nagient.tools.base import BaseToolPlugin, LoadedToolPlugin
 from nagient.tools.builtin import builtin_tools
 from nagient.tools.process_adapter import ExternalProcessToolPlugin
@@ -91,6 +92,7 @@ class ToolPluginRegistry:
         manifest_path = directory / "tool.toml"
         manifest = self._parse_manifest(manifest_path)
         payload = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
+        activate_plugin_dependencies(directory)
         runtime = _runtime_or_default(payload.get("runtime"))
         if runtime == "process":
             command = _process_command(payload, directory, manifest.entrypoint)
@@ -319,7 +321,7 @@ def _process_command(payload: dict[str, object], directory: Path, entrypoint: st
         return [str(entrypoint_path)]
     suffix = entrypoint_path.suffix.lower()
     if suffix == ".py":
-        return [sys.executable, str(entrypoint_path)]
+        return [plugin_python(directory), str(entrypoint_path)]
     if suffix in {".sh", ".bash"}:
         return ["sh", str(entrypoint_path)]
     return [str(entrypoint_path)]

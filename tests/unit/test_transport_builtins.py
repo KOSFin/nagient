@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any, cast
+from unittest.mock import Mock, patch
 
 from nagient.plugins.base import TransportRuntimeContext
 from nagient.plugins.registry import TransportPluginRegistry
@@ -84,6 +85,37 @@ class TransportBuiltinsTests(unittest.TestCase):
         )
 
         self.assertEqual(issues, [])
+
+    def test_telegram_builds_proxy_http_client_for_runtime_requests(self) -> None:
+        plugin = _telegram_plugin()
+        plugin.start(
+            "telegram",
+            {"bot_token_secret": "TELEGRAM_BOT_TOKEN"},
+            {
+                "TELEGRAM_BOT_TOKEN": "12345:test-token",
+                "TELEGRAM_PROXY_PASSWORD": "secret",
+            },
+        )
+        proxy_client = Mock()
+        with patch(
+            f"{plugin.__class__.__module__}.build_proxy_json_http_client",
+            return_value=proxy_client,
+        ) as build_proxy:
+            selected = plugin._telegram_http_client(
+                {
+                    "proxy_url": "https://proxy.example:8443",
+                    "proxy_username": "proxy-user",
+                    "proxy_password_secret": "TELEGRAM_PROXY_PASSWORD",
+                }
+            )
+
+        self.assertIs(selected, proxy_client)
+        build_proxy.assert_called_once_with(
+            "https://proxy.example:8443",
+            username="proxy-user",
+            password="secret",
+            default_timeout=60.0,
+        )
 
     def test_telegram_normalizes_message_event_with_reply_target(self) -> None:
         plugin = _telegram_plugin()

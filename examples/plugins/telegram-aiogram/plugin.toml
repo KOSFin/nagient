@@ -1,0 +1,86 @@
+id = "example.telegram-aiogram"
+type = "transport"
+version = "0.1.0"
+display_name = "Telegram (aiogram)"
+namespace = "telegram_aiogram"
+runtime = "python"
+entrypoint = "transport.py"
+instructions_file = "instructions.md"
+config_schema_file = "schema.json"
+dependencies = ["aiogram>=3,<4", "aiohttp-socks>=0.8"]
+required_config = ["bot_token_secret"]
+optional_config = [
+  "default_chat_id",
+  "default_parse_mode",
+  "poll_timeout_seconds",
+  "proxy_url",
+  "proxy_username",
+  "proxy_password_secret",
+]
+secret_config = ["bot_token_secret", "proxy_password_secret"]
+
+[[config_fields]]
+key = "bot_token_secret"
+label = "Bot token"
+value_type = "secret"
+category = "connection"
+required = true
+secret = true
+
+[[config_fields]]
+key = "default_chat_id"
+label = "Default chat id"
+value_type = "string"
+category = "connection"
+
+[[config_fields]]
+key = "default_parse_mode"
+label = "Default parse mode"
+value_type = "string"
+category = "connection"
+
+[[config_fields]]
+key = "proxy_url"
+label = "Proxy URL"
+help_text = "HTTP, HTTPS, or SOCKS proxy used by aiogram."
+value_type = "string"
+category = "connection"
+
+[[config_fields]]
+key = "proxy_username"
+label = "Proxy username"
+value_type = "string"
+category = "connection"
+
+[[config_fields]]
+key = "proxy_password_secret"
+label = "Proxy password secret"
+value_type = "secret"
+category = "connection"
+secret = true
+
+[[config_fields]]
+key = "poll_timeout_seconds"
+label = "Poll timeout"
+value_type = "integer"
+category = "advanced"
+
+[required_slots]
+send_message = "telegram_aiogram.sendMessage"
+send_notification = "telegram_aiogram.sendNotification"
+normalize_inbound_event = "telegram_aiogram.normalizeInboundEvent"
+poll_inbound_events = "telegram_aiogram.pollInboundEvents"
+healthcheck = "telegram_aiogram.healthcheck"
+selftest = "telegram_aiogram.selftest"
+start = "telegram_aiogram.start"
+stop = "telegram_aiogram.stop"
+
+[function_bindings]
+"telegram_aiogram.sendMessage" = "send_message"
+"telegram_aiogram.sendNotification" = "send_notification"
+"telegram_aiogram.normalizeInboundEvent" = "normalize_inbound_event"
+"telegram_aiogram.pollInboundEvents" = "poll_inbound_events"
+"telegram_aiogram.healthcheck" = "healthcheck"
+"telegram_aiogram.selftest" = "self_test"
+"telegram_aiogram.start" = "start"
+"telegram_aiogram.stop" = "stop"

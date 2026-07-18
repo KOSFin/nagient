@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.3] - 2026-07-18
+
+### Added
+
+- Isolated per-plugin Python dependencies installed into `<plugin>/.venv`.
+- `dependencies` and `requirements_file` manifest fields for transport, provider,
+  and tool plugins.
+- `--no-dependencies` and `--upgrade-dependencies` plugin installation flags.
+- Reference `aiogram` Telegram transport with HTTP, HTTPS, and SOCKS proxy support.
+- Russian and English plugin dependency documentation.
+
+### Changed
+
+- Python plugins and Python process entrypoints use their private dependency environment.
+- Built-in Telegram remains available as a dependency-free fallback.
+
 ## [0.9.2] - 2026-07-18
 
 ### Added

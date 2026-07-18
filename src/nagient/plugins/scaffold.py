@@ -63,6 +63,8 @@ def _render_plugin_manifest(plugin_id: str, namespace: str) -> str:
             f'namespace = "{namespace}"',
             'runtime = "python"',
             'entrypoint = "transport.py"',
+            '# dependencies = ["aiogram>=3,<4"]',
+            '# requirements_file = "requirements.txt"',
             'instructions_file = "instructions.md"',
             'config_schema_file = "schema.json"',
             "",

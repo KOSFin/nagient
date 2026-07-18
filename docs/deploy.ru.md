@@ -73,6 +73,17 @@ NAGIENT_TRANSPORT__TELEGRAM__DEFAULT_CHAT_ID=123456789
 TELEGRAM_BOT_TOKEN=123456:ABC...
 ```
 
+Если серверу нужен прокси для Telegram, добавьте в `.env`:
+
+```dotenv
+NAGIENT_TRANSPORT__TELEGRAM__PROXY_URL=http://proxy.example:8080
+NAGIENT_TRANSPORT__TELEGRAM__PROXY_USERNAME=proxy-user
+NAGIENT_TRANSPORT__TELEGRAM__PROXY_PASSWORD_SECRET=TELEGRAM_PROXY_PASSWORD
+TELEGRAM_PROXY_PASSWORD=replace-me
+```
+
+Прокси используется и для long polling, и для исходящих сообщений.
+
 Compose передаёт весь `.env` внутрь контейнера. Запускать `nagient setup`,
 редактировать TOML или сгенерированный файл секретов не требуется.
 

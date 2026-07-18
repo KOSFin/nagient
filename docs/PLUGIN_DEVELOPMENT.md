@@ -37,6 +37,31 @@ Nagient uses a **manifest-driven plugin system**:
 - **Tool Plugins:** Provide agent capabilities (GitHub API, Jira, databases, etc.)
 - **Provider Plugins:** Connect to LLM providers (OpenAI, Anthropic, etc.)
 
+### Plugin dependencies
+
+Dependencies are isolated per plugin and are never installed into Nagient's
+main environment:
+
+```toml
+runtime = "python"
+dependencies = ["aiogram>=3,<4", "aiohttp>=3.9"]
+requirements_file = "requirements.txt" # optional
+```
+
+`nagient plugin install` creates `<plugin-directory>/.venv` and installs these
+packages automatically. In Docker, the environment lives in the persistent
+`data` directory and is reused after container restarts. Use
+`--upgrade-dependencies` to refresh packages or `--no-dependencies` only for
+offline staging. Python process entrypoints use the same plugin environment.
+
+### aiogram reference plugin
+
+The repository includes `examples/plugins/telegram-aiogram`. Copy it into a
+separate Git repository, publish it, and install it by URL. It follows the same
+transport contract as `builtin.telegram`, while keeping `aiogram` inside the
+plugin's private environment. Configure `bot_token_secret` and optionally
+`proxy_url` after installation.
+
 ## Transport Plugins
 
 Transport plugins enable the agent to send and receive messages through various channels.

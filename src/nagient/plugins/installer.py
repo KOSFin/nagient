@@ -10,6 +10,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
+from nagient.plugins.dependencies import (
+    PluginDependencyError,
+    install_plugin_dependencies,
+    manifest_dependencies,
+)
+
 
 class PluginInstallError(RuntimeError):
     pass
@@ -23,6 +29,7 @@ class PluginInstallResult:
     directory: Path
     source: str
     ref: str | None
+    dependencies: dict[str, object]
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -32,6 +39,7 @@ class PluginInstallResult:
             "directory": str(self.directory),
             "source": self.source,
             "ref": self.ref,
+            "dependencies": self.dependencies,
         }
 
 
@@ -50,6 +58,8 @@ def install_plugin(
     tools_dir: Path,
     ref: str | None = None,
     force: bool = False,
+    install_dependencies: bool = True,
+    upgrade_dependencies: bool = False,
 ) -> PluginInstallResult:
     family_hint, repository, parsed_ref = _parse_source(source)
     ref = ref or parsed_ref
@@ -75,6 +85,10 @@ def install_plugin(
         manifest_path, family, manifest = _find_manifest(checkout, family_hint)
         plugin_id = _required_string(manifest, "id", manifest_path)
         version = _required_string(manifest, "version", manifest_path)
+        try:
+            dependencies, requirements_file = manifest_dependencies(manifest)
+        except PluginDependencyError as exc:
+            raise PluginInstallError(str(exc)) from exc
         destination_root = {
             "transport": plugins_dir,
             "provider": providers_dir,
@@ -94,6 +108,23 @@ def install_plugin(
             destination,
             ignore=shutil.ignore_patterns(".git", ".github"),
         )
+        if install_dependencies:
+            try:
+                dependency_status = install_plugin_dependencies(
+                    destination,
+                    dependencies,
+                    requirements_file=requirements_file,
+                    upgrade=upgrade_dependencies,
+                )
+            except PluginDependencyError as exc:
+                shutil.rmtree(destination, ignore_errors=True)
+                raise PluginInstallError(str(exc)) from exc
+        else:
+            dependency_status = {
+                "status": "skipped",
+                "dependencies": dependencies,
+                "requirements_file": requirements_file,
+            }
         metadata = {
             "plugin_id": plugin_id,
             "family": family,
@@ -101,6 +132,7 @@ def install_plugin(
             "source": repository,
             "ref": ref,
             "installed_at": datetime.now(UTC).isoformat(),
+            "dependencies": dependency_status,
         }
         (destination / ".nagient-plugin.json").write_text(
             json.dumps(metadata, ensure_ascii=False, indent=2) + "\n",
@@ -113,6 +145,7 @@ def install_plugin(
             directory=destination,
             source=repository,
             ref=ref,
+            dependencies=dependency_status,
         )
 
 

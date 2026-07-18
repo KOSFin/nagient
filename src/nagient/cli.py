@@ -172,6 +172,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     plugin_install_parser.add_argument("--ref", help="Git branch, tag, or commit")
     plugin_install_parser.add_argument("--force", action="store_true")
+    plugin_install_parser.add_argument(
+        "--no-dependencies",
+        action="store_true",
+        help="Не создавать окружение и не устанавливать зависимости плагина",
+    )
+    plugin_install_parser.add_argument(
+        "--upgrade-dependencies",
+        action="store_true",
+        help="Обновить уже указанные зависимости плагина",
+    )
     plugin_install_parser.add_argument("--format", choices=("text", "json"), default="text")
     plugin_list_parser = plugin_subparsers.add_parser(
         "list",
@@ -600,6 +610,8 @@ def main(argv: list[str] | None = None) -> int:
             tools_dir=container.settings.tools_dir,
             ref=args.ref,
             force=args.force,
+            install_dependencies=not args.no_dependencies,
+            upgrade_dependencies=args.upgrade_dependencies,
         )
         return _emit(result.to_dict(), args.format)
 

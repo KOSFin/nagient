@@ -10,6 +10,7 @@ from pathlib import Path
 from nagient.domain.entities.config_fields import ConfigFieldSpec
 from nagient.domain.entities.logging import PluginLogChannelSpec
 from nagient.domain.entities.system_state import CheckIssue
+from nagient.plugins.dependencies import activate_plugin_dependencies, plugin_python
 from nagient.providers.base import (
     REQUIRED_PROVIDER_METHODS,
     BaseProviderPlugin,
@@ -84,6 +85,7 @@ class ProviderPluginRegistry:
         manifest_path = directory / "provider.toml"
         manifest = self._parse_manifest(manifest_path)
         payload = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
+        activate_plugin_dependencies(directory)
         runtime = _runtime_or_default(payload.get("runtime"))
         if runtime == "process":
             implementation = ExternalProcessProviderPlugin(
@@ -314,7 +316,7 @@ def _process_command(payload: dict[str, object], directory: Path, entrypoint: st
         return [str(entrypoint_path)]
     suffix = entrypoint_path.suffix.lower()
     if suffix == ".py":
-        return [sys.executable, str(entrypoint_path)]
+        return [plugin_python(directory), str(entrypoint_path)]
     if suffix in {".sh", ".bash"}:
         return ["sh", str(entrypoint_path)]
     return [str(entrypoint_path)]

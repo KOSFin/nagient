@@ -37,6 +37,13 @@ NAGIENT_AGENT_REQUIRE_PROVIDER=false
 # NAGIENT_TRANSPORT__TELEGRAM__BOT_TOKEN_SECRET=TELEGRAM_BOT_TOKEN
 # NAGIENT_TRANSPORT__TELEGRAM__DEFAULT_CHAT_ID=123456789
 # TELEGRAM_BOT_TOKEN=вставьте-токен-сюда
+# Необязательный HTTP/HTTPS-прокси для всех запросов Telegram Bot API
+# (polling и отправка ответов).
+# NAGIENT_TRANSPORT__TELEGRAM__PROXY_URL=http://proxy.example:8080
+# Необязательная авторизация прокси. Пароль храните как секрет.
+# NAGIENT_TRANSPORT__TELEGRAM__PROXY_USERNAME=proxy-user
+# NAGIENT_TRANSPORT__TELEGRAM__PROXY_PASSWORD_SECRET=TELEGRAM_PROXY_PASSWORD
+# TELEGRAM_PROXY_PASSWORD=замените-значение
 
 # Вебхук по умолчанию доступен только на localhost.
 # NAGIENT_TRANSPORT__WEBHOOK__PLUGIN=builtin.webhook

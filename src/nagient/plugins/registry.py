@@ -16,6 +16,7 @@ from nagient.plugins.base import (
     LoadedTransportPlugin,
     TransportPluginManifest,
 )
+from nagient.plugins.dependencies import activate_plugin_dependencies, plugin_python
 from nagient.plugins.process_adapter import ExternalProcessTransportPlugin
 
 
@@ -94,6 +95,7 @@ class TransportPluginRegistry:
         manifest_path = directory / "plugin.toml"
         manifest = self._parse_manifest(manifest_path)
         payload = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
+        activate_plugin_dependencies(directory)
         runtime = _runtime_or_default(payload.get("runtime"))
         if runtime == "process":
             implementation = ExternalProcessTransportPlugin(
@@ -385,7 +387,7 @@ def _process_command(payload: dict[str, object], directory: Path, entrypoint: st
         return [str(entrypoint_path)]
     suffix = entrypoint_path.suffix.lower()
     if suffix == ".py":
-        return [sys.executable, str(entrypoint_path)]
+        return [plugin_python(directory), str(entrypoint_path)]
     if suffix in {".sh", ".bash"}:
         return ["sh", str(entrypoint_path)]
     return [str(entrypoint_path)]

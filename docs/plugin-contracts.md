@@ -3,6 +3,17 @@
 Nagient extensions are runtime components discovered from manifest directories. Bundled
 extensions use the same discovery path as user extensions.
 
+Every manifest may declare isolated dependencies:
+
+```toml
+dependencies = ["package>=1,<2"]
+requirements_file = "requirements.txt"
+```
+
+The installer creates `.venv` inside the plugin directory and uses it for both
+Python imports and Python process entrypoints. The main Nagient environment is
+not modified.
+
 ## Transport plugins
 
 Transport plugins live in a directory with:

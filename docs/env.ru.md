@@ -84,7 +84,17 @@ NAGIENT_TRANSPORT__TELEGRAM__PLUGIN=builtin.telegram
 NAGIENT_TRANSPORT__TELEGRAM__ENABLED=true
 NAGIENT_TRANSPORT__TELEGRAM__BOT_TOKEN_SECRET=TELEGRAM_BOT_TOKEN
 NAGIENT_TRANSPORT__TELEGRAM__DEFAULT_CHAT_ID=123456789
+NAGIENT_TRANSPORT__TELEGRAM__PROXY_URL=http://proxy.example:8080
+NAGIENT_TRANSPORT__TELEGRAM__PROXY_USERNAME=proxy-user
+NAGIENT_TRANSPORT__TELEGRAM__PROXY_PASSWORD_SECRET=TELEGRAM_PROXY_PASSWORD
+TELEGRAM_PROXY_PASSWORD=...
 ```
+
+`PROXY_URL` применяется ко всем обращениям Telegram Bot API: polling, отправке
+сообщений и callback-методам. Поддерживаются HTTP- и HTTPS-прокси. Логин можно
+указать в `PROXY_USERNAME`, а пароль — только через секрет. Если прокси уже
+содержит `http://user:password@host:port`, отдельные поля авторизации не нужны,
+но такой URL нельзя помещать в публичный репозиторий.
 
 Tool override:
 
