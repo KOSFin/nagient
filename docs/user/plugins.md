@@ -42,6 +42,13 @@ docker compose restart nagient
 For unattended deployments, put a pinned Git source in `NAGIENT_PLUGIN_SPECS` in
 `.env` and run `docker compose up -d`. Use a tag or commit, not a floating branch.
 
+Official plugin examples:
+
+```bash
+docker compose exec nagient nagient plugin catalog install nagient.telegram
+docker compose exec nagient nagient plugin catalog install nagient.github_api
+```
+
 ## 4. Configure a plugin
 
 Read the plugin's fields from the catalog JSON or its manifest. The universal

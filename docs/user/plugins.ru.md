@@ -43,6 +43,13 @@ docker compose restart nagient
 `NAGIENT_PLUGIN_SPECS` файла `.env` и выполните `docker compose up -d`. Используйте
 тег или commit, а не плавающую ветку.
 
+Примеры официальных плагинов:
+
+```bash
+docker compose exec nagient nagient plugin catalog install nagient.telegram
+docker compose exec nagient nagient plugin catalog install nagient.github_api
+```
+
 ## 4. Настроить плагин
 
 Поля берутся из JSON каталога или манифеста. Универсальная форма env:

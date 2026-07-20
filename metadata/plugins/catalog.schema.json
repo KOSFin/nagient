@@ -17,6 +17,7 @@
           "description": { "type": "string" },
           "source": { "type": "string" },
           "version": { "type": "string" },
+          "ref": { "type": ["string", "null"] },
           "verified": { "type": "boolean" },
           "bundled": { "type": "boolean" },
           "docs": { "type": "string" },

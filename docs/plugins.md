@@ -26,6 +26,13 @@ nagient preflight
 nagient status
 ```
 
+Official separately versioned repositories:
+
+| Plugin | Install |
+| --- | --- |
+| `nagient.telegram` | `nagient plugin catalog install nagient.telegram` |
+| `nagient.github_api` | `nagient plugin catalog install nagient.github_api` |
+
 Use `--format json` in scripts. The catalog distinguishes `verified` entries
 from arbitrary repositories. A repository installed directly is still supported,
 but it is not treated as reviewed:

@@ -47,6 +47,32 @@
       "bundled": true,
       "docs": "docs/plugins.md#github-api",
       "env": ["NAGIENT_TOOL__GITHUB_API__TOKEN_SECRET", "GITHUB_TOKEN"]
+    },
+    {
+      "plugin_id": "nagient.telegram",
+      "family": "transport",
+      "display_name": "Nagient Telegram Transport",
+      "description": "Separately versioned Telegram transport repository with allowlists and streaming edits.",
+      "source": "https://github.com/KOSFin/nagient-transport-telegram.git",
+      "version": "0.1.0",
+      "ref": "v0.1.0",
+      "verified": true,
+      "bundled": false,
+      "docs": "https://github.com/KOSFin/nagient-transport-telegram#readme",
+      "env": ["NAGIENT_TRANSPORT__TELEGRAM__BOT_TOKEN_SECRET", "TELEGRAM_BOT_TOKEN"]
+    },
+    {
+      "plugin_id": "nagient.github_api",
+      "family": "tool",
+      "display_name": "Nagient GitHub API",
+      "description": "Separately versioned GitHub API tool with approval-gated writes.",
+      "source": "https://github.com/KOSFin/nagient-tool-github-api.git",
+      "version": "0.1.0",
+      "ref": "v0.1.0",
+      "verified": true,
+      "bundled": false,
+      "docs": "https://github.com/KOSFin/nagient-tool-github-api#readme",
+      "env": ["NAGIENT_TOOL__GITHUB_API__TOKEN_SECRET", "GITHUB_TOKEN"]
     }
   ]
 }

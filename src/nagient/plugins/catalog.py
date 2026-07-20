@@ -23,6 +23,7 @@ class CatalogEntry:
     version: str
     verified: bool = True
     bundled: bool = False
+    ref: str | None = None
     docs: str = ""
     env: tuple[str, ...] = ()
 
@@ -36,6 +37,7 @@ class CatalogEntry:
             "version": self.version,
             "verified": self.verified,
             "bundled": self.bundled,
+            "ref": self.ref,
             "installed": installed,
             "docs": self.docs,
             "env": list(self.env),
@@ -85,6 +87,31 @@ OFFICIAL_CATALOG: tuple[CatalogEntry, ...] = (
         version="0.1.0",
         bundled=True,
         docs="docs/plugins.md#github-api",
+        env=("NAGIENT_TOOL__GITHUB_API__TOKEN_SECRET", "GITHUB_TOKEN"),
+    ),
+    CatalogEntry(
+        plugin_id="nagient.telegram",
+        family="transport",
+        display_name="Nagient Telegram Transport",
+        description=(
+            "Separately versioned Telegram transport repository with allowlists "
+            "and streaming edits."
+        ),
+        source="https://github.com/KOSFin/nagient-transport-telegram.git",
+        version="0.1.0",
+        ref="v0.1.0",
+        docs="https://github.com/KOSFin/nagient-transport-telegram#readme",
+        env=("NAGIENT_TRANSPORT__TELEGRAM__BOT_TOKEN_SECRET", "TELEGRAM_BOT_TOKEN"),
+    ),
+    CatalogEntry(
+        plugin_id="nagient.github_api",
+        family="tool",
+        display_name="Nagient GitHub API",
+        description="Separately versioned GitHub API tool with approval-gated writes.",
+        source="https://github.com/KOSFin/nagient-tool-github-api.git",
+        version="0.1.0",
+        ref="v0.1.0",
+        docs="https://github.com/KOSFin/nagient-tool-github-api#readme",
         env=("NAGIENT_TOOL__GITHUB_API__TOKEN_SECRET", "GITHUB_TOKEN"),
     ),
 )
@@ -166,6 +193,7 @@ def catalog_from_json(payload: Any) -> list[CatalogEntry]:
                 version=str(raw["version"]),
                 verified=bool(raw.get("verified", False)),
                 bundled=bool(raw.get("bundled", False)),
+                ref=str(raw["ref"]) if isinstance(raw.get("ref"), str) else None,
                 docs=str(raw.get("docs", "")),
                 env=tuple(str(item) for item in raw.get("env", []) if isinstance(item, str)),
             )

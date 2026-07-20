@@ -31,6 +31,13 @@ nagient status
 nagient plugin install transport:https://github.com/ORG/REPO.git#v1.0.0
 ```
 
+Официальные отдельные репозитории:
+
+| Плагин | Установка |
+| --- | --- |
+| `nagient.telegram` | `nagient plugin catalog install nagient.telegram` |
+| `nagient.github_api` | `nagient plugin catalog install nagient.github_api` |
+
 ## Telegram
 
 Telegram входит в поставку и включается настройкой. Токен задаётся только через
