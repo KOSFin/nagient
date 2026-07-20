@@ -712,6 +712,7 @@ def main(argv: list[str] | None = None) -> int:
                 providers_dir=container.settings.providers_dir,
                 tools_dir=container.settings.tools_dir,
                 force=args.force,
+                ref=entry.ref,
                 install_dependencies=not args.no_dependencies,
                 upgrade_dependencies=args.upgrade_dependencies,
             )
