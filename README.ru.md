@@ -1,5 +1,14 @@
 # Nagient
 
+```text
+███╗░░██╗░█████╗░░██████╗░██╗███████╗███╗░░██╗████████╗
+████╗░██║██╔══██╗██╔════╝░██║██╔════╝████╗░██║╚══██╔══╝
+██╔██╗██║███████║██║░░██╗░██║█████╗░░╚██╔██╗██║░░░██║░░░
+██║╚████║██╔══██╗██║░░╚██╗██║██╔══╝░░██║╚████║░░░██║░░░
+██║░╚███║██║██╔██║╚██████╔╝██║███████╗██║░╚███║░░░██║░░░
+╚═╝░░╚══╝╚═╝░░╚═╝░╚═════╝░╚═╝╚══════╝╚═╝░░╚══╝░░░╚═╝░░░
+```
+
 [![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/Docker-native-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 [![CI](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF?logo=githubactions&logoColor=white)](.github/workflows/ci.yml)
@@ -74,7 +83,10 @@ nagient help
 
 - Индекс на английском: [docs/README.md](docs/README.md)
 - Индекс на русском: [docs/README.ru.md](docs/README.ru.md)
+- Руководство пользователя: [docs/user/README.ru.md](docs/user/README.ru.md)
+- Руководство разработчика: [docs/developer/README.ru.md](docs/developer/README.ru.md)
 - Разработка и установка плагинов: [docs/PLUGIN_DEVELOPMENT.ru.md](docs/PLUGIN_DEVELOPMENT.ru.md)
+- Каталог плагинов: [docs/plugins.ru.md](docs/plugins.ru.md) ([English](docs/plugins.md))
 
 ## Обновление и удаление
 
@@ -112,6 +124,18 @@ powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagient.ps1" remove
 nagient up
 nagient status
 nagient logs
+```
+
+## Сценарий плагинов
+
+Расширения устанавливаются отдельно от ядра. Для нового пользователя достаточно
+посмотреть проверенный каталог, поставить нужное расширение и проверить runtime:
+
+```bash
+nagient plugin catalog list
+nagient plugin catalog install <plugin-id>
+nagient preflight
+nagient status
 ```
 
 ## Короткий набор команд

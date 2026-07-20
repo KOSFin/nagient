@@ -30,7 +30,9 @@ from nagient.domain.entities.agent_runtime import AgentTurnRequest
 from nagient.domain.entities.config_fields import ConfigFieldSpec
 from nagient.domain.entities.tooling import ToolExecutionRequest
 from nagient.infrastructure.manifests import release_to_dict
+from nagient.plugins.catalog import catalog_entry, catalog_payload
 from nagient.plugins.installer import (
+    PluginInstallError,
     install_plugin,
     list_installed_plugins,
     remove_plugin,
@@ -194,6 +196,37 @@ def build_parser() -> argparse.ArgumentParser:
     )
     plugin_remove_parser.add_argument("plugin_id")
     plugin_remove_parser.add_argument("--format", choices=("text", "json"), default="text")
+    plugin_catalog_parser = plugin_subparsers.add_parser(
+        "catalog",
+        help="Show verified plugins maintained by Nagient",
+    )
+    plugin_catalog_subparsers = plugin_catalog_parser.add_subparsers(
+        dest="catalog_command",
+    )
+    plugin_catalog_list_parser = plugin_catalog_subparsers.add_parser(
+        "list",
+        help="List the official plugin catalog (default action)",
+    )
+    plugin_catalog_list_parser.add_argument(
+        "--family",
+        choices=("transport", "provider", "tool"),
+        help="Only show one plugin family",
+    )
+    plugin_catalog_list_parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Include catalog entries not yet verified",
+    )
+    plugin_catalog_list_parser.add_argument("--format", choices=("text", "json"), default="text")
+    plugin_catalog_install_parser = plugin_catalog_subparsers.add_parser(
+        "install",
+        help="Install an external plugin referenced by the official catalog",
+    )
+    plugin_catalog_install_parser.add_argument("plugin_id")
+    plugin_catalog_install_parser.add_argument("--force", action="store_true")
+    plugin_catalog_install_parser.add_argument("--no-dependencies", action="store_true")
+    plugin_catalog_install_parser.add_argument("--upgrade-dependencies", action="store_true")
+    plugin_catalog_install_parser.add_argument("--format", choices=("text", "json"), default="text")
 
     init_parser = subparsers.add_parser("init", help="Write default runtime config files")
     init_parser.add_argument("--force", action="store_true")
@@ -603,16 +636,20 @@ def main(argv: list[str] | None = None) -> int:
         return _emit(payload, args.format, view="plugins")
 
     if args.command == "plugin" and args.plugin_command == "install":
-        result = install_plugin(
-            args.source,
-            plugins_dir=container.settings.plugins_dir,
-            providers_dir=container.settings.providers_dir,
-            tools_dir=container.settings.tools_dir,
-            ref=args.ref,
-            force=args.force,
-            install_dependencies=not args.no_dependencies,
-            upgrade_dependencies=args.upgrade_dependencies,
-        )
+        try:
+            result = install_plugin(
+                args.source,
+                plugins_dir=container.settings.plugins_dir,
+                providers_dir=container.settings.providers_dir,
+                tools_dir=container.settings.tools_dir,
+                ref=args.ref,
+                force=args.force,
+                install_dependencies=not args.no_dependencies,
+                upgrade_dependencies=args.upgrade_dependencies,
+            )
+        except PluginInstallError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 2
         return _emit(result.to_dict(), args.format)
 
     if args.command == "plugin" and args.plugin_command == "list":
@@ -624,13 +661,64 @@ def main(argv: list[str] | None = None) -> int:
         return _emit(payload, args.format)
 
     if args.command == "plugin" and args.plugin_command == "remove":
-        payload = remove_plugin(
-            args.plugin_id,
-            plugins_dir=container.settings.plugins_dir,
-            providers_dir=container.settings.providers_dir,
-            tools_dir=container.settings.tools_dir,
-        )
+        try:
+            payload = remove_plugin(
+                args.plugin_id,
+                plugins_dir=container.settings.plugins_dir,
+                providers_dir=container.settings.providers_dir,
+                tools_dir=container.settings.tools_dir,
+            )
+        except PluginInstallError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 2
         return _emit(payload, args.format)
+
+    if args.command == "plugin" and args.plugin_command == "catalog":
+        catalog_command = args.catalog_command or "list"
+        installed_ids = {
+            str(item.get("plugin_id"))
+            for item in list_installed_plugins(
+                plugins_dir=container.settings.plugins_dir,
+                providers_dir=container.settings.providers_dir,
+                tools_dir=container.settings.tools_dir,
+            )
+        }
+        if catalog_command == "list":
+            payload = catalog_payload(
+                family=getattr(args, "family", None),
+                verified_only=not bool(getattr(args, "all", False)),
+                installed_ids=installed_ids,
+            )
+            return _emit(payload, getattr(args, "format", "text"), view="plugin_catalog")
+
+        entry = catalog_entry(args.plugin_id)
+        if entry is None:
+            print(
+                f"Error: plugin {args.plugin_id!r} is not in the official catalog. "
+                "Run `nagient plugin catalog list`.",
+                file=sys.stderr,
+            )
+            return 2
+        if entry.bundled or entry.source == "builtin":
+            print(
+                f"{entry.plugin_id} is bundled with Nagient; no installation is needed.",
+                file=sys.stderr,
+            )
+            return 0
+        try:
+            result = install_plugin(
+                entry.source,
+                plugins_dir=container.settings.plugins_dir,
+                providers_dir=container.settings.providers_dir,
+                tools_dir=container.settings.tools_dir,
+                force=args.force,
+                install_dependencies=not args.no_dependencies,
+                upgrade_dependencies=args.upgrade_dependencies,
+            )
+        except PluginInstallError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 2
+        return _emit(result.to_dict(), args.format)
 
     if args.command == "doctor":
         payload = container.status_service.collect()
@@ -3631,6 +3719,8 @@ def _render_text(payload: Mapping[str, object], *, view: str, verbose: bool) -> 
         return _render_paths_summary(payload_dict)
     if view == "plugins":
         return _render_plugins_summary(payload_dict)
+    if view == "plugin_catalog":
+        return _render_plugin_catalog(payload_dict)
     if view == "chat":
         return _render_chat_summary(payload_dict)
     if view == "transport_test":
@@ -3722,6 +3812,42 @@ def _render_plugins_summary(payload: dict[str, object]) -> str:
             _append_line(lines, "Issues:")
             _append_issue_block(lines, issues, colors=colors)
 
+    return "\n".join(lines)
+
+
+def _render_plugin_catalog(payload: dict[str, object]) -> str:
+    colors = _supports_color()
+    lines = [_heading("Nagient Official Plugin Catalog", colors)]
+    count = _as_int(payload.get("count"))
+    verified_only = bool(payload.get("verified_only", True))
+    _append_line(
+        lines,
+        f"{count} verified plugin(s)" if verified_only else f"{count} catalog plugin(s)",
+    )
+    for raw in _as_list(payload.get("plugins")):
+        plugin = _as_dict(raw)
+        plugin_id = _as_text(plugin.get("plugin_id"))
+        if not plugin_id:
+            continue
+        family = _as_text(plugin.get("family"))
+        status = "installed" if _as_bool(plugin.get("installed")) else "bundled" if _as_bool(
+            plugin.get("bundled")
+        ) else "available"
+        verified = "verified" if _as_bool(plugin.get("verified")) else "community"
+        _append_line(
+            lines,
+            _join_parts(
+                plugin_id,
+                f"{family}, {status}, {verified}",
+                separator="  ",
+            ),
+        )
+        description = _as_text(plugin.get("description"))
+        if description:
+            _append_line(lines, f"  {description}")
+    if not _as_list(payload.get("plugins")):
+        _append_line(lines, "No catalog entries match the selected filter.")
+    _append_line(lines, "Install external entries with: nagient plugin catalog install <plugin-id>")
     return "\n".join(lines)
 
 

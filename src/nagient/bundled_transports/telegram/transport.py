@@ -80,6 +80,22 @@ class TelegramTransportPlugin(BaseTransportPlugin):
                     source=transport_id,
                 )
             )
+        for key, label in (
+            ("allowed_chat_ids", "allowed_chat_ids"),
+            ("allowed_user_ids", "allowed_user_ids"),
+            ("allowed_chat_types", "allowed_chat_types"),
+        ):
+            value = config.get(key, [])
+            if value and not _telegram_string_list(value):
+                issues.append(
+                    CheckIssue(
+                        severity="error",
+                        code=f"transport.telegram.invalid_{key}",
+                        message=f"Transport {transport_id!r} must use a list for {label}.",
+                        source=transport_id,
+                        hint="Use JSON/TOML arrays or a comma-separated environment value.",
+                    )
+                )
         proxy_url = config.get("proxy_url")
         proxy_username = config.get("proxy_username")
         proxy_password_secret = config.get("proxy_password_secret")
@@ -238,6 +254,36 @@ class TelegramTransportPlugin(BaseTransportPlugin):
         notification_payload.setdefault("disable_notification", True)
         return self.send_message(notification_payload)
 
+    def stream_message(self, payload: dict[str, object]) -> dict[str, object]:
+        """Send a message and progressively edit it for provider streaming output.
+
+        The runtime passes cumulative text snapshots as ``chunks``. Telegram rate
+        limits remain the caller's responsibility, so callers should batch provider
+        deltas before invoking this primitive.
+        """
+        chunks = payload.get("chunks")
+        if not isinstance(chunks, list):
+            raise ValueError("telegram.streamMessage requires a list in chunks.")
+        normalized = [str(chunk).strip() for chunk in chunks if str(chunk).strip()]
+        if not normalized:
+            raise ValueError("telegram.streamMessage requires at least one non-empty chunk.")
+        first_payload = dict(payload)
+        first_payload["text"] = normalized[0]
+        first_payload.pop("chunks", None)
+        sent = self.send_message(first_payload)
+        message_id = str(sent.get("message_id", ""))
+        for chunk in normalized[1:]:
+            edit_payload = dict(first_payload)
+            edit_payload["message_id"] = message_id
+            edit_payload["text"] = chunk
+            self.edit_message(edit_payload)
+        return {
+            "status": "streamed",
+            "chat_id": sent.get("chat_id", ""),
+            "message_id": message_id,
+            "updates": len(normalized),
+        }
+
     def normalize_inbound_event(self, payload: object) -> dict[str, object]:
         if not isinstance(payload, dict):
             return {"kind": "telegram", "event_type": "unknown", "payload": payload}
@@ -344,7 +390,9 @@ class TelegramTransportPlugin(BaseTransportPlugin):
             if update_ids:
                 self._last_update_ids[transport_id] = max(update_ids)
                 self._save_state(transport_id)
-        updates: list[object] = list(typed_updates)
+        updates: list[object] = [
+            update for update in typed_updates if _telegram_event_is_allowed(update, config)
+        ]
         return updates
 
     def healthcheck(
@@ -707,6 +755,42 @@ def _normalize_telegram_message_payload(
     if message_id is not None:
         normalized["message_id"] = str(message_id)
     return normalized
+
+
+def _telegram_event_is_allowed(update: Mapping[str, object], config: Mapping[str, object]) -> bool:
+    """Apply optional chat/user/type restrictions before an event reaches the agent."""
+    message = update.get("message") or update.get("edited_message")
+    if not isinstance(message, dict):
+        callback = update.get("callback_query")
+        message = callback.get("message") if isinstance(callback, dict) else None
+    if not isinstance(message, dict):
+        return False
+    chat = message.get("chat")
+    sender = message.get("from")
+    chat_id = str(chat.get("id", "")).strip() if isinstance(chat, dict) else ""
+    user_id = str(sender.get("id", "")).strip() if isinstance(sender, dict) else ""
+    chat_type = str(chat.get("type", "")).strip().lower() if isinstance(chat, dict) else ""
+    allowed_chats = set(_telegram_string_list(config.get("allowed_chat_ids", [])))
+    allowed_users = set(_telegram_string_list(config.get("allowed_user_ids", [])))
+    allowed_types = {
+        item.lower()
+        for item in _telegram_string_list(config.get("allowed_chat_types", []))
+    }
+    if allowed_chats and chat_id not in allowed_chats:
+        return False
+    if allowed_users and user_id not in allowed_users:
+        return False
+    if allowed_types and chat_type not in allowed_types:
+        return False
+    return True
+
+
+def _telegram_string_list(value: object) -> list[str]:
+    if isinstance(value, str):
+        return [part.strip() for part in value.split(",") if part.strip()]
+    if isinstance(value, (list, tuple, set)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return []
 
 
 def _telegram_parse_mode(

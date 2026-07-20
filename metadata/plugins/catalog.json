@@ -1,0 +1,52 @@
+{
+  "catalog": "official",
+  "version": 1,
+  "plugins": [
+    {
+      "plugin_id": "builtin.console",
+      "family": "transport",
+      "display_name": "Console Transport",
+      "description": "Local terminal transport; enabled by default for first-run setup.",
+      "source": "builtin",
+      "version": "0.1.0",
+      "verified": true,
+      "bundled": true,
+      "docs": "docs/commands.md#chat"
+    },
+    {
+      "plugin_id": "builtin.telegram",
+      "family": "transport",
+      "display_name": "Telegram Transport",
+      "description": "Telegram Bot API polling, replies, callbacks, and chat allowlists.",
+      "source": "builtin",
+      "version": "0.1.0",
+      "verified": true,
+      "bundled": true,
+      "docs": "docs/plugins.md#telegram",
+      "env": ["NAGIENT_TRANSPORT__TELEGRAM__BOT_TOKEN_SECRET", "TELEGRAM_BOT_TOKEN"]
+    },
+    {
+      "plugin_id": "builtin.webhook",
+      "family": "transport",
+      "display_name": "Webhook Transport",
+      "description": "HTTP webhook ingress for service-to-service integrations.",
+      "source": "builtin",
+      "version": "0.1.0",
+      "verified": true,
+      "bundled": true,
+      "docs": "docs/plugin-contracts.md"
+    },
+    {
+      "plugin_id": "github.api",
+      "family": "tool",
+      "display_name": "GitHub API",
+      "description": "Scoped GitHub issue, pull request, repository, and release operations.",
+      "source": "builtin",
+      "version": "0.1.0",
+      "verified": true,
+      "bundled": true,
+      "docs": "docs/plugins.md#github-api",
+      "env": ["NAGIENT_TOOL__GITHUB_API__TOKEN_SECRET", "GITHUB_TOKEN"]
+    }
+  ]
+}

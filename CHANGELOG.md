@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Reviewed plugin catalog with compact `nagient plugin catalog list|install` commands
+  and a published JSON manifest under `metadata/plugins/`.
+- Telegram chat, sender, and chat-type allowlists plus a `telegram.streamMessage`
+  primitive for progressively editing one reply message.
+- English and Russian plugin operations documentation, including the environment
+  naming contract for plugin-owned fields.
+
+### Changed
+
+- Git plugin install and removal failures now return concise CLI errors and exit code 2
+  instead of exposing a Python traceback to operators.
+
 ## [0.9.6] - 2026-07-18
 
 ### Fixed

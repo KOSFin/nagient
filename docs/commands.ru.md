@@ -48,6 +48,8 @@ nagient <command> [subcommand] [options]
 - `nagient help`
 - `nagient plugins [--format text|json]`
 - `nagient plugin install <url>[#ref]`, `nagient plugin list`, `nagient plugin remove <id>`
+- `nagient plugin catalog list [--family transport|provider|tool] [--format text|json]`
+- `nagient plugin catalog install <plugin-id> [--format text|json]`
 - `nagient status [--format text|json]`
 - `nagient doctor [--format text|json]`
 - `nagient paths [--format text|json]`
@@ -60,6 +62,11 @@ nagient <command> [subcommand] [options]
 `nagient setup` открывает интерактивный мастер настройки. Во всех меню `0` возвращает назад или завершает setup.
 
 `nagient plugins` показывает установленные provider, transport и tool plugins со статусом configured/enabled.
+
+`nagient plugin catalog list` — проверенная поверхность расширений. `bundled`
+означает, что код уже входит в пакет Nagient; внешнюю запись каталога можно
+установить по ID. `nagient plugin list` показывает только репозитории,
+установленные в runtime home.
 
 `nagient paths` показывает алиасы путей: `@home`, `@config`, `@secrets`, `@tool_secrets`, `@prompts`, `@plugins`, `@tools`, `@providers`, `@credentials`, `@state`, `@logs`, `@releases`. Эти алиасы можно использовать в setup и path-параметрах CLI.
 

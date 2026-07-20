@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["catalog", "version", "plugins"],
+  "properties": {
+    "catalog": { "const": "official" },
+    "version": { "type": "integer", "minimum": 1 },
+    "plugins": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["plugin_id", "family", "display_name", "description", "source", "version", "verified", "bundled"],
+        "properties": {
+          "plugin_id": { "type": "string", "minLength": 1 },
+          "family": { "enum": ["transport", "provider", "tool"] },
+          "display_name": { "type": "string" },
+          "description": { "type": "string" },
+          "source": { "type": "string" },
+          "version": { "type": "string" },
+          "verified": { "type": "boolean" },
+          "bundled": { "type": "boolean" },
+          "docs": { "type": "string" },
+          "env": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}

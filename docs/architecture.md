@@ -4,6 +4,17 @@ Language: English | [Русский](architecture.ru.md)
 
 Nagient is split into a narrow control surface and a centralized release/update model.
 
+## Portability And Dependency Policy
+
+The core intentionally uses Python's standard library for CLI, configuration,
+HTTP, process adapters, and persistence. This keeps the wheel small and makes
+the shell/PowerShell installers work on Python 3.11 and 3.12 without a native
+build toolchain. Optional integrations belong in plugins: their dependencies are
+installed into `<plugin>/.venv` and never force every Nagient installation to
+download Telegram, cloud SDK, or database stacks. A dependency is promoted into
+the core only when it is required by the activation path and has a clear
+cross-platform benefit.
+
 ## Layers
 
 - `nagient.app` wires settings and service objects.
@@ -67,6 +78,12 @@ The runtime treats transport plugins through one shared contract:
    `reply_target` whenever the transport supports replies.
 4. The runtime generates a reply through the selected provider and passes
    `{**reply_target, "text": "<reply>"}` into `send_message`.
+
+For transports that support progressive delivery, a plugin may expose a namespaced
+stream function (Telegram uses `telegram.streamMessage`). The runtime passes
+cumulative text snapshots; the transport owns message editing, chunk limits, and
+rate-limit batching. This keeps provider streaming independent of Telegram or any
+other transport API.
 
 ## Agent Runtime Core
 

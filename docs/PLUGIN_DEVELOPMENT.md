@@ -14,6 +14,15 @@ This guide teaches you how to create custom plugins for Nagient using the manife
 
 ## Plugin System Overview
 
+## Template Repository
+
+The maintained starter repository is `nagient-plugin-template`. It contains a
+minimal transport manifest, a Python implementation, contract tests, and CI for
+Python 3.11/3.12. Fork that repository for a new extension; do not copy a
+production Telegram or GitHub implementation and delete files by trial and error.
+Until it is published independently, the same template is available in the
+workspace next to the main checkout.
+
 ### Architecture
 
 Nagient uses a **manifest-driven plugin system**:

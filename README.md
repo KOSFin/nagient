@@ -1,5 +1,14 @@
 # Nagient
 
+```text
+███╗░░██╗░█████╗░░██████╗░██╗███████╗███╗░░██╗████████╗
+████╗░██║██╔══██╗██╔════╝░██║██╔════╝████╗░██║╚══██╔══╝
+██╔██╗██║███████║██║░░██╗░██║█████╗░░██╔██╗██║░░░██║░░░
+██║╚████║██╔══██╗██║░░╚██╗██║██╔══╝░░██║╚████║░░░██║░░░
+██║░╚███║██║██╔██║╚██████╔╝██║███████╗██║░╚███║░░░██║░░░
+╚═╝░░╚══╝╚═╝░░░╚═════╝░╚═╝╚══════╝╚═╝░░╚══╝░░░╚═╝░░░
+```
+
 [![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/Docker-native-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 [![CI](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF?logo=githubactions&logoColor=white)](.github/workflows/ci.yml)
@@ -63,6 +72,9 @@ Detailed documentation:
 
 - English index: [docs/README.md](docs/README.md)
 - Russian index: [docs/README.ru.md](docs/README.ru.md)
+- User Guide: [docs/user/README.md](docs/user/README.md)
+- Developer Guide: [docs/developer/README.md](docs/developer/README.md)
+- Official plugin catalog: [docs/plugins.md](docs/plugins.md) ([Русский](docs/plugins.ru.md))
 
 ## Upgrade and Remove
 
@@ -100,6 +112,18 @@ To remove all local runtime data, set `NAGIENT_PURGE=true` before running uninst
 nagient up
 nagient status
 nagient logs
+```
+
+## Plugin workflow
+
+Extensions are separate from the core runtime and can be reviewed before they
+are installed. The catalog is the shortest path for a new operator:
+
+```bash
+nagient plugin catalog list
+nagient plugin catalog install <plugin-id>
+nagient preflight
+nagient status
 ```
 
 ## Short Command Surface

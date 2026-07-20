@@ -10,6 +10,7 @@ from nagient.bundled_transports.console.transport import (
 )
 from nagient.bundled_transports.telegram.transport import (
     TelegramTransportPlugin,
+    _telegram_event_is_allowed,
 )
 from nagient.bundled_transports.telegram.transport import (
     build_plugin as build_telegram_plugin,
@@ -191,6 +192,39 @@ class TelegramTransportTests(unittest.TestCase):
             {"TELEGRAM_TOKEN": "123456:ABC-DEF"},
         )
         self.assertEqual(issues, [])
+
+    def test_validate_config_rejects_invalid_allowlist(self) -> None:
+        plugin = TelegramTransportPlugin()
+        issues = plugin.validate_config(
+            "telegram",
+            {
+                "bot_token_secret": "TELEGRAM_TOKEN",
+                "allowed_chat_ids": 123,
+            },
+            {"TELEGRAM_TOKEN": "123456:ABC-DEF"},
+        )
+        self.assertTrue(any("invalid_allowed_chat_ids" in issue.code for issue in issues))
+
+    def test_allowlist_can_restrict_group_and_sender(self) -> None:
+        update = {
+            "message": {
+                "chat": {"id": -1001, "type": "supergroup"},
+                "from": {"id": 42},
+            }
+        }
+        self.assertTrue(
+            _telegram_event_is_allowed(
+                update,
+                {
+                    "allowed_chat_ids": ["-1001"],
+                    "allowed_user_ids": ["42"],
+                    "allowed_chat_types": ["supergroup"],
+                },
+            )
+        )
+        self.assertFalse(
+            _telegram_event_is_allowed(update, {"allowed_user_ids": ["99"]})
+        )
 
 
 if __name__ == "__main__":

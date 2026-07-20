@@ -47,6 +47,10 @@ nagient <command> [subcommand] [options]
 - `nagient init [--force] [--format text|json]`
 - `nagient help`
 - `nagient plugins [--format text|json]`
+- `nagient plugin catalog list [--family transport|provider|tool] [--format text|json]`
+- `nagient plugin catalog install <plugin-id> [--format text|json]`
+- `nagient plugin install <url>[#ref] [--format text|json]`
+- `nagient plugin list|remove <id>`
 - `nagient status [--format text|json]`
 - `nagient doctor [--format text|json]`
 - `nagient paths [--format text|json]`
@@ -59,6 +63,11 @@ nagient <command> [subcommand] [options]
 `nagient setup` opens the interactive setup wizard. Every menu supports `0` to go back or exit.
 
 `nagient plugins` shows installed provider, transport, and tool plugins with configured/enabled status.
+
+`nagient plugin catalog list` is the reviewed extension surface. `bundled` means
+the code is already in the Nagient package; an external catalog entry can be
+installed by ID. `nagient plugin list` shows only repositories installed under
+the runtime home.
 
 `nagient paths` shows path aliases: `@home`, `@config`, `@secrets`, `@tool_secrets`, `@prompts`, `@plugins`, `@tools`, `@providers`, `@credentials`, `@state`, `@logs`, and `@releases`. These aliases can be used in setup prompts and path-oriented CLI flags.
 

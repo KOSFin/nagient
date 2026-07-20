@@ -69,6 +69,10 @@ container. For a custom path, set `NAGIENT_ENV_FILE` before `docker compose up`.
 
 ## 4. Dynamic provider, transport, and tool overrides
 
+Plugin-specific fields are documented by the plugin itself and can be inspected
+with `nagient plugin catalog list --format json`. The same naming rule applies to
+all extensions: `NAGIENT_<FAMILY>__<PLUGIN_ID>__<FIELD>`.
+
 Provider override:
 
 ```env
@@ -83,6 +87,9 @@ NAGIENT_TRANSPORT__TELEGRAM__PLUGIN=builtin.telegram
 NAGIENT_TRANSPORT__TELEGRAM__ENABLED=true
 NAGIENT_TRANSPORT__TELEGRAM__BOT_TOKEN_SECRET=TELEGRAM_BOT_TOKEN
 NAGIENT_TRANSPORT__TELEGRAM__DEFAULT_CHAT_ID=123456789
+NAGIENT_TRANSPORT__TELEGRAM__ALLOWED_CHAT_IDS=-1001234567890,123456789
+NAGIENT_TRANSPORT__TELEGRAM__ALLOWED_USER_IDS=123456789
+NAGIENT_TRANSPORT__TELEGRAM__ALLOWED_CHAT_TYPES=private,supergroup
 ```
 
 Tool override:

@@ -18,6 +18,11 @@ optional_config = [
   "proxy_url",
   "proxy_username",
   "proxy_password_secret",
+  "allowed_chat_ids",
+  "allowed_user_ids",
+  "allowed_chat_types",
+  "stream_updates",
+  "stream_edit_interval_seconds",
 ]
 secret_config = ["bot_token_secret", "proxy_password_secret"]
 custom_functions = [
@@ -28,6 +33,7 @@ custom_functions = [
   "telegram.deleteMessage",
   "telegram.setReaction",
   "telegram.showPopup",
+  "telegram.streamMessage",
 ]
 
 [[log_channels]]
@@ -94,6 +100,41 @@ help_text = "Network timeout for outbound Telegram API requests."
 value_type = "integer"
 category = "advanced"
 
+[[config_fields]]
+key = "allowed_chat_ids"
+label = "Allowed chat ids"
+help_text = "Optional comma-separated chat ids. When set, messages from other chats are ignored."
+value_type = "json"
+category = "connection"
+
+[[config_fields]]
+key = "allowed_user_ids"
+label = "Allowed user ids"
+help_text = "Optional comma-separated Telegram user ids. When set, other senders are ignored."
+value_type = "json"
+category = "connection"
+
+[[config_fields]]
+key = "allowed_chat_types"
+label = "Allowed chat types"
+help_text = "Optional list such as private, group, supergroup, or channel."
+value_type = "json"
+category = "connection"
+
+[[config_fields]]
+key = "stream_updates"
+label = "Stream updates"
+help_text = "Enable transport support for progressively edited Telegram replies."
+value_type = "boolean"
+category = "advanced"
+
+[[config_fields]]
+key = "stream_edit_interval_seconds"
+label = "Stream edit interval"
+help_text = "Minimum interval used by a caller when batching stream edits."
+value_type = "number"
+category = "advanced"
+
 [required_slots]
 send_message = "telegram.sendMessage"
 send_notification = "telegram.sendNotification"
@@ -120,3 +161,4 @@ stop = "telegram.stop"
 "telegram.deleteMessage" = "delete_message"
 "telegram.setReaction" = "set_reaction"
 "telegram.showPopup" = "show_popup"
+"telegram.streamMessage" = "stream_message"
