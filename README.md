@@ -62,6 +62,18 @@ docker compose exec nagient nagient status
 
 Full walkthrough: [docs/deploy.md](docs/deploy.md) ([Русский](docs/deploy.ru.md)).
 
+Docker is optional for personal computers. From a source checkout, use the
+lightweight local runtime installer:
+
+```bash
+bash scripts/install-local.sh --source .
+export PATH="$HOME/.nagient/bin:$PATH"
+nagient setup
+```
+
+The regular hosted installer remains Docker Compose based; see the [local
+runtime guide](docs/install.md#docker-free-local-runtime) for the distinction.
+
 After installation, use one short control command instead of long Docker Compose commands:
 
 ```bash

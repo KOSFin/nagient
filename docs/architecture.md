@@ -40,6 +40,17 @@ Safe mode is enabled by default. When it is disabled, the runtime may still star
 
 ## Plugin Runtime Contract
 
+## Bundled Versus External Plugins
+
+Bundled plugins are compatibility defaults, not a second installation source. They
+are loaded from `nagient/bundled_*` inside the wheel so first-run setup works
+offline. External repositories use separate IDs and are installed under the
+runtime home. Today Telegram and GitHub exist in both forms intentionally: the
+bundled IDs preserve existing configurations, while the reviewed repositories
+enable independent releases. Once an external replacement is stable, a future
+major release can retire the bundled copy behind a migration instead of silently
+breaking existing profiles.
+
 Custom provider, transport, and tool plugins can run as native Python modules or as external processes written in any language.
 
 - Python plugins use `runtime = "python"` and export `build_plugin()` from the configured entrypoint.

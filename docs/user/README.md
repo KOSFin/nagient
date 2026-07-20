@@ -8,6 +8,7 @@ Nagient. It does not require Python development knowledge.
 ## Start Here
 
 - [Install on Linux/macOS/Windows](../install.md)
+- [Run without Docker](../install.md#docker-free-local-runtime)
 - [Run with Docker Compose](../deploy.md)
 - [Find and install plugins](plugins.md)
 - [Configure secrets and environment variables](../env.md)

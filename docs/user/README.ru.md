@@ -8,6 +8,7 @@
 ## С чего начать
 
 - [Установка на Linux/macOS/Windows](../install.ru.md)
+- [Запуск без Docker](../install.ru.md#runtime-без-docker)
 - [Запуск через Docker Compose](../deploy.ru.md)
 - [Поиск и установка плагинов](plugins.ru.md)
 - [Секреты и переменные окружения](../env.ru.md)

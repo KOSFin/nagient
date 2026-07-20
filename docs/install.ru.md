@@ -86,7 +86,26 @@ powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagient.ps1" remove
 
 ## 5. Требования
 
-- Docker Engine 24+
-- Docker Compose v2
-- Linux/macOS: `bash` + `curl`/`wget`
-- Windows: PowerShell 7+
+Для обычного установщика нужны Docker Engine 24+, Docker Compose v2 и
+`bash`/`curl` на Linux/macOS либо PowerShell 7+ на Windows.
+
+Для установки без Docker нужны Python 3.11+ и `bash` на Linux/macOS либо
+PowerShell 7+ на Windows. Docker в этом режиме не требуется.
+
+## 6. Runtime без Docker
+
+Обычный release-установщик использует Docker Compose. Если на персональном
+компьютере Docker недоступен, установите runtime напрямую из checkout:
+
+```bash
+bash scripts/install-local.sh --home "$HOME/.nagient" --source .
+export PATH="$HOME/.nagient/bin:$PATH"
+nagient setup
+nagient status
+```
+
+Скрипт создаёт virtualenv Python 3.11+, хранит состояние в `~/.nagient` и
+запускает `nagient serve` как фоновый процесс. Docker не нужен; при запуске из
+source checkout build-зависимости не скачиваются. Управление: `nagient
+start|stop|restart|logs`. В Windows используйте `scripts/install-local.ps1` из
+PowerShell.

@@ -70,6 +70,18 @@ docker compose up -d        # CLI и правка сгенерированных
 
 Полное руководство: [docs/deploy.ru.md](docs/deploy.ru.md).
 
+Docker не обязателен на персональном компьютере. Из checkout репозитория можно
+поставить лёгкий локальный runtime:
+
+```bash
+bash scripts/install-local.sh --source .
+export PATH="$HOME/.nagient/bin:$PATH"
+nagient setup
+```
+
+Обычный hosted-установщик по-прежнему использует Docker Compose; различия описаны
+в [руководстве локального runtime](docs/install.ru.md#runtime-без-docker).
+
 Установка внешних Git-плагинов через Compose описана в разделе
 [«Внешние плагины»](docs/deploy.ru.md#5-установка-внешних-плагинов).
 
