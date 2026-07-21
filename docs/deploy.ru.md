@@ -72,7 +72,7 @@ NAGIENT_TRANSPORT__TELEGRAM__BOT_TOKEN_SECRET=TELEGRAM_BOT_TOKEN
 NAGIENT_TRANSPORT__TELEGRAM__DEFAULT_CHAT_ID=123456789
 TELEGRAM_BOT_TOKEN=123456:ABC...
 
-NAGIENT_PLUGIN_SPECS=https://github.com/KOSFin/nagient-transport-telegram.git#v0.2.0
+NAGIENT_PLUGIN_SPECS=https://github.com/KOSFin/nagient-transport-telegram.git#v0.2.1
 ```
 
 Если серверу нужен прокси для Telegram, добавьте в `.env`:
@@ -115,7 +115,7 @@ docker compose logs -f nagient
 В `.env` можно перечислить Git-репозитории:
 
 ```dotenv
-NAGIENT_PLUGIN_SPECS=https://github.com/KOSFin/nagient-transport-telegram.git#v0.2.0,https://github.com/KOSFin/nagient-tool-github-api.git#v0.2.0
+NAGIENT_PLUGIN_SPECS=https://github.com/KOSFin/nagient-transport-telegram.git#v0.2.1,https://github.com/KOSFin/nagient-tool-github-api.git#v0.2.1
 ```
 
 При первом запуске entrypoint клонирует репозитории, проверяет манифест и

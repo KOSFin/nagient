@@ -258,7 +258,7 @@ class CliTests(unittest.TestCase):
             install.call_args.args[0],
             "https://github.com/KOSFin/nagient-transport-telegram.git",
         )
-        self.assertEqual(install.call_args.kwargs["ref"], "v0.2.0")
+        self.assertEqual(install.call_args.kwargs["ref"], "v0.2.1")
 
     def test_render_text_views_are_structured(self) -> None:
         payload = _status_payload(

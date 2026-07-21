@@ -1315,20 +1315,47 @@ def _streamed_message_preview(raw_response: str) -> str:
     match = re.search(r'"message"\s*:\s*"', raw_response)
     if match is None:
         return ""
-    fragment = raw_response[match.end() :]
-    try:
-        value = json.loads('"' + fragment + '"')
-        return value if isinstance(value, str) else ""
-    except json.JSONDecodeError:
-        # Keep incomplete escaped JSON out of the transport until the next token.
-        last_quote = fragment.rfind('"')
-        if last_quote <= 0:
-            return ""
+    return _decode_partial_json_string(raw_response[match.end() :])
+
+
+def _decode_partial_json_string(fragment: str) -> str:
+    """Decode the available prefix of a JSON string without waiting for its closing quote."""
+    decoded: list[str] = []
+    index = 0
+    while index < len(fragment):
+        character = fragment[index]
+        if character == '"':
+            break
+        if character != "\\":
+            decoded.append(character)
+            index += 1
+            continue
+        if index + 1 >= len(fragment):
+            break
+        escape = fragment[index + 1]
+        simple_escapes = {
+            '"': '"',
+            "\\": "\\",
+            "/": "/",
+            "b": "\b",
+            "f": "\f",
+            "n": "\n",
+            "r": "\r",
+            "t": "\t",
+        }
+        if escape in simple_escapes:
+            decoded.append(simple_escapes[escape])
+            index += 2
+            continue
+        if escape != "u" or index + 6 > len(fragment):
+            break
+        hex_value = fragment[index + 2 : index + 6]
         try:
-            value = json.loads('"' + fragment[:last_quote] + '"')
-            return value if isinstance(value, str) else ""
-        except json.JSONDecodeError:
-            return ""
+            decoded.append(chr(int(hex_value, 16)))
+        except ValueError:
+            break
+        index += 6
+    return "".join(decoded)
 
 
 def _tool_input_schema_with_approval_context(

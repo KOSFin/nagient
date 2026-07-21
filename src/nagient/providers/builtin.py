@@ -498,6 +498,10 @@ class HttpProviderPlugin(BaseProviderPlugin):
             query=query,
             timeout=_timeout_seconds(config),
         )
+        if not collected:
+            raise ProviderHttpError(
+                "OpenAI-compatible provider returned no streaming content."
+            )
         return "".join(collected)
 
     def _secret_name(self, config: Mapping[str, object]) -> str | None:

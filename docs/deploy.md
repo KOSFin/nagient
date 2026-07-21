@@ -51,7 +51,7 @@ NAGIENT_TRANSPORT__TELEGRAM__BOT_TOKEN_SECRET=TELEGRAM_BOT_TOKEN
 NAGIENT_TRANSPORT__TELEGRAM__DEFAULT_CHAT_ID=123456789
 TELEGRAM_BOT_TOKEN=123456:ABC...
 
-NAGIENT_PLUGIN_SPECS=https://github.com/KOSFin/nagient-transport-telegram.git#v0.2.0
+NAGIENT_PLUGIN_SPECS=https://github.com/KOSFin/nagient-transport-telegram.git#v0.2.1
 ```
 
 The compose service loads the entire `.env` into the container. You do not need
@@ -62,7 +62,7 @@ to run `nagient setup`, edit TOML, or edit a generated secrets file.
 For unattended deployment, list pinned Git repositories in `.env`:
 
 ```dotenv
-NAGIENT_PLUGIN_SPECS=https://github.com/KOSFin/nagient-transport-telegram.git#v0.2.0,https://github.com/KOSFin/nagient-tool-github-api.git#v0.2.0
+NAGIENT_PLUGIN_SPECS=https://github.com/KOSFin/nagient-transport-telegram.git#v0.2.1,https://github.com/KOSFin/nagient-tool-github-api.git#v0.2.1
 ```
 
 On first boot, the entrypoint clones each repository, validates its manifest,

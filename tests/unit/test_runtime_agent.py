@@ -19,6 +19,7 @@ class _FakePollingTransport(BaseTransportPlugin):
         return {
             "kind": "fake",
             "event_type": "message",
+            "session_id": "fake:demo",
             "text": str(payload),
             "reply_target": {"channel_id": "demo"},
             "payload": {"raw": payload},
@@ -87,6 +88,7 @@ class RuntimeAgentTests(unittest.TestCase):
             self.assertEqual(len(plugin.sent_payloads), 1)
             self.assertEqual(plugin.sent_payloads[0]["channel_id"], "demo")
             self.assertEqual(plugin.sent_payloads[0]["text"], "fake:hello")
+            self.assertIsInstance(plugin.sent_payloads[0]["_stream_draft_id"], int)
             runtime_log = log_path.read_text(encoding="utf-8")
             self.assertIn("dispatching message to agent handler", runtime_log)
             self.assertIn("Agent handler returned reply", runtime_log)

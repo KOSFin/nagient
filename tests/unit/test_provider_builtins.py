@@ -39,6 +39,43 @@ def _response(payload: dict[str, Any]) -> _FakeResponse:
 
 
 class ProviderBuiltinsTests(unittest.TestCase):
+    def test_openai_builtin_streams_sse_content(self) -> None:
+        plugin = cast(
+            Any,
+            next(
+                provider.implementation
+                for provider in builtin_providers()
+                if provider.manifest.plugin_id == "builtin.openai"
+            ),
+        )
+
+        class _StreamingHttpClient:
+            def __init__(self, case: unittest.TestCase) -> None:
+                self.assertTrue = case.assertTrue
+
+            def post_sse(self, url: str, payload: dict[str, Any], **kwargs: Any) -> None:
+                self.assertTrue(url.endswith("/chat/completions"))
+                self.assertTrue(payload["stream"])
+                callback = kwargs["on_event"]
+                callback('{"choices":[{"delta":{"content":"{\\\"message\\\":\\\"Hel"}}]}')
+                callback('{"choices":[{"delta":{"content":"lo\\\"}"}}]}')
+                callback("[DONE]")
+
+        plugin = replace(plugin, http_client=cast(Any, _StreamingHttpClient(self)))
+        snapshots: list[str] = []
+
+        result = plugin.generate_message_stream(
+            "openai",
+            {"auth": "api_key", "api_key_secret": "OPENAI_API_KEY", "model": "demo"},
+            {"OPENAI_API_KEY": "sk-test"},
+            None,
+            message="hello",
+            on_delta=snapshots.append,
+        )
+
+        self.assertEqual(result, '{"message":"Hello"}')
+        self.assertEqual(snapshots, ['{"message":"Hel', '{"message":"Hello"}'])
+
     def test_openai_builtin_parses_model_listing(self) -> None:
         plugin = cast(
             Any,

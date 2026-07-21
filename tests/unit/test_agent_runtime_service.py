@@ -10,6 +10,7 @@ from unittest.mock import Mock
 from nagient.app.configuration import load_runtime_configuration
 from nagient.app.container import build_container
 from nagient.app.settings import Settings
+from nagient.application.services.agent_runtime_service import _streamed_message_preview
 from nagient.application.services.transport_router_service import TransportRouterService
 from nagient.domain.entities.agent_runtime import (
     AssistantResponse,
@@ -70,6 +71,16 @@ class _RecordingTransportRouter:
 
 
 class AgentRuntimeServiceTests(unittest.TestCase):
+    def test_stream_preview_decodes_an_unclosed_json_message(self) -> None:
+        self.assertEqual(
+            _streamed_message_preview('{"message":"Privet\\n\\u041c"'),
+            "Privet\nМ",
+        )
+        self.assertEqual(
+            _streamed_message_preview('{ "message" : "partial \\"quote"'),
+            'partial "quote',
+        )
+
     def test_runtime_can_send_deferred_tool_reply_without_follow_up(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             home_dir = Path(temp_dir) / "home"

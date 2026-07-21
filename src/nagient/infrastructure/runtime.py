@@ -4,6 +4,7 @@ import json
 import signal
 import threading
 import time
+import zlib
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -558,6 +559,11 @@ class RuntimeAgent:
 
         reply_payload = dict(reply_target)
         reply_payload["text"] = reply_text
+        session_id = str(normalized.get("session_id", "")).strip()
+        if session_id:
+            # A draft-capable transport can use this stable id to finalize an
+            # edit fallback instead of emitting a duplicate final message.
+            reply_payload["_stream_draft_id"] = zlib.crc32(session_id.encode("utf-8")) or 1
         reply_payload["_transport_config"] = dict(transport.config)
         reply_payload["_transport_id"] = transport.transport_id
         reply_payload["_transport_secrets"] = _transport_scoped_secrets(

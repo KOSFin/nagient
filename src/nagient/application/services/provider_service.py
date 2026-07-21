@@ -297,7 +297,35 @@ class ProviderService:
             generate = generate_message
             if stream_callback is not None and callable(generate_stream):
                 def generate_streaming(*args: object, **kwargs: object) -> object:
-                    return generate_stream(*args, **kwargs, on_delta=stream_callback)
+                    try:
+                        streamed = generate_stream(*args, **kwargs, on_delta=stream_callback)
+                    except Exception as exc:
+                        self._log(
+                            "warning",
+                            "provider.generate_stream_fallback",
+                            "Provider streaming failed; retrying the turn without streaming.",
+                            provider_id=provider_config.provider_id,
+                            plugin_id=provider_config.plugin_id,
+                            session_id=session_id,
+                            transport_id=transport_id,
+                            error=str(exc),
+                        )
+                        return generate_message(*args, **kwargs)
+                    if isinstance(streamed, str) and streamed.strip():
+                        return streamed
+                    self._log(
+                        "warning",
+                        "provider.generate_stream_fallback",
+                        (
+                            "Provider streaming returned no content; retrying the turn "
+                            "without streaming."
+                        ),
+                        provider_id=provider_config.provider_id,
+                        plugin_id=provider_config.plugin_id,
+                        session_id=session_id,
+                        transport_id=transport_id,
+                    )
+                    return generate_message(*args, **kwargs)
 
                 generate = generate_streaming
             response_text = self._call_with_captured_provider_output(

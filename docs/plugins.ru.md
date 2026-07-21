@@ -90,7 +90,7 @@ docker compose restart nagient
 Для автоматической установки при первом запуске закрепите источники в `.env`:
 
 ```env
-NAGIENT_PLUGIN_SPECS=https://github.com/KOSFin/nagient-transport-telegram.git#v0.2.0,https://github.com/KOSFin/nagient-tool-github-api.git#v0.2.0
+NAGIENT_PLUGIN_SPECS=https://github.com/KOSFin/nagient-transport-telegram.git#v0.2.1,https://github.com/KOSFin/nagient-tool-github-api.git#v0.2.1
 ```
 
 Установленные плагины сохраняются в постоянном mount `./data` после перезапуска контейнера.

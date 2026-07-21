@@ -72,7 +72,7 @@ NAGIENT_AGENT_REQUIRE_PROVIDER=false
 
 # Установка внешних плагинов при первом запуске контейнера.
 # Один репозиторий на элемент, разделитель — запятая. Фиксируйте tag/commit.
-# NAGIENT_PLUGIN_SPECS=https://github.com/KOSFin/nagient-transport-telegram.git#v0.2.0
+# NAGIENT_PLUGIN_SPECS=https://github.com/KOSFin/nagient-transport-telegram.git#v0.2.1
 
 # GitHub API — внешний плагин. Добавьте его репозиторий в NAGIENT_PLUGIN_SPECS.
 # NAGIENT_TOOL__GITHUB_API__PLUGIN=nagient.github_api
