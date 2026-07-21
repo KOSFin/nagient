@@ -156,6 +156,10 @@ class Settings:
     heartbeat_interval_seconds: int
     docker_project_name: str
     safe_mode: bool
+    control_panel_enabled: bool
+    control_panel_bind_address: str
+    control_panel_port: int
+    control_panel_password: str
 
     @classmethod
     def from_env(cls, environ: dict[str, str] | None = None) -> Settings:
@@ -289,6 +293,14 @@ class Settings:
                     file_values.get("safe_mode", "true"),
                 )
             ),
+            control_panel_enabled=_parse_bool(
+                env.get("NAGIENT_CONTROL_PANEL_ENABLED", "false")
+            ),
+            control_panel_bind_address=env.get(
+                "NAGIENT_CONTROL_PANEL_BIND_ADDRESS", "127.0.0.1"
+            ),
+            control_panel_port=int(env.get("NAGIENT_CONTROL_PANEL_PORT", "8787")),
+            control_panel_password=env.get("NAGIENT_CONTROL_PANEL_PASSWORD", ""),
         )
 
     def ensure_directories(self) -> None:
@@ -328,6 +340,9 @@ class Settings:
             "heartbeat_interval_seconds": str(self.heartbeat_interval_seconds),
             "docker_project_name": self.docker_project_name,
             "safe_mode": str(self.safe_mode).lower(),
+            "control_panel_enabled": str(self.control_panel_enabled).lower(),
+            "control_panel_bind_address": self.control_panel_bind_address,
+            "control_panel_port": str(self.control_panel_port),
         }
 
 

@@ -23,6 +23,7 @@ class AgentTurnService:
                 batch_id=call.request.batch_id,
                 session_id=request.context.session_id,
                 transport_id=request.context.transport_id,
+                requester_id=_requester_id(request.context.metadata),
                 auto_approve=call.request.auto_approve,
             )
             for call in request.assistant_response.tool_calls
@@ -56,7 +57,7 @@ class AgentTurnService:
                     status=item.status,
                     created_at=item.created_at,
                     action=item.action,
-                    metadata=item.metadata,
+                    metadata=_approval_metadata(item.metadata, request.context.metadata),
                 )
             )
             for item in request.assistant_response.approval_requests
@@ -74,3 +75,20 @@ class AgentTurnService:
             config_mutations=request.assistant_response.config_mutations,
             checkpoint_id=checkpoint_id,
         )
+
+
+def _approval_metadata(
+    metadata: dict[str, object],
+    event_metadata: dict[str, object],
+) -> dict[str, object]:
+    """Persist the requesting principal so a callback cannot cross user boundaries."""
+    result = dict(metadata)
+    sender_id = event_metadata.get("sender_id")
+    if sender_id is not None:
+        result.setdefault("requester_sender_id", str(sender_id))
+    return result
+
+
+def _requester_id(event_metadata: dict[str, object]) -> str | None:
+    sender_id = event_metadata.get("sender_id")
+    return str(sender_id) if sender_id is not None else None

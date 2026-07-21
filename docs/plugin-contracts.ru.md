@@ -53,6 +53,14 @@ send_message_hint = "Опциональная подсказка для аген
 
 Так router может описывать кастомные транспорты без hardcode по plugin id.
 
+### Interaction capabilities
+
+`interaction_capabilities` объявляет доступный UX, а `interaction_functions`
+сопоставляет capability с exposed-функцией. Например, `approval.inline`,
+`approval.callback`, `activity.typing` и `stream.draft`. Если inline capability
+нет, core использует текстовый approval fallback; transport владеет своим API,
+rate limit и rendering.
+
 ## Tool plugins
 
 Tool plugin содержит:

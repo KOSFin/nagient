@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from types import TracebackType
 from typing import Protocol, cast
@@ -120,6 +120,51 @@ class JsonHttpClient:
             method="POST",
         )
         return self._open_json(request, timeout or self.default_timeout)
+
+    def post_sse(
+        self,
+        url: str,
+        payload: object,
+        *,
+        on_event: Callable[[str], None],
+        headers: Mapping[str, str] | None = None,
+        query: Mapping[str, str] | None = None,
+        timeout: float | None = None,
+    ) -> None:
+        request_headers = {
+            "Accept": "text/event-stream",
+            "Content-Type": "application/json",
+            **dict(headers or {}),
+        }
+        request = Request(
+            _merge_query(url, query or {}),
+            data=json.dumps(payload).encode("utf-8"),
+            headers=request_headers,
+            method="POST",
+        )
+        try:
+            with self.opener(request, timeout=timeout or self.default_timeout) as response:
+                readline = getattr(response, "readline", None)
+                if not callable(readline):
+                    raise ProviderHttpError("Provider response does not support streaming.")
+                while True:
+                    line = readline()
+                    if not line:
+                        break
+                    decoded = line.decode("utf-8", errors="replace").strip()
+                    if decoded.startswith("data:"):
+                        on_event(decoded[5:].strip())
+        except HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")[:400]
+            raise ProviderHttpError(f"HTTP {exc.code} from {request.full_url}: {body}") from exc
+        except URLError as exc:
+            raise ProviderHttpError(
+                f"Failed to reach {request.full_url}: {exc.reason}"
+            ) from exc
+        except TimeoutError as exc:
+            raise ProviderHttpError(
+                f"Timed out while waiting for {request.full_url}: {exc}"
+            ) from exc
 
     def _open_json(self, request: Request, timeout: float) -> object:
         try:

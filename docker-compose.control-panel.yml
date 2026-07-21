@@ -1,0 +1,6 @@
+# Optional localhost-only operator panel overlay.
+# docker compose -f docker-compose.yml -f docker-compose.control-panel.yml up -d
+services:
+  nagient:
+    ports:
+      - "${NAGIENT_CONTROL_PANEL_BIND_ADDRESS:-127.0.0.1}:${NAGIENT_CONTROL_PANEL_PORT:-8787}:8787"

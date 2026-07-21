@@ -453,6 +453,53 @@ class HttpProviderPlugin(BaseProviderPlugin):
         )
         return _parse_openai_chat_message(payload, provider_id)
 
+    def generate_message_stream(
+        self,
+        provider_id: str,
+        config: Mapping[str, object],
+        secrets: Mapping[str, str],
+        credential: CredentialRecord | None,
+        *,
+        message: str,
+        system_prompt: str | None = None,
+        on_delta: Callable[[str], None],
+    ) -> str:
+        """Stream OpenAI-compatible chat-completion content as raw structured JSON."""
+        if not self._chat_url(config).endswith("/chat/completions"):
+            raise ValueError("This provider endpoint does not support OpenAI chat streaming.")
+        model = _require_model(provider_id, config)
+        headers, query = self._build_request_auth(config, secrets, credential)
+        messages: list[dict[str, object]] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": message})
+        collected: list[str] = []
+
+        def consume(event: str) -> None:
+            if event == "[DONE]":
+                return
+            try:
+                payload = json.loads(event)
+                choices = payload.get("choices", [])
+                first = choices[0] if isinstance(choices, list) and choices else {}
+                delta = first.get("delta", {}) if isinstance(first, dict) else {}
+                content = delta.get("content", "") if isinstance(delta, dict) else ""
+            except (json.JSONDecodeError, TypeError, AttributeError):
+                return
+            if isinstance(content, str) and content:
+                collected.append(content)
+                on_delta("".join(collected))
+
+        self.http_client.post_sse(
+            self._chat_url(config),
+            {"model": model, "messages": messages, "stream": True},
+            on_event=consume,
+            headers=headers,
+            query=query,
+            timeout=_timeout_seconds(config),
+        )
+        return "".join(collected)
+
     def _secret_name(self, config: Mapping[str, object]) -> str | None:
         secret_name = _string_config(config, "api_key_secret")
         if secret_name is not None:

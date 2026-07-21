@@ -19,6 +19,7 @@ from nagient.application.services.transport_router_service import TransportRoute
 from nagient.application.services.update_service import UpdateService
 from nagient.application.services.workflow_service import WorkflowService
 from nagient.backups.manager import BackupManager
+from nagient.infrastructure.control_panel import ControlPanel
 from nagient.infrastructure.logging import RuntimeLogger
 from nagient.infrastructure.registry import ManifestRegistry
 from nagient.infrastructure.runtime import RuntimeAgent
@@ -176,17 +177,23 @@ def build_container(settings: Settings | None = None) -> AppContainer:
             event,
         )
 
+    status_service = StatusService(
+        settings=resolved_settings,
+        update_service=update_service,
+        secret_broker=secret_broker,
+        workflow_store=workflow_store,
+        workspace_manager=workspace_manager,
+    )
+    control_panel = ControlPanel(
+        settings=resolved_settings,
+        status_provider=status_service.collect,
+    )
+
     return AppContainer(
         settings=resolved_settings,
         registry=registry,
         health_service=HealthService(resolved_settings),
-        status_service=StatusService(
-            settings=resolved_settings,
-            update_service=update_service,
-            secret_broker=secret_broker,
-            workflow_store=workflow_store,
-            workspace_manager=workspace_manager,
-        ),
+        status_service=status_service,
         update_service=update_service,
         configuration_service=ConfigurationService(
             resolved_settings,
@@ -223,6 +230,7 @@ def build_container(settings: Settings | None = None) -> AppContainer:
             workspace_manager=workspace_manager,
             scheduler_service=scheduler_service,
             scheduled_job_handler=agent_runtime_service.handle_scheduled_job,
+            control_panel=control_panel,
         ),
     )
 

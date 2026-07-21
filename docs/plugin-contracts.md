@@ -56,6 +56,26 @@ send_message_hint = "Optional custom hint shown to the agent and CLI."
 If this metadata is present, the router can describe custom transports without hardcoding
 plugin ids.
 
+### Interaction capabilities
+
+Declare optional user-experience features instead of making the core test a transport
+name. `interaction_capabilities` tells the runtime what it may offer; the paired
+`interaction_functions` table maps a capability to an exposed function:
+
+```toml
+interaction_capabilities = ["approval.inline", "approval.callback", "activity.typing"]
+
+[interaction_functions]
+"approval.callback.answer" = "vendor.answerCallback"
+"approval.callback.edit" = "vendor.editMessage"
+"activity.typing" = "vendor.sendTyping"
+```
+
+The core falls back to a textual approval when `approval.inline` is absent. A transport
+that supports native drafts can declare `stream.draft`; the core may use it for live
+delivery and must still send a final durable message. Plugins own API-specific limits,
+throttling, media, and rendering.
+
 ## Tool plugins
 
 Tool plugins live in a directory with:

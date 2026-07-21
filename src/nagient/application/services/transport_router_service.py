@@ -39,6 +39,9 @@ class TransportRouterService:
                     "custom_functions": (
                         list(plugin.manifest.custom_functions) if plugin else []
                     ),
+                    "interaction_capabilities": (
+                        list(plugin.manifest.interaction_capabilities) if plugin else []
+                    ),
                     "default_target_available": (
                         self._default_target_available(transport, plugin)
                         if plugin
@@ -125,13 +128,11 @@ class TransportRouterService:
             transport,
             dict(payload),
         )
-        for function_name in (
-            f"{plugin.manifest.namespace}.sendTyping",
-            f"{plugin.manifest.namespace}.sendChatAction",
-        ):
-            if function_name not in plugin.manifest.function_bindings:
+        for capability in ("activity.typing", "activity.chat_action"):
+            function_name = plugin.manifest.interaction_functions.get(capability)
+            if function_name is None:
                 continue
-            if function_name.endswith("sendChatAction"):
+            if capability == "activity.chat_action":
                 prepared_payload.setdefault("action", "typing")
             function = self._resolve_bound_function(plugin, function_name)
             result = function(prepared_payload)
@@ -148,6 +149,19 @@ class TransportRouterService:
         raise ValueError(
             f"Transport {transport_id!r} does not expose a typing capability."
         )
+
+    def supports_interaction(self, *, transport_id: str, capability: str) -> bool:
+        _, _, plugin = self._resolve_transport(transport_id)
+        return capability in plugin.manifest.interaction_capabilities
+
+    def interaction_function(
+        self,
+        *,
+        transport_id: str,
+        capability: str,
+    ) -> str | None:
+        _, _, plugin = self._resolve_transport(transport_id)
+        return plugin.manifest.interaction_functions.get(capability)
 
     def _invoke_standard(
         self,

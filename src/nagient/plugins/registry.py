@@ -201,6 +201,12 @@ class TransportPluginRegistry:
                 payload.get("default_target_always_available", False),
             ),
             send_message_hint=_optional_string(payload.get("send_message_hint")),
+            interaction_capabilities=_require_string_list(
+                payload.get("interaction_capabilities")
+            ),
+            interaction_functions=_require_string_mapping_or_empty(
+                payload.get("interaction_functions")
+            ),
             log_channels=_parse_log_channels(payload.get("log_channels")),
         )
 
@@ -248,6 +254,32 @@ class TransportPluginRegistry:
                             f"{exposed_name!r} without a matching binding."
                         ),
                         source=manifest.plugin_id,
+                )
+            )
+
+        for capability, exposed_name in manifest.interaction_functions.items():
+            if capability not in manifest.interaction_capabilities:
+                issues.append(
+                    CheckIssue(
+                        severity="error",
+                        code="plugin.interaction_function_without_capability",
+                        message=(
+                            f"Plugin {manifest.plugin_id!r} maps interaction capability "
+                            f"{capability!r} without declaring it."
+                        ),
+                        source=manifest.plugin_id,
+                    )
+                )
+            if exposed_name not in manifest.function_bindings:
+                issues.append(
+                    CheckIssue(
+                        severity="error",
+                        code="plugin.interaction_function_not_bound",
+                        message=(
+                            f"Plugin {manifest.plugin_id!r} maps interaction capability "
+                            f"{capability!r} to unknown function {exposed_name!r}."
+                        ),
+                        source=manifest.plugin_id,
                     )
                 )
 
@@ -288,6 +320,22 @@ def _require_string_mapping(payload: dict[str, object], key: str) -> dict[str, s
             msg = f"Plugin field {key!r} must contain only string pairs."
             raise ValueError(msg)
         mapping[item_key] = item_value
+    return mapping
+
+
+def _require_string_mapping_or_empty(value: object) -> dict[str, str]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        msg = "Plugin interaction_functions must be a table."
+        raise ValueError(msg)
+    mapping: dict[str, str] = {}
+    for key, item in value.items():
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError("Plugin interaction function keys must be non-empty strings.")
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError("Plugin interaction function values must be non-empty strings.")
+        mapping[key.strip()] = item.strip()
     return mapping
 
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import UTC, datetime
 
-from nagient.app.configuration import read_raw_config, write_raw_config
+from nagient.app.configuration import load_runtime_configuration, read_raw_config, write_raw_config
 from nagient.application.services.scheduler_service import SchedulerService, run_at_after
 from nagient.application.services.session_memory_service import SessionMemoryService
 from nagient.application.services.transport_router_service import TransportRouterService
@@ -751,6 +751,18 @@ class SystemConfigToolPlugin(BaseToolPlugin):
                 permissions=["config.read"],
             ),
             ToolFunctionManifest(
+                function_name="system.config.inspect_runtime",
+                binding="inspect_runtime",
+                description=(
+                    "Inspect which configured providers, transports, and tools are installed, "
+                    "enabled, and expose which capabilities. Use this before claiming an "
+                    "account or plugin is unavailable."
+                ),
+                input_schema={"type": "object", "properties": {}, "additionalProperties": False},
+                output_schema={"type": "object"},
+                permissions=["config.read"],
+            ),
+            ToolFunctionManifest(
                 function_name="system.config.patch",
                 binding="patch_config",
                 description="Patch one runtime config path after approval.",
@@ -782,6 +794,62 @@ class SystemConfigToolPlugin(BaseToolPlugin):
         return {
             "config_file": str(context.settings.config_file),
             "config": read_raw_config(context.settings.config_file),
+        }
+
+    def inspect_runtime(
+        self,
+        arguments: Mapping[str, object],
+        context: ToolExecutionContext,
+    ) -> dict[str, object]:
+        del arguments
+        # Imports stay local to avoid a registry -> builtin -> registry import cycle.
+        from nagient.plugins.registry import TransportPluginRegistry
+        from nagient.providers.registry import ProviderPluginRegistry
+        from nagient.tools.registry import ToolPluginRegistry
+
+        runtime = load_runtime_configuration(context.settings)
+        transports = TransportPluginRegistry().discover(context.settings.plugins_dir).plugins
+        providers = ProviderPluginRegistry().discover(context.settings.providers_dir).plugins
+        tools = ToolPluginRegistry().discover(context.settings.tools_dir).plugins
+        return {
+            "transports": [
+                {
+                    "id": profile.transport_id,
+                    "plugin_id": profile.plugin_id,
+                    "enabled": profile.enabled,
+                    "installed": profile.plugin_id in transports,
+                    "interaction_capabilities": list(
+                        transports[profile.plugin_id].manifest.interaction_capabilities
+                    )
+                    if profile.plugin_id in transports
+                    else [],
+                }
+                for profile in runtime.transports
+            ],
+            "providers": [
+                {
+                    "id": profile.provider_id,
+                    "plugin_id": profile.plugin_id,
+                    "enabled": profile.enabled,
+                    "installed": profile.plugin_id in providers,
+                }
+                for profile in runtime.providers
+            ],
+            "tools": [
+                {
+                    "id": profile.tool_id,
+                    "plugin_id": profile.plugin_id,
+                    "enabled": profile.enabled,
+                    "installed": profile.plugin_id in tools,
+                    "functions": [
+                        item.function_name
+                        for item in tools[profile.plugin_id].manifest.functions
+                    ]
+                    if profile.plugin_id in tools
+                    else [],
+                }
+                for profile in runtime.tools
+            ],
         }
 
     def patch_config(

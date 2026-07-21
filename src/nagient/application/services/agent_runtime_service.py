@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import zlib
 from dataclasses import dataclass
 from typing import Any
 
@@ -125,6 +126,11 @@ class AgentRuntimeService:
                     transport_catalog=self._transport_catalog(),
                     previous_results=previous_results,
                     runtime_log=self._provider_runtime_log,
+                    stream_callback=self._stream_callback(
+                        transport_id=transport_id,
+                        event=event,
+                        session_id=session_id,
+                    ),
                 )
             except Exception as exc:
                 return self._finalize_provider_failure(
@@ -171,7 +177,7 @@ class AgentRuntimeService:
                         workspace_root=str(layout.root),
                         workspace_mode=layout.config.mode,
                         previous_results=previous_results,
-                        metadata={"event_type": event_type},
+                        metadata=_event_metadata(event, event_type),
                     ),
                     assistant_response=assistant_response,
                 )
@@ -343,10 +349,9 @@ class AgentRuntimeService:
             approval
             for approval in workflow_service.list_approvals()
             if approval.status == "pending"
-            and (
-                approval.session_id == session_id
-                or approval.transport_id == transport_id
-            )
+            and approval.session_id == session_id
+            and approval.transport_id == transport_id
+            and _approval_requester_matches(approval.metadata, event)
         ]
         if not pending:
             return None
@@ -389,23 +394,20 @@ class AgentRuntimeService:
             component="agent.runtime",
         )
         reply = _render_approval_result_reply(result.to_dict())
-        should_resume = _approval_should_resume_model(
-            approval.metadata,
-            status=result.status,
-        )
         message_override = _approval_message_override(
             approval.metadata,
             status=result.status,
         )
         if message_override:
             reply = message_override
-        elif decision == "approve" and should_resume:
-            resumed = self._try_provider_resume_after_approval(
-                layout=layout,
-                session_id=session_id,
+        elif decision == "approve" and _approval_should_resume_agent(
+            approval.metadata,
+            status=result.status,
+        ):
+            resumed = self._resume_agent_after_approval(
                 transport_id=transport_id,
+                event=event,
                 provider_id=provider_id,
-                runtime_config=runtime_config,
                 system_prompt_override=system_prompt_override,
                 approval_result=result.to_dict(),
             )
@@ -442,7 +444,9 @@ class AgentRuntimeService:
         reply: str,
         tool_results: list[ToolExecutionResult],
     ) -> bool:
-        if self.transport_router is None or transport_id != "telegram":
+        if self.transport_router is None or not self._supports_interaction(
+            transport_id, "approval.inline"
+        ):
             return False
         reply_target = event.get("reply_target")
         if not isinstance(reply_target, dict) or not reply_target:
@@ -452,7 +456,7 @@ class AgentRuntimeService:
             return False
         payload = {str(key): value for key, value in reply_target.items()}
         payload["text"] = reply
-        payload["reply_markup"] = _telegram_approval_reply_markup(approval_id)
+        payload["reply_markup"] = _approval_reply_markup(approval_id)
         try:
             self.transport_router.send_message(
                 transport_id=transport_id,
@@ -482,7 +486,9 @@ class AgentRuntimeService:
         reply: str,
         decision: str,
     ) -> bool:
-        if self.transport_router is None or transport_id != "telegram":
+        if self.transport_router is None or not self._supports_interaction(
+            transport_id, "approval.callback"
+        ):
             return False
         callback_id = str(event.get("callback_query_id", "")).strip()
         reply_target = event.get("reply_target")
@@ -491,9 +497,14 @@ class AgentRuntimeService:
         handled = False
         if callback_id:
             try:
+                function_name = self._interaction_function(
+                    transport_id, "approval.callback.answer"
+                )
+                if function_name is None:
+                    raise ValueError("Transport does not expose an approval callback answer.")
                 self.transport_router.invoke_custom(
                     transport_id=transport_id,
-                    function_name="telegram.answerCallback",
+                    function_name=function_name,
                     payload={
                         "callback_id": callback_id,
                         "text": "Approved" if decision == "approve" else "Cancelled",
@@ -518,9 +529,14 @@ class AgentRuntimeService:
                 }
             )
             try:
+                function_name = self._interaction_function(
+                    transport_id, "approval.callback.edit"
+                )
+                if function_name is None:
+                    raise ValueError("Transport does not expose approval message editing.")
                 self.transport_router.invoke_custom(
                     transport_id=transport_id,
-                    function_name="telegram.editMessage",
+                    function_name=function_name,
                     payload=payload,
                 )
                 handled = True
@@ -533,72 +549,52 @@ class AgentRuntimeService:
                 )
         return handled
 
-    def _try_provider_resume_after_approval(
+    def _resume_agent_after_approval(
         self,
         *,
-        layout: object,
-        session_id: str,
         transport_id: str,
+        event: dict[str, object],
         provider_id: str | None,
-        runtime_config: RuntimeConfiguration,
         system_prompt_override: str | None,
         approval_result: dict[str, object],
     ) -> str | None:
-        prompt_context = self.memory_service.build_prompt_context(
-            layout,
-            session_id=session_id,
-            config=runtime_config.agent.memory,
-            retrieval_query=None,
+        resume_event = dict(event)
+        resume_event["event_type"] = "system_wake"
+        resume_event["text"] = (
+            "The user approved the pending action. Continue the task from the completed "
+            "tool result, including further tool calls when needed. Latest result: "
+            + json.dumps(approval_result, ensure_ascii=False)
         )
+        return self.handle_inbound_event(
+            transport_id,
+            resume_event,
+            provider_id=provider_id,
+            system_prompt_override=system_prompt_override,
+        )
+
+    def _supports_interaction(self, transport_id: str, capability: str) -> bool:
         try:
-            assistant_response = self.provider_service.generate_assistant_response(
-                message=(
-                    "The user approved the pending action. Summarize the completed "
-                    "result clearly and do not request approval again unless another "
-                    "new action is required."
-                ),
-                provider_id=provider_id,
-                session_id=session_id,
-                transport_id=transport_id,
-                system_prompt=self._system_prompt(
-                    runtime_config,
-                    override=system_prompt_override,
-                ),
-                prompt_context=prompt_context,
-                tool_catalog=self._tool_catalog(runtime_config),
-                transport_catalog=self._transport_catalog(),
-                previous_results=[
-                    {
-                        "function_name": "workflow.approval.resolve",
-                        "status": approval_result.get("status"),
-                        "output": approval_result.get("resume_payload", {}),
-                    }
-                ],
-                runtime_log=self._provider_runtime_log,
+            return bool(
+                self.transport_router
+                and self.transport_router.supports_interaction(
+                    transport_id=transport_id,
+                    capability=capability,
+                )
             )
-        except Exception as exc:
-            self.logger.warning(
-                "agent_runtime.approval_resume_failed",
-                "Failed to resume provider after approval.",
-                session_id=session_id,
+        except Exception:
+            return False
+
+    def _interaction_function(self, transport_id: str, capability: str) -> str | None:
+        try:
+            if self.transport_router is None:
+                return None
+            value = self.transport_router.interaction_function(
                 transport_id=transport_id,
-                error=str(exc),
+                capability=capability,
             )
+            return value if isinstance(value, str) else None
+        except Exception:
             return None
-        resumed_message = str(assistant_response.message).strip()
-        if not resumed_message:
-            return None
-        if assistant_response.tool_calls:
-            self.logger.warning(
-                "agent_runtime.approval_resume_tool_calls_ignored",
-                "Provider returned tool calls during approval resume; keeping execution bounded.",
-                session_id=session_id,
-                transport_id=transport_id,
-                tool_calls=[
-                    call.request.function_name for call in assistant_response.tool_calls
-                ],
-            )
-        return resumed_message
 
     def _finalize_after_max_turns(
         self,
@@ -935,6 +931,48 @@ class AgentRuntimeService:
                 error=str(exc),
             )
 
+    def _stream_callback(
+        self,
+        *,
+        transport_id: str,
+        event: dict[str, object],
+        session_id: str,
+    ) -> Any | None:
+        if not self._supports_interaction(transport_id, "stream.draft"):
+            return None
+        reply_target = event.get("reply_target")
+        if not isinstance(reply_target, dict) or not reply_target:
+            return None
+        function_name = self._interaction_function(transport_id, "stream.draft")
+        if function_name is None:
+            return None
+        draft_id = zlib.crc32(session_id.encode("utf-8")) or 1
+        last_preview = ""
+
+        def publish(raw_response: str) -> None:
+            nonlocal last_preview
+            preview = _streamed_message_preview(raw_response)
+            if not preview or preview == last_preview:
+                return
+            last_preview = preview
+            payload = {str(key): value for key, value in reply_target.items()}
+            payload.update({"draft_id": draft_id, "text": preview})
+            try:
+                assert self.transport_router is not None
+                self.transport_router.invoke_custom(
+                    transport_id=transport_id,
+                    function_name=function_name,
+                    payload=payload,
+                )
+            except Exception as exc:
+                self.logger.debug(
+                    "agent_runtime.stream_draft_skipped",
+                    "Transport draft update failed; continuing without live preview.",
+                    transport_id=transport_id,
+                    error=str(exc),
+                )
+        return publish
+
     def _maybe_send_progress_message(
         self,
         *,
@@ -1158,7 +1196,7 @@ def _latest_approval_request_id(
     return pending[-1] if pending else None
 
 
-def _telegram_approval_reply_markup(approval_id: str) -> dict[str, object]:
+def _approval_reply_markup(approval_id: str) -> dict[str, object]:
     return {
         "inline_keyboard": [
             [
@@ -1253,6 +1291,44 @@ def _approval_should_resume_model(
     if status == "failed":
         return metadata.get("on_error", "resume_model") == "resume_model"
     return False
+
+
+def _approval_should_resume_agent(
+    metadata: dict[str, object],
+    *,
+    status: str,
+) -> bool:
+    """Continue every successful approval unless the tool explicitly opted out."""
+    return status == "approved" and metadata.get("on_success") != "none"
+
+
+def _approval_requester_matches(metadata: dict[str, object], event: dict[str, object]) -> bool:
+    requester = metadata.get("requester_sender_id")
+    if requester is None:
+        return True
+    sender_id = event.get("sender_id")
+    return sender_id is not None and str(sender_id) == str(requester)
+
+
+def _streamed_message_preview(raw_response: str) -> str:
+    """Best-effort extraction of a partial JSON `message` value from SSE content."""
+    match = re.search(r'"message"\s*:\s*"', raw_response)
+    if match is None:
+        return ""
+    fragment = raw_response[match.end() :]
+    try:
+        value = json.loads('"' + fragment + '"')
+        return value if isinstance(value, str) else ""
+    except json.JSONDecodeError:
+        # Keep incomplete escaped JSON out of the transport until the next token.
+        last_quote = fragment.rfind('"')
+        if last_quote <= 0:
+            return ""
+        try:
+            value = json.loads('"' + fragment[:last_quote] + '"')
+            return value if isinstance(value, str) else ""
+        except json.JSONDecodeError:
+            return ""
 
 
 def _tool_input_schema_with_approval_context(
@@ -1364,11 +1440,16 @@ def _runtime_identity_prompt() -> str:
             "You have conversation memory with recent context, focused context, retrieval, and "
             "durable notes.",
             "If a user asks what you can do, describe your real runtime capabilities.",
+            "Before answering whether a plugin, account, provider, or transport is available, "
+            "call system.config.inspect_runtime. For GitHub account or repository questions, "
+            "then call nagient.github_api.get_authenticated_user or "
+            "nagient.github_api.list_repositories when those functions are available.",
             "If a user asks you to perform an action, prefer tool use over saying you cannot.",
             "Batch independent tool calls together in one step instead of one per turn; the "
             "runtime runs them as a batch. This keeps multi-step tasks within the step budget "
             "and gets the user a complete answer faster.",
-            "Prefer the dedicated workspace.git tools for git operations when possible so the "
+            "For git availability or repository state, use workspace.git.status first. Prefer "
+            "the dedicated workspace.git tools for git operations when possible so the "
             "configured git identity and credentials are applied consistently.",
             "For repository commit/push workflows, use workspace.git.run with git subcommands "
             "instead of GitHub REST requests unless the user specifically asks for a GitHub API "

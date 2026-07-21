@@ -90,7 +90,7 @@ docker compose restart nagient
 For unattended first boot, pin sources in `.env`:
 
 ```env
-NAGIENT_PLUGIN_SPECS=https://github.com/KOSFin/nagient-transport-telegram.git#v0.1.0,https://github.com/KOSFin/nagient-tool-github-api.git#v0.1.0
+NAGIENT_PLUGIN_SPECS=https://github.com/KOSFin/nagient-transport-telegram.git#v0.2.0,https://github.com/KOSFin/nagient-tool-github-api.git#v0.2.0
 ```
 
 The persistent `./data` mount keeps installed plugins across container restarts.

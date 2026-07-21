@@ -16,6 +16,7 @@ from nagient.app.configuration import (
 )
 from nagient.app.settings import Settings
 from nagient.domain.entities.system_state import ActivationReport
+from nagient.infrastructure.control_panel import ControlPanel
 from nagient.infrastructure.logging import write_runtime_log
 from nagient.plugins.base import BaseTransportPlugin, LoadedTransportPlugin, TransportRuntimeContext
 from nagient.plugins.registry import TransportPluginRegistry
@@ -39,6 +40,7 @@ class RuntimeAgent:
     workspace_manager: WorkspaceManager | None = None
     scheduler_service: Any | None = None
     scheduled_job_handler: Callable[[Any], str | None] | None = None
+    control_panel: ControlPanel | None = None
 
     def serve(self, once: bool = False) -> int:
         self.settings.ensure_directories()
@@ -63,6 +65,16 @@ class RuntimeAgent:
         self._log_activation_summary(log_path, runtime_config, activation_report)
 
         try:
+            if self.control_panel is not None and self.control_panel.start():
+                self._log(
+                    log_path,
+                    (
+                        "Control panel listening on "
+                        f"{self.settings.control_panel_bind_address}:"
+                        f"{self.settings.control_panel_port}."
+                    ),
+                    component="runtime.control_panel",
+                )
             started_transports = self._start_transports(
                 log_path,
                 runtime_config,
@@ -100,6 +112,8 @@ class RuntimeAgent:
                 )
         finally:
             self._stop_transports(log_path, started_transports)
+            if self.control_panel is not None:
+                self.control_panel.stop()
             self._log(log_path, "Runtime stopped.", component="runtime.lifecycle")
 
         return 0

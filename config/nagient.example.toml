@@ -66,6 +66,9 @@ plugin = "nagient.telegram"
 enabled = false
 bot_token_secret = "TELEGRAM_BOT_TOKEN"
 default_chat_id = ""
+allowed_chat_types = ["private"]
+allowed_user_ids = []
+group_reply_mode = "off"
 
 [providers.openai]
 plugin = "builtin.openai"

@@ -116,6 +116,7 @@ class ToolExecutionRequest:
     batch_id: str | None = None
     session_id: str | None = None
     transport_id: str | None = None
+    requester_id: str | None = None
     auto_approve: bool = False
 
     def to_dict(self) -> dict[str, object]:
@@ -132,6 +133,8 @@ class ToolExecutionRequest:
             payload["session_id"] = self.session_id
         if self.transport_id is not None:
             payload["transport_id"] = self.transport_id
+        if self.requester_id is not None:
+            payload["requester_id"] = self.requester_id
         return payload
 
     @classmethod
@@ -146,6 +149,9 @@ class ToolExecutionRequest:
             session_id=str(payload["session_id"]) if "session_id" in payload else None,
             transport_id=(
                 str(payload["transport_id"]) if "transport_id" in payload else None
+            ),
+            requester_id=(
+                str(payload["requester_id"]) if "requester_id" in payload else None
             ),
             auto_approve=bool(payload.get("auto_approve", False)),
         )

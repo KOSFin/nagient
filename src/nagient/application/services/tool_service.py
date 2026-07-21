@@ -243,7 +243,14 @@ class ToolService:
                             action_type="tool.invoke",
                             payload=approved_payload,
                         ),
-                        metadata=policy_decision.context.to_metadata(),
+                        metadata={
+                            **policy_decision.context.to_metadata(),
+                            **(
+                                {"requester_sender_id": request.requester_id}
+                                if request.requester_id
+                                else {}
+                            ),
+                        },
                     )
                 )
                 results.append(

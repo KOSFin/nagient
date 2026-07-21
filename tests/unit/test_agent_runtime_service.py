@@ -57,6 +57,17 @@ class _RecordingTransportRouter:
         self.custom_calls.append((transport_id, function_name, dict(payload)))
         return {"status": "ok"}
 
+    def supports_interaction(self, *, transport_id: str, capability: str) -> bool:
+        del transport_id
+        return capability in {"approval.inline", "approval.callback"}
+
+    def interaction_function(self, *, transport_id: str, capability: str) -> str | None:
+        del transport_id
+        return {
+            "approval.callback.answer": "nagient.telegram.answerCallback",
+            "approval.callback.edit": "nagient.telegram.editMessage",
+        }.get(capability)
+
 
 class AgentRuntimeServiceTests(unittest.TestCase):
     def test_runtime_can_send_deferred_tool_reply_without_follow_up(self) -> None:
@@ -677,8 +688,8 @@ class AgentRuntimeServiceTests(unittest.TestCase):
             self.assertIsNone(callback_reply)
             self.assertFalse(target_path.exists())
             function_names = [item[1] for item in router.custom_calls]
-            self.assertIn("telegram.answerCallback", function_names)
-            self.assertIn("telegram.editMessage", function_names)
+            self.assertIn("nagient.telegram.answerCallback", function_names)
+            self.assertIn("nagient.telegram.editMessage", function_names)
 
     def test_scheduled_wake_sends_reply_through_transport_router(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

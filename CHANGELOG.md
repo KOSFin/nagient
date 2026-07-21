@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.0
+
+- Added capability-driven transport interactions, native approval callbacks, durable approval continuation, and sender ownership checks.
+- Added optional password-protected localhost control panel for persisted runtime profiles.
+- Added OpenAI-compatible SSE delivery to declared transport drafts and refreshed Telegram/GitHub plugin catalog refs.
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),

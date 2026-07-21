@@ -17,7 +17,7 @@ class PluginCatalogTests(unittest.TestCase):
         entry = catalog_entry("nagient.telegram")
         self.assertIsNotNone(entry)
         assert entry is not None
-        self.assertEqual(entry.ref, "v0.1.0")
+        self.assertEqual(entry.ref, "v0.2.0")
         self.assertFalse(entry.bundled)
 
     def test_catalog_entry_is_case_insensitive(self) -> None:

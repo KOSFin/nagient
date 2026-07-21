@@ -189,6 +189,7 @@ class ProviderService:
         transport_catalog: list[dict[str, object]],
         previous_results: list[dict[str, object]],
         runtime_log: Callable[[str], None] | None = None,
+        stream_callback: Callable[[str], None] | None = None,
     ) -> AssistantResponse:
         runtime_config = load_runtime_configuration(self.settings)
         discovery = self.provider_registry.discover(self.settings.providers_dir)
@@ -292,8 +293,15 @@ class ProviderService:
                 raise ValueError(
                     f"Provider {resolved_provider_id!r} does not support agent runtime turns."
                 )
+            generate_stream = getattr(plugin.implementation, "generate_message_stream", None)
+            generate = generate_message
+            if stream_callback is not None and callable(generate_stream):
+                def generate_streaming(*args: object, **kwargs: object) -> object:
+                    return generate_stream(*args, **kwargs, on_delta=stream_callback)
+
+                generate = generate_streaming
             response_text = self._call_with_captured_provider_output(
-                lambda: generate_message(
+                lambda: generate(
                     provider_config.provider_id,
                     provider_config.config,
                     runtime_config.secrets,

@@ -76,6 +76,9 @@ Every transport plugin must declare slot bindings for:
 - `stop`
 
 Plugins may also declare custom namespaced functions such as `telegram.showPopup` or `webhook.replyJson`.
+They declare interaction capabilities and function mappings, so the core can offer inline
+approval, typing, live drafts, reactions, rich output, or a textual fallback without
+hardcoding a transport ID.
 
 The runtime treats transport plugins through one shared contract:
 
@@ -86,11 +89,10 @@ The runtime treats transport plugins through one shared contract:
 4. The runtime generates a reply through the selected provider and passes
    `{**reply_target, "text": "<reply>"}` into `send_message`.
 
-For transports that support progressive delivery, a plugin may expose a namespaced
-stream function (Telegram uses `telegram.streamMessage`). The runtime passes
-cumulative text snapshots; the transport owns message editing, chunk limits, and
-rate-limit batching. This keeps provider streaming independent of Telegram or any
-other transport API.
+For transports that support progressive delivery, a plugin may expose `stream.draft` or
+another declared interaction function. The runtime passes progress snapshots; the transport
+owns API calls, chunk limits, and rate-limit batching. Final replies remain durable even
+when a draft is temporary.
 
 ## Agent Runtime Core
 
@@ -116,6 +118,15 @@ This layer is intentionally narrow: it separates the user-facing assistant messa
 - `tool-secrets.env` is the dedicated tool/connector secret store.
 - The secret broker only exposes metadata to the agent-facing layer; raw secret values are resolved at execution time and redacted from outputs.
 - High-risk actions such as restore flows and destructive tool operations are routed through approval requests instead of direct execution.
+- Approval ownership is scoped to the originating transport session and sender. A successful
+  approval re-enters the agent loop with its tool result, so dependent tool calls can continue.
+
+## Operator Panel
+
+Compose environment variables are bootstrap and secret locks. Persisted profiles live in
+`config.toml`. The optional control panel is intentionally localhost-only and password
+protected; it previews and writes persisted configuration but never exposes secret values.
+Use the `docker-compose.control-panel.yml` overlay only when the panel needs a host port.
 
 ## Update Center Contract
 

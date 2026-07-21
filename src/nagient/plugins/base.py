@@ -41,6 +41,8 @@ class TransportPluginManifest:
     default_target_config_key: str = ""
     default_target_always_available: bool = False
     send_message_hint: str = ""
+    interaction_capabilities: list[str] = field(default_factory=list)
+    interaction_functions: dict[str, str] = field(default_factory=dict)
     log_channels: list[PluginLogChannelSpec] = field(default_factory=list)
 
     @property

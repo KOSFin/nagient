@@ -38,6 +38,12 @@ NAGIENT_AGENT_REQUIRE_PROVIDER=false
 # NAGIENT_TRANSPORT__TELEGRAM__BOT_TOKEN_SECRET=TELEGRAM_BOT_TOKEN
 # NAGIENT_TRANSPORT__TELEGRAM__DEFAULT_CHAT_ID=123456789
 # TELEGRAM_BOT_TOKEN=вставьте-токен-сюда
+# По умолчанию плагин игнорирует группы. Разрешайте только нужных пользователей.
+# NAGIENT_TRANSPORT__TELEGRAM__ALLOWED_CHAT_TYPES=private
+# NAGIENT_TRANSPORT__TELEGRAM__ALLOWED_USER_IDS=123456789
+# NAGIENT_TRANSPORT__TELEGRAM__GROUP_REPLY_MODE=off
+# NAGIENT_TRANSPORT__TELEGRAM__GROUP_REPLY_MODE=mentions
+# NAGIENT_TRANSPORT__TELEGRAM__BOT_USERNAME=my_nagient_bot
 # Необязательный HTTP/HTTPS-прокси для всех запросов Telegram Bot API
 # (polling и отправка ответов).
 # NAGIENT_TRANSPORT__TELEGRAM__PROXY_URL=http://proxy.example:8080
@@ -45,6 +51,13 @@ NAGIENT_AGENT_REQUIRE_PROVIDER=false
 # NAGIENT_TRANSPORT__TELEGRAM__PROXY_USERNAME=proxy-user
 # NAGIENT_TRANSPORT__TELEGRAM__PROXY_PASSWORD_SECRET=TELEGRAM_PROXY_PASSWORD
 # TELEGRAM_PROXY_PASSWORD=замените-значение
+
+# Необязательная локальная панель оператора. Она хранит профили в ./data/config.toml.
+# ENV остаются bootstrap-lock. Для публикации порта подключите docker-compose.control-panel.yml.
+# NAGIENT_CONTROL_PANEL_ENABLED=true
+# NAGIENT_CONTROL_PANEL_PASSWORD=задайте-длинный-пароль
+# NAGIENT_CONTROL_PANEL_BIND_ADDRESS=127.0.0.1
+# NAGIENT_CONTROL_PANEL_PORT=8787
 
 # Вебхук по умолчанию доступен только на localhost.
 # NAGIENT_TRANSPORT__WEBHOOK__PLUGIN=builtin.webhook
@@ -59,7 +72,7 @@ NAGIENT_AGENT_REQUIRE_PROVIDER=false
 
 # Установка внешних плагинов при первом запуске контейнера.
 # Один репозиторий на элемент, разделитель — запятая. Фиксируйте tag/commit.
-# NAGIENT_PLUGIN_SPECS=https://github.com/KOSFin/nagient-transport-telegram.git#v0.1.0
+# NAGIENT_PLUGIN_SPECS=https://github.com/KOSFin/nagient-transport-telegram.git#v0.2.0
 
 # GitHub API — внешний плагин. Добавьте его репозиторий в NAGIENT_PLUGIN_SPECS.
 # NAGIENT_TOOL__GITHUB_API__PLUGIN=nagient.github_api
