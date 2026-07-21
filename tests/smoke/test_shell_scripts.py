@@ -58,7 +58,7 @@ class ShellScriptSmokeTests(unittest.TestCase):
                 capture_output=True,
                 text=True,
             )
-            self.assertRegex(version.stdout.strip(), r"^0\.9\.10$")
+            self.assertRegex(version.stdout.strip(), r"^0\.9\.11$")
 
 
 if __name__ == "__main__":
