@@ -1,0 +1,43 @@
+name: ${NAGIENT_DOCKER_PROJECT_NAME:-nagient}
+
+services:
+  nagient:
+    image: ${NAGIENT_IMAGE:-docker.io/parampo/nagient:0.10.1}
+    container_name: ${NAGIENT_CONTAINER_NAME:-nagient}
+    restart: unless-stopped
+    working_dir: /workspace
+    env_file:
+      - .env
+    environment:
+      NAGIENT_HOME: ${NAGIENT_HOME:-/opt/nagient}
+      NAGIENT_CONFIG: ${NAGIENT_CONFIG:-/opt/nagient/config.toml}
+      NAGIENT_SECRETS_FILE: ${NAGIENT_SECRETS_FILE:-/opt/nagient/secrets.env}
+      NAGIENT_TOOL_SECRETS_FILE: ${NAGIENT_TOOL_SECRETS_FILE:-/opt/nagient/tool-secrets.env}
+      NAGIENT_PROMPTS_DIR: ${NAGIENT_PROMPTS_DIR:-/opt/nagient/prompts}
+      NAGIENT_PLUGINS_DIR: ${NAGIENT_PLUGINS_DIR:-/opt/nagient/plugins}
+      NAGIENT_TOOLS_DIR: ${NAGIENT_TOOLS_DIR:-/opt/nagient/tools}
+      NAGIENT_PROVIDERS_DIR: ${NAGIENT_PROVIDERS_DIR:-/opt/nagient/providers}
+      NAGIENT_CREDENTIALS_DIR: ${NAGIENT_CREDENTIALS_DIR:-/opt/nagient/credentials}
+      NAGIENT_STATE_DIR: ${NAGIENT_STATE_DIR:-/opt/nagient/state}
+      NAGIENT_LOG_DIR: ${NAGIENT_LOG_DIR:-/opt/nagient/logs}
+      NAGIENT_RELEASES_DIR: ${NAGIENT_RELEASES_DIR:-/opt/nagient/releases}
+      NAGIENT_WORKSPACE_ROOT: ${NAGIENT_WORKSPACE_ROOT:-/workspace}
+      NAGIENT_CHANNEL: ${NAGIENT_CHANNEL:-stable}
+      NAGIENT_UPDATE_BASE_URL: ${NAGIENT_UPDATE_BASE_URL:-https://ngnt-in.ruka.me}
+      NAGIENT_HEARTBEAT_INTERVAL: ${NAGIENT_HEARTBEAT_INTERVAL:-30}
+      NAGIENT_DOCKER_PROJECT_NAME: ${NAGIENT_DOCKER_PROJECT_NAME:-nagient}
+      NAGIENT_SAFE_MODE: ${NAGIENT_SAFE_MODE:-true}
+      NAGIENT_PLUGIN_SPECS: ${NAGIENT_PLUGIN_SPECS:-}
+    ports:
+      - "${NAGIENT_WEBHOOK_BIND_ADDRESS:-127.0.0.1}:${NAGIENT_WEBHOOK_PORT:-8080}:${NAGIENT_TRANSPORT__WEBHOOK__LISTEN_PORT:-8080}"
+    volumes:
+      # Keep the complete runtime state in one host directory. The entrypoint
+      # creates config, secret, plugin, prompt, state, log, and release paths.
+      - ./workspace:/workspace
+      - ./data:/opt/nagient
+    healthcheck:
+      test: ["CMD", "python", "-m", "nagient", "doctor", "--format", "json"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
