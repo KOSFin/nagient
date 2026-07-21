@@ -179,9 +179,9 @@ Subscribe to GitHub releases to be notified of security updates.
 
 ## Additional Resources
 
-- **Architecture Documentation:** [docs/architecture.md](docs/architecture.md)
-- **Plugin Development Guide:** [developer/README.md](developer/README.md)
-- **Configuration Reference:** [docs/README.md](docs/README.md)
+- [Architecture and trust boundaries](docs/architecture.md)
+- [Plugin development guide](docs/PLUGIN_DEVELOPMENT.md)
+- [Configuration and secrets reference](docs/configuration.md)
 
 ## Acknowledgments
 

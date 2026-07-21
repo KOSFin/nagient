@@ -175,7 +175,7 @@ class AgentRuntimeServiceTests(unittest.TestCase):
             self.assertIn("Any shell command must be finite and bounded", system_prompt)
             self.assertIn("approval_context", system_prompt)
 
-    def test_runtime_tool_catalog_includes_workspace_git_and_github_api_by_default(
+    def test_runtime_tool_catalog_keeps_external_github_api_disabled_by_default(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -198,14 +198,7 @@ class AgentRuntimeServiceTests(unittest.TestCase):
                 functions["workspace.git.status"]["tool_id"],
                 "workspace_git",
             )
-            self.assertEqual(
-                functions["github.api.get_authenticated_user"]["tool_id"],
-                "github_api",
-            )
-            self.assertEqual(
-                functions["github.api.list_repositories"]["tool_id"],
-                "github_api",
-            )
+            self.assertNotIn("nagient.github_api.get_authenticated_user", functions)
             self.assertEqual(
                 functions["system.config.read"]["tool_id"],
                 "system_config",

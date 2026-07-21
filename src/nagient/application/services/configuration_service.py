@@ -219,7 +219,9 @@ class ConfigurationService:
         resolved_plugin_id = self._resolve_component_plugin_id(
             existing_plugin_id=profile.get("plugin"),
             requested_plugin_id=plugin_id,
-            fallback_plugin_id=f"builtin.{transport_id}",
+            fallback_plugin_id=(
+                "nagient.telegram" if transport_id == "telegram" else f"builtin.{transport_id}"
+            ),
         )
         manifest = self._require_transport_manifest(resolved_plugin_id)
         self._validate_component_updates(
@@ -412,7 +414,10 @@ class ConfigurationService:
         discovery = self.provider_registry.discover(self.settings.providers_dir)
         plugin = discovery.plugins.get(plugin_id)
         if plugin is None:
-            raise ValueError(f"Unknown provider plugin {plugin_id!r}.")
+            raise ValueError(
+                f"Unknown provider plugin {plugin_id!r}. Install it with "
+                f"`nagient plugin install {plugin_id}` first."
+            )
         return plugin.manifest
 
     def _require_transport_manifest(self, plugin_id: str) -> Any:
@@ -421,7 +426,10 @@ class ConfigurationService:
         discovery = self.transport_registry.discover(self.settings.plugins_dir)
         plugin = discovery.plugins.get(plugin_id)
         if plugin is None:
-            raise ValueError(f"Unknown transport plugin {plugin_id!r}.")
+            raise ValueError(
+                f"Unknown transport plugin {plugin_id!r}. Install it with "
+                f"`nagient plugin install {plugin_id}` first."
+            )
         return plugin.manifest
 
     def _require_tool_manifest(self, plugin_id: str) -> Any:
@@ -430,7 +438,10 @@ class ConfigurationService:
         discovery = self.tool_registry.discover(self.settings.tools_dir)
         plugin = discovery.plugins.get(plugin_id)
         if plugin is None:
-            raise ValueError(f"Unknown tool plugin {plugin_id!r}.")
+            raise ValueError(
+                f"Unknown tool plugin {plugin_id!r}. Install it with "
+                f"`nagient plugin install {plugin_id}` first."
+            )
         return plugin.manifest
 
     def _resolve_component_plugin_id(

@@ -1,72 +1,60 @@
-# User: Plugins
+# Plugins For Operators
 
-Language: English | [Русский](plugins.ru.md)
+English · [Русская версия](plugins.ru.md) · [Plugin Hub reference](../plugins.md)
 
-## 1. Find a plugin
+## Personal Computer
+
+Open the interactive installer:
 
 ```bash
-nagient plugin catalog list
-nagient plugin catalog list --family transport
+nagient plugin install
 ```
 
-The short text output is meant for a terminal screen. Add `--format json` for
-automation. Use `nagient plugin list` to see only external repositories already
-installed in the runtime.
-
-## 2. Install on a personal computer
+Or install directly by verified ID or Git URL:
 
 ```bash
-nagient plugin catalog install <plugin-id>
+nagient plugin install nagient.telegram
+nagient plugin install https://github.com/owner/nagient-plugin.git --ref v1.0.0
 nagient preflight
-nagient reconcile
-```
-
-Restart the runtime after a configuration change:
-
-```bash
 nagient restart
 ```
 
-## 3. Install with Docker Compose
-
-Run commands inside the persistent container. The plugin is stored in `./data`
-and survives a restart:
+## Docker Compose
 
 ```bash
-docker compose exec nagient nagient plugin catalog list
-docker compose exec nagient nagient plugin catalog install <plugin-id>
+docker compose exec nagient nagient plugin install
+docker compose exec nagient nagient plugin install nagient.telegram
 docker compose exec nagient nagient preflight
 docker compose restart nagient
 ```
 
-For unattended deployments, put a pinned Git source in `NAGIENT_PLUGIN_SPECS` in
-`.env` and run `docker compose up -d`. Use a tag or commit, not a floating branch.
+The plugin is stored in the persistent runtime data, so a normal restart does not remove it. For unattended deployment, use pinned repositories in `NAGIENT_PLUGIN_SPECS`; see [server deployment](../deploy.md#3-install-external-plugins).
 
-Official plugin examples:
+## Configuration
 
-```bash
-docker compose exec nagient nagient plugin catalog install nagient.telegram
-docker compose exec nagient nagient plugin catalog install nagient.github_api
+Installation and activation are separate steps. Set the plugin ID on a profile and enable it:
+
+```env
+NAGIENT_TRANSPORT__TELEGRAM__PLUGIN=nagient.telegram
+NAGIENT_TRANSPORT__TELEGRAM__ENABLED=true
+NAGIENT_TRANSPORT__TELEGRAM__BOT_TOKEN_SECRET=TELEGRAM_BOT_TOKEN
+TELEGRAM_BOT_TOKEN=123456:replace-me
 ```
 
-## 4. Configure a plugin
-
-Read the plugin's fields from the catalog JSON or its manifest. The universal
-environment shape is:
-
-```text
-NAGIENT_<FAMILY>__<PLUGIN_ID>__<FIELD>=value
-```
-
-Secret fields contain a secret name. Never put a token directly in a public
-Compose file.
-
-## 5. Telegram safety
-
-Telegram is bundled. Restrict group bots before enabling them:
+Restrict Telegram before adding a bot to groups:
 
 ```env
 NAGIENT_TRANSPORT__TELEGRAM__ALLOWED_CHAT_IDS=-1001234567890
 NAGIENT_TRANSPORT__TELEGRAM__ALLOWED_USER_IDS=123456789
 NAGIENT_TRANSPORT__TELEGRAM__ALLOWED_CHAT_TYPES=supergroup
 ```
+
+## Inspect Or Remove
+
+```bash
+nagient plugin list
+nagient plugin remove nagient.telegram
+nagient preflight
+```
+
+See the [complete Plugin Hub guide](../plugins.md) for catalog status, updates, flags, trust, and Git source rules.

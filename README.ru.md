@@ -1,77 +1,73 @@
-# Nagient
+<h1 align="center">Nagient</h1>
 
 ```text
 ███╗░░██╗░█████╗░░██████╗░██╗███████╗███╗░░██╗████████╗
 ████╗░██║██╔══██╗██╔════╝░██║██╔════╝████╗░██║╚══██╔══╝
-██╔██╗██║███████║██║░░██╗░██║█████╗░░╚██╔██╗██║░░░██║░░░
+██╔██╗██║███████║██║░░██╗░██║█████╗░░██╔██╗██║░░░██║░░░
 ██║╚████║██╔══██╗██║░░╚██╗██║██╔══╝░░██║╚████║░░░██║░░░
 ██║░╚███║██║██╔██║╚██████╔╝██║███████╗██║░╚███║░░░██║░░░
-╚═╝░░╚══╝╚═╝░░╚═╝░╚═════╝░╚═╝╚══════╝╚═╝░░╚══╝░░░╚═╝░░░
+╚═╝░░╚══╝╚═╝░░░╚═════╝░╚═╝╚══════╝╚═╝░░╚══╝░░░╚═╝░░░
 ```
 
-[![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![Docker](https://img.shields.io/badge/Docker-native-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
-[![CI](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF?logo=githubactions&logoColor=white)](.github/workflows/ci.yml)
-[![Releases](https://img.shields.io/badge/Releases-tag--driven-F97316?logo=git&logoColor=white)](.github/workflows/release.yml)
-[![Update Center](https://img.shields.io/badge/Update%20Center-Pages%20ready-222222?logo=githubpages&logoColor=white)](.github/workflows/update-center.yml)
-[![Auto Tag](https://img.shields.io/badge/Tags-auto--create-111827?logo=git&logoColor=white)](.github/workflows/auto-tag.yml)
-[![Docker Hub](https://img.shields.io/badge/Docker%20Hub-parampo%2Fnagient-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/r/parampo/nagient)
-[![License](https://img.shields.io/badge/License-MIT-16A34A.svg)](LICENSE)
+<p align="center">
+  Self-hosted runtime для AI-агента с контролируемыми tools, подключаемыми transport и предсказуемой эксплуатацией.
+</p>
 
-🇷🇺 Русский | 🇺🇸 [English](README.md)
+<p align="center">
+  <a href="README.md">English</a> ·
+  <a href="docs/user/README.ru.md">Руководство пользователя</a> ·
+  <a href="docs/developer/README.ru.md">Руководство разработчика</a> ·
+  <a href="docs/plugins.ru.md">Plugin Hub</a>
+</p>
 
-Docker-native агентная платформа с централизованными обновлениями, скриптовой установкой и релизами по тегам.
+<p align="center">
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.11%20%7C%203.12-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.11 и 3.12"></a>
+  <a href="https://hub.docker.com/r/parampo/nagient"><img src="https://img.shields.io/badge/Docker-parampo%2Fnagient-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker image"></a>
+  <a href=".github/workflows/ci.yml"><img src="https://img.shields.io/badge/CI-GitHub%20Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-16A34A?style=for-the-badge" alt="Лицензия MIT"></a>
+</p>
 
-Nagient рассчитан на предсказуемый запуск и обновления на Linux, macOS и Windows.
+Nagient запускает AI-агента как наблюдаемый сервис, а не как одну терминальную сессию. Конфигурация, секреты, подтверждения, логи, обновления и расширения управляются одним runtime на личном компьютере или сервере.
 
-## Установка последней стабильной версии
+| Возможность | Что это даёт |
+| --- | --- |
+| **Свободный выбор provider** | Встроенные OpenAI-совместимые provider и стабильный контракт для внешних интеграций. |
+| **Контролируемые tools** | Ограниченные filesystem, shell, Git, jobs, configuration и явное подтверждение опасных действий. |
+| **Несколько точек входа** | CLI-чат, console, webhook и отдельно устанавливаемые transport, включая Telegram. |
+| **Plugin Hub** | Проверенные плагины по короткому ID, любые Git-репозитории по URL, изолированные зависимости и статус установки. |
+| **Эксплуатация** | Preflight, reconcile, health state, структурированные логи, Docker Compose и обновления по тегам. |
+| **Переносимое ядро** | Python 3.11+, Linux, macOS, Windows, Docker и process-плагины на любом языке. |
+
+---
+
+## Быстрая установка
 
 ### Linux и macOS
 
 ```bash
 curl -fsSL https://ngnt-in.ruka.me/install.sh | bash
+nagient setup
 ```
 
-### Windows (PowerShell)
+### Windows PowerShell
 
 ```powershell
 irm https://ngnt-in.ruka.me/install.ps1 | iex
+powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagient.ps1" setup
 ```
 
-### Docker image
-
-```bash
-docker pull docker.io/parampo/nagient:latest
-```
-
-`docker pull` только скачивает образ. Для постоянного запуска на сервере
-используйте Compose: он сразу задаёт тома, env-файл, автоперезапуск,
-healthcheck и каталог плагинов. Быстрая проверка образа:
-
-```bash
-docker run --rm docker.io/parampo/nagient:latest nagient version
-```
-
-Установщик создаёт локальный runtime в `~/.nagient` и поднимает сервис через Docker Compose.
-
-### Развёртывание на сервере (Docker Compose)
-
-Чтобы поставить Nagient на свой сервер без хостед-установщика, используйте
-готовый [`docker-compose.yml`](docker-compose.yml) и русскую заготовку
-`.env.example.ru` в корне репозитория:
+### Docker Compose на сервере
 
 ```bash
 git clone https://github.com/KOSFin/nagient.git
 cd nagient
 cp .env.example.ru .env
-${EDITOR:-vi} .env          # задайте провайдер, транспорт и секреты
-docker compose up -d        # CLI и правка сгенерированных файлов не нужны
+${EDITOR:-vi} .env
+docker compose up -d
+docker compose exec nagient nagient status
 ```
 
-Полное руководство: [docs/deploy.ru.md](docs/deploy.ru.md).
-
-Docker не обязателен на персональном компьютере. Из checkout репозитория можно
-поставить лёгкий локальный runtime:
+На личном компьютере Docker необязателен:
 
 ```bash
 bash scripts/install-local.sh --source .
@@ -79,112 +75,99 @@ export PATH="$HOME/.nagient/bin:$PATH"
 nagient setup
 ```
 
-Обычный hosted-установщик по-прежнему использует Docker Compose; различия описаны
-в [руководстве локального runtime](docs/install.ru.md#runtime-без-docker).
+Подробности есть в [руководстве по установке](docs/install.ru.md) и [руководстве по развёртыванию на сервере](docs/deploy.ru.md).
 
-Установка внешних Git-плагинов через Compose описана в разделе
-[«Внешние плагины»](docs/deploy.ru.md#5-установка-внешних-плагинов).
+---
 
-После установки используйте одну короткую команду управления:
+## Первый запуск
 
 ```bash
-nagient help
+nagient setup       # выбрать provider и настроить runtime
+nagient chat        # открыть прямой CLI-чат
+nagient preflight   # проверить конфигурацию и плагины
+nagient up           # запустить управляемый runtime
+nagient status       # посмотреть health и состояние активации
+nagient logs         # открыть последние логи
 ```
 
-Подробная документация:
+Команда `nagient paths` раскрывает runtime-алиасы `@config`, `@secrets`, `@plugins` и `@workspace`.
 
-- Индекс на английском: [docs/README.md](docs/README.md)
-- Индекс на русском: [docs/README.ru.md](docs/README.ru.md)
-- Руководство пользователя: [docs/user/README.ru.md](docs/user/README.ru.md)
-- Руководство разработчика: [docs/developer/README.ru.md](docs/developer/README.ru.md)
-- Разработка и установка плагинов: [docs/PLUGIN_DEVELOPMENT.ru.md](docs/PLUGIN_DEVELOPMENT.ru.md)
-- Каталог плагинов: [docs/plugins.ru.md](docs/plugins.ru.md) ([English](docs/plugins.md))
+---
 
-## Обновление и удаление
+## Plugin Hub
 
-Через короткую команду:
+Telegram и GitHub API теперь живут в отдельных репозиториях и не дублируются внутри ядра. Запустите установщик без аргументов, чтобы открыть каталог проверенных плагинов и увидеть, какие уже установлены:
 
 ```bash
-nagient update
+nagient plugin install
 ```
 
-```powershell
-powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagient.ps1" update
-```
-
-Удаление:
+Установка проверенного плагина по короткому ID:
 
 ```bash
-nagient remove
+nagient plugin install nagient.telegram
+nagient plugin install nagient.github_api
 ```
 
-```powershell
-powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagient.ps1" remove
-```
-
-Чтобы удалить и контейнеры, и локальные файлы, перед удалением задайте `NAGIENT_PURGE=true`.
-
-## Быстрый старт
-
-1. Запустите установщик под вашу платформу.
-2. Запустите `nagient setup`.
-3. Используйте `nagient paths`, чтобы увидеть алиасы вроде `@config`, `@secrets`, `@prompts` и `@tools`.
-4. Используйте `nagient chat` для прямой CLI-сессии с настроенным provider.
-5. Используйте короткие команды.
+Можно передать ссылку на любой совместимый Git-репозиторий:
 
 ```bash
-nagient up
-nagient status
-nagient logs
+nagient plugin install https://github.com/owner/nagient-plugin.git
 ```
 
-## Сценарий плагинов
+| Проверенный плагин | Тип | Репозиторий | Команда установки |
+| --- | --- | --- | --- |
+| **Telegram Transport** | Transport | [Код и настройка](https://github.com/KOSFin/nagient-transport-telegram) | `nagient plugin install nagient.telegram` |
+| **GitHub API Tool** | Tool | [Код и настройка](https://github.com/KOSFin/nagient-tool-github-api) | `nagient plugin install nagient.github_api` |
+| **Plugin Template** | Шаблон | [Создать новый плагин](https://github.com/KOSFin/nagient-plugin-template) | Использовать шаблон репозитория |
 
-Расширения устанавливаются отдельно от ядра. Для нового пользователя достаточно
-посмотреть проверенный каталог, поставить нужное расширение и проверить runtime:
+[Руководство по Plugin Hub](docs/plugins.ru.md) описывает поиск, установку, настройку, обновление, доверие и Docker-сценарий.
 
-```bash
-nagient plugin catalog list
-nagient plugin catalog install <plugin-id>
-nagient preflight
-nagient status
-```
+---
 
-## Короткий набор команд
-
-- `nagient up|down|restart`
-- `nagient status|doctor|preflight|reconcile`
-- `nagient logs [service]`
-- `nagient update|remove`
-
-## Полный CLI-набор
-
-- `nagient init`, `nagient help`, `nagient paths`, `nagient plugins`, `nagient preflight`, `nagient reconcile`, `nagient serve`
-- `nagient setup`, `nagient chat`
-- `nagient transport list|test|scaffold`
-- `nagient provider list|scaffold|models`
-- `nagient auth status|login|complete|logout`
-- `nagient tool list|scaffold|invoke`
-- `nagient interaction list|submit`, `nagient approval list|respond`
-- `nagient update check`, `nagient manifest render`, `nagient migrations plan`
-- `nagient agent turn --request-file ...`
-
-Полный справочник с параметрами находится в [docs/README.md](docs/README.md).
-
-## Runtime-схема
+## Как всё связано
 
 ```mermaid
 flowchart LR
-	A[Install script] --> B[~/.nagient]
-	B --> C[docker compose up -d]
-	C --> D[entrypoint]
-	D --> E[nagient reconcile]
-	E --> F[nagient serve]
-	F --> G[state and logs]
+    U[CLI или transport] --> R[Nagient runtime]
+    R --> P[Model provider]
+    R --> A[Approval policy]
+    A --> T[Встроенные tools]
+    A --> X[Внешние плагины]
+    R --> S[State и logs]
 ```
 
-## Дополнительно
+Runtime обнаруживает providers, transports и tools по манифестам. Внешние плагины остаются в `~/.nagient`, поэтому их релизы и зависимости не связаны с релизами ядра.
 
-- Архитектура (RU): [docs/architecture.ru.md](docs/architecture.ru.md)
-- Архитектура (EN): [docs/architecture.md](docs/architecture.md)
-- Лицензия: [LICENSE](LICENSE)
+---
+
+## Документация
+
+Все основные статьи доступны на русском и английском. Выберите раздел по задаче.
+
+| Раздел | Статья | Что внутри |
+| --- | --- | --- |
+| **Начало работы** | [Руководство пользователя](docs/user/README.ru.md) | Кратчайший путь от установки до рабочего агента. |
+| **Начало работы** | [Установка и обновления](docs/install.ru.md) | Установщик, локальный runtime, обновление и удаление. |
+| **Начало работы** | [Развёртывание на сервере](docs/deploy.ru.md) | Полная настройка Docker Compose через `.env`. |
+| **Использование** | [Команды и ежедневная работа](docs/commands.ru.md) | CLI, чат, status, диагностика и lifecycle. |
+| **Использование** | [Конфигурация и секреты](docs/configuration.ru.md) | Runtime-файлы, профили, алиасы, tools и секреты. |
+| **Использование** | [Справочник переменных окружения](docs/env.ru.md) | Переменные установщика, Compose, providers, transports и плагинов. |
+| **Использование** | [Диагностика проблем](docs/troubleshooting.ru.md) | Ошибки запуска, provider, плагинов, Docker и обновлений. |
+| **Плагины** | [Plugin Hub и проверенный каталог](docs/plugins.ru.md) | Поиск, установка, настройка, обновление и удаление плагинов. |
+| **Плагины** | [Плагины для пользователя](docs/user/plugins.ru.md) | Сценарии для личного компьютера и Docker. |
+| **Разработка плагинов** | [Руководство разработчика](docs/developer/README.ru.md) | Точка входа для contributors и авторов плагинов. |
+| **Разработка плагинов** | [Создание первого плагина](docs/PLUGIN_DEVELOPMENT.ru.md) | Шаблон, манифесты, packaging, проверка и публикация. |
+| **Разработка плагинов** | [Контракты плагинов](docs/plugin-contracts.ru.md) | Протоколы Python и process runtime. |
+| **Разработка Nagient** | [Архитектура](docs/architecture.ru.md) | Границы, зависимости, runtime flow и безопасность. |
+| **Разработка Nagient** | [Тестирование и CI](docs/developer/testing.ru.md) | Локальные проверки и уровни тестов. |
+| **Проект** | [Как внести вклад](CONTRIBUTING.md) | Workflow разработки и правила contribution. |
+| **Проект** | [История изменений](CHANGELOG.md) | Релизы и важные изменения. |
+
+В [полном русском индексе](docs/README.ru.md) собраны все статьи одним списком.
+
+---
+
+## Лицензия
+
+Nagient распространяется по [лицензии MIT](LICENSE).

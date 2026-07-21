@@ -13,6 +13,7 @@ from typing import Any, cast
 from unittest.mock import Mock, patch
 
 from nagient import cli
+from nagient.app.settings import Settings
 from nagient.version import __version__ as nagient_version
 
 
@@ -163,7 +164,7 @@ def _status_payload(update: dict[str, object]) -> dict[str, object]:
                 },
                 {
                     "transport_id": "telegram",
-                    "plugin_id": "builtin.telegram",
+                    "plugin_id": "nagient.telegram",
                     "enabled": False,
                     "status": "disabled",
                     "exposed_functions": [],
@@ -224,6 +225,41 @@ def _run_main(argv: list[str], *, container: SimpleNamespace) -> tuple[int, str]
 
 
 class CliTests(unittest.TestCase):
+    def test_plugin_install_without_source_shows_catalog_in_noninteractive_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            container = SimpleNamespace(
+                settings=Settings.from_env({"NAGIENT_HOME": temp_dir})
+            )
+            with patch("sys.stdin.isatty", return_value=False):
+                exit_code, output = _run_main(["plugin", "install"], container=container)
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Nagient Official Plugin Catalog", output)
+        self.assertIn("nagient plugin install nagient.telegram", output)
+        self.assertIn("nagient plugin install https://github.com/owner/plugin.git", output)
+
+    def test_plugin_install_accepts_verified_plugin_id(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            container = SimpleNamespace(
+                settings=Settings.from_env({"NAGIENT_HOME": temp_dir})
+            )
+            installed = SimpleNamespace(
+                to_dict=lambda: {"plugin_id": "nagient.telegram", "status": "installed"}
+            )
+            with patch("nagient.cli.install_plugin", return_value=installed) as install:
+                exit_code, output = _run_main(
+                    ["plugin", "install", "nagient.telegram"],
+                    container=container,
+                )
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("nagient.telegram", output)
+        self.assertEqual(
+            install.call_args.args[0],
+            "https://github.com/KOSFin/nagient-transport-telegram.git",
+        )
+        self.assertEqual(install.call_args.kwargs["ref"], "v0.1.0")
+
     def test_render_text_views_are_structured(self) -> None:
         payload = _status_payload(
             {

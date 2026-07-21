@@ -141,18 +141,19 @@ GIT_PASSWORD=
 GITHUB_TOKEN=
 ```
 
-## 6. Built-in GitHub tool
+## 6. GitHub API plugin
 
-The `github_api` tool profile is present and enabled out of the box so the agent can see the GitHub capability in its tool catalog. It supports authenticated user lookup, repository listing, repository lookup, issue listing, issue creation, comments, and a generic `github.api.request` function. Store the token in `@tool_secrets` as `GITHUB_TOKEN`:
+GitHub API is an external verified plugin and is disabled until installed. Install it, enable the `github_api` profile, and store the token in `@tool_secrets` as `GITHUB_TOKEN`:
 
 ```bash
+nagient plugin install nagient.github_api
 nagient setup tool github_api --set token_secret=GITHUB_TOKEN
 ```
 
-Use `github.api.request` for GitHub REST endpoints that do not have a dedicated helper yet, for example repository settings updates:
+The plugin provides dedicated helpers and `nagient.github_api.request` for other GitHub REST endpoints, for example repository settings updates:
 
 ```bash
-nagient tool invoke github.api.request \
+nagient tool invoke nagient.github_api.request \
   --tool-id github_api \
   --args-json '{"method":"PATCH","path":"/repos/OWNER/REPO","json":{"description":"Updated by Nagient"}}' \
   --auto-approve

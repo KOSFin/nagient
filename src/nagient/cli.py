@@ -30,7 +30,7 @@ from nagient.domain.entities.agent_runtime import AgentTurnRequest
 from nagient.domain.entities.config_fields import ConfigFieldSpec
 from nagient.domain.entities.tooling import ToolExecutionRequest
 from nagient.infrastructure.manifests import release_to_dict
-from nagient.plugins.catalog import catalog_entry, catalog_payload
+from nagient.plugins.catalog import catalog_entries, catalog_entry, catalog_payload
 from nagient.plugins.installer import (
     PluginInstallError,
     install_plugin,
@@ -163,14 +163,15 @@ def build_parser() -> argparse.ArgumentParser:
         "plugin",
         help="Install and manage external plugins",
     )
-    plugin_subparsers = plugin_parser.add_subparsers(dest="plugin_command", required=True)
+    plugin_subparsers = plugin_parser.add_subparsers(dest="plugin_command")
     plugin_install_parser = plugin_subparsers.add_parser(
         "install",
         help="Install a plugin from a Git repository",
     )
     plugin_install_parser.add_argument(
         "source",
-        help="URL, optionally prefixed with transport:/provider:/tool: and suffixed with #ref",
+        nargs="?",
+        help="Verified plugin ID or Git URL. Omit it to open the interactive installer.",
     )
     plugin_install_parser.add_argument("--ref", help="Git branch, tag, or commit")
     plugin_install_parser.add_argument("--force", action="store_true")
@@ -635,22 +636,25 @@ def main(argv: list[str] | None = None) -> int:
         payload = _plugins_payload(container, include_available=args.all)
         return _emit(payload, args.format, view="plugins")
 
-    if args.command == "plugin" and args.plugin_command == "install":
-        try:
-            result = install_plugin(
-                args.source,
-                plugins_dir=container.settings.plugins_dir,
-                providers_dir=container.settings.providers_dir,
-                tools_dir=container.settings.tools_dir,
-                ref=args.ref,
-                force=args.force,
-                install_dependencies=not args.no_dependencies,
-                upgrade_dependencies=args.upgrade_dependencies,
+    if args.command == "plugin" and args.plugin_command in {None, "install"}:
+        source = getattr(args, "source", None)
+        if not source:
+            return _run_plugin_installer(
+                container,
+                force=bool(getattr(args, "force", False)),
+                install_dependencies=not bool(getattr(args, "no_dependencies", False)),
+                upgrade_dependencies=bool(getattr(args, "upgrade_dependencies", False)),
+                output_format=str(getattr(args, "format", "text")),
             )
-        except PluginInstallError as exc:
-            print(f"Error: {exc}", file=sys.stderr)
-            return 2
-        return _emit(result.to_dict(), args.format)
+        return _install_plugin_source(
+            container,
+            str(source),
+            ref=getattr(args, "ref", None),
+            force=bool(getattr(args, "force", False)),
+            install_dependencies=not bool(getattr(args, "no_dependencies", False)),
+            upgrade_dependencies=bool(getattr(args, "upgrade_dependencies", False)),
+            output_format=str(getattr(args, "format", "text")),
+        )
 
     if args.command == "plugin" and args.plugin_command == "list":
         payload = {"plugins": list_installed_plugins(
@@ -705,21 +709,15 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 0
-        try:
-            result = install_plugin(
-                entry.source,
-                plugins_dir=container.settings.plugins_dir,
-                providers_dir=container.settings.providers_dir,
-                tools_dir=container.settings.tools_dir,
-                force=args.force,
-                ref=entry.ref,
-                install_dependencies=not args.no_dependencies,
-                upgrade_dependencies=args.upgrade_dependencies,
-            )
-        except PluginInstallError as exc:
-            print(f"Error: {exc}", file=sys.stderr)
-            return 2
-        return _emit(result.to_dict(), args.format)
+        return _install_plugin_source(
+            container,
+            entry.plugin_id,
+            ref=entry.ref,
+            force=args.force,
+            install_dependencies=not args.no_dependencies,
+            upgrade_dependencies=args.upgrade_dependencies,
+            output_format=args.format,
+        )
 
     if args.command == "doctor":
         payload = container.status_service.collect()
@@ -1184,6 +1182,123 @@ def main(argv: list[str] | None = None) -> int:
 
     parser.error("Unsupported command.")
     return 2
+
+
+def _installed_plugin_ids(container: AppContainer) -> set[str]:
+    return {
+        str(item.get("plugin_id"))
+        for item in list_installed_plugins(
+            plugins_dir=container.settings.plugins_dir,
+            providers_dir=container.settings.providers_dir,
+            tools_dir=container.settings.tools_dir,
+        )
+        if item.get("plugin_id")
+    }
+
+
+def _install_plugin_source(
+    container: AppContainer,
+    source: str,
+    *,
+    ref: str | None,
+    force: bool,
+    install_dependencies: bool,
+    upgrade_dependencies: bool,
+    output_format: str,
+) -> int:
+    normalized_source = str(source or "").strip()
+    entry = catalog_entry(normalized_source)
+    if entry is not None:
+        if entry.bundled or entry.source == "builtin":
+            print(f"{entry.plugin_id} is included with Nagient; no installation is needed.")
+            return 0
+        normalized_source = entry.source
+        ref = ref or entry.ref
+
+    try:
+        result = install_plugin(
+            normalized_source,
+            plugins_dir=container.settings.plugins_dir,
+            providers_dir=container.settings.providers_dir,
+            tools_dir=container.settings.tools_dir,
+            ref=ref,
+            force=force,
+            install_dependencies=install_dependencies,
+            upgrade_dependencies=upgrade_dependencies,
+        )
+    except PluginInstallError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
+    return _emit(result.to_dict(), output_format)
+
+
+def _run_plugin_installer(
+    container: AppContainer,
+    *,
+    force: bool,
+    install_dependencies: bool,
+    upgrade_dependencies: bool,
+    output_format: str,
+) -> int:
+    installed_ids = _installed_plugin_ids(container)
+    payload = catalog_payload(verified_only=True, installed_ids=installed_ids)
+
+    if not sys.stdin.isatty():
+        print(_render_plugin_catalog(payload))
+        print("")
+        print("Install by ID:  nagient plugin install nagient.telegram")
+        print("Install by URL: nagient plugin install https://github.com/owner/plugin.git")
+        return 0
+
+    entries = [
+        entry
+        for entry in catalog_entries(verified_only=True)
+        if not entry.bundled and entry.source != "builtin"
+    ]
+    options = [
+        (
+            entry.plugin_id,
+            f"{entry.display_name} [{entry.family}]"
+            + (" - installed" if entry.plugin_id in installed_ids else " - available"),
+        )
+        for entry in entries
+    ]
+    options.append(("__git__", "Install from a Git repository URL"))
+
+    with _terminal_screen():
+        selection = _prompt_menu_choice(
+            "Choose a verified plugin or Git source:",
+            options,
+            zero_label="Exit plugin installer",
+            screen_title="Nagient Plugin Hub",
+            screen_lines=[
+                "Verified plugins are pinned and reviewed by the Nagient project.",
+                "Installed plugins are stored outside the core package in ~/.nagient.",
+            ],
+        )
+        if selection is None:
+            print("Leaving plugin installer.")
+            return 0
+        if selection == "__git__":
+            source = _prompt_text("Git repository URL")
+            if not source:
+                print("Installation cancelled.")
+                return 0
+        else:
+            source = selection
+            if source in installed_ids and not force:
+                print(f"{source} is already installed. Use --force to reinstall it.")
+                return 0
+
+        return _install_plugin_source(
+            container,
+            source,
+            ref=None,
+            force=force,
+            install_dependencies=install_dependencies,
+            upgrade_dependencies=upgrade_dependencies,
+            output_format=output_format,
+        )
 
 
 def _run_setup_wizard(container: AppContainer) -> int:
@@ -3094,13 +3209,17 @@ def _transport_test_payload(
         plugin = discovery.plugins.get(transport.plugin_id)
         if plugin is None:
             issue = {
-                "severity": "error" if transport.enabled else "warning",
+                "severity": "error" if transport.enabled else "info",
                 "code": "transport.plugin_not_found",
                 "message": (
                     f"Transport {transport.transport_id!r} references unknown plugin "
                     f"{transport.plugin_id!r}."
                 ),
                 "source": transport.transport_id,
+                "hint": (
+                    f"Run `nagient plugin install {transport.plugin_id}` before enabling "
+                    "this transport."
+                ),
             }
             state = {
                 "transport_id": transport.transport_id,
@@ -3848,7 +3967,7 @@ def _render_plugin_catalog(payload: dict[str, object]) -> str:
             _append_line(lines, f"  {description}")
     if not _as_list(payload.get("plugins")):
         _append_line(lines, "No catalog entries match the selected filter.")
-    _append_line(lines, "Install external entries with: nagient plugin catalog install <plugin-id>")
+    _append_line(lines, "Install an external entry with: nagient plugin install <plugin-id>")
     return "\n".join(lines)
 
 

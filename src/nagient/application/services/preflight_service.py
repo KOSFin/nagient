@@ -60,7 +60,7 @@ class PreflightService:
         for transport in runtime_config.transports:
             transport_plugin = discovery.plugins.get(transport.plugin_id)
             if transport_plugin is None:
-                severity = "error" if transport.enabled else "warning"
+                severity = "error" if transport.enabled else "info"
                 issue = CheckIssue(
                     severity=severity,
                     code="transport.plugin_not_found",
@@ -69,6 +69,10 @@ class PreflightService:
                         f"{transport.plugin_id!r}."
                     ),
                     source=transport.transport_id,
+                    hint=(
+                        f"Run `nagient plugin install {transport.plugin_id}` before enabling "
+                        "this transport."
+                    ),
                 )
                 issues.append(issue)
                 transports.append(
@@ -100,7 +104,7 @@ class PreflightService:
         for provider in runtime_config.providers:
             provider_plugin = provider_discovery.plugins.get(provider.plugin_id)
             if provider_plugin is None:
-                severity = "error" if provider.enabled else "warning"
+                severity = "error" if provider.enabled else "info"
                 issue = CheckIssue(
                     severity=severity,
                     code="provider.plugin_not_found",
@@ -109,6 +113,10 @@ class PreflightService:
                         f"{provider.plugin_id!r}."
                     ),
                     source=provider.provider_id,
+                    hint=(
+                        f"Run `nagient plugin install {provider.plugin_id}` before enabling "
+                        "this provider."
+                    ),
                 )
                 issues.append(issue)
                 providers.append(
@@ -155,7 +163,7 @@ class PreflightService:
         for tool in runtime_config.tools:
             tool_plugin = tool_discovery.plugins.get(tool.plugin_id)
             if tool_plugin is None:
-                severity = "error" if tool.enabled else "warning"
+                severity = "error" if tool.enabled else "info"
                 issue = CheckIssue(
                     severity=severity,
                     code="tool.plugin_not_found",
@@ -164,6 +172,10 @@ class PreflightService:
                         f"{tool.plugin_id!r}."
                     ),
                     source=tool.tool_id,
+                    hint=(
+                        f"Run `nagient plugin install {tool.plugin_id}` before enabling this "
+                        "tool."
+                    ),
                 )
                 issues.append(issue)
                 tools.append(

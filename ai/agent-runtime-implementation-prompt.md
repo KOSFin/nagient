@@ -12,12 +12,12 @@ Your work must preserve existing contracts while introducing runtime capabilitie
 
 ## Required Reading Before Changes
 
-- [ai/README.md](README.md)
-- [ai/README.ru.md](README.ru.md)
-- [docs/architecture.md](../docs/architecture.md)
-- [docs/architecture.ru.md](../docs/architecture.ru.md)
-- [README.md](../README.md)
-- [README.ru.md](../README.ru.md)
+- [AI and automation context](README.md)
+- [AI and automation context in Russian](README.ru.md)
+- [Runtime architecture](../docs/architecture.md)
+- [Runtime architecture in Russian](../docs/architecture.ru.md)
+- [Project overview](../README.md)
+- [Project overview in Russian](../README.ru.md)
 - `src/nagient/app/settings.py`
 - `src/nagient/app/configuration.py`
 - `src/nagient/app/container.py`

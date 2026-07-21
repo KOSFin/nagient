@@ -1,5 +1,7 @@
 # Plugin Development Guide
 
+English · [Русская версия](PLUGIN_DEVELOPMENT.ru.md) · [Developer guide](developer/README.md)
+
 This guide teaches you how to create custom plugins for Nagient using the manifest-driven plugin system.
 
 ## Table of Contents
@@ -14,14 +16,17 @@ This guide teaches you how to create custom plugins for Nagient using the manife
 
 ## Plugin System Overview
 
+Each plugin is a separately versioned repository with exactly one family
+manifest, an entrypoint, tests, and documentation. Nagient discovers it from the
+runtime directory after installation; no central registry edit is required.
+
 ## Template Repository
 
-The maintained starter repository is `nagient-plugin-template`. It contains a
+The maintained starter repository is
+[nagient-plugin-template](https://github.com/KOSFin/nagient-plugin-template). It contains a
 minimal transport manifest, a Python implementation, contract tests, and CI for
 Python 3.11/3.12. Fork that repository for a new extension; do not copy a
 production Telegram or GitHub implementation and delete files by trial and error.
-Until it is published independently, the same template is available in the
-workspace next to the main checkout.
 
 ### Architecture
 
@@ -63,13 +68,12 @@ packages automatically. In Docker, the environment lives in the persistent
 `--upgrade-dependencies` to refresh packages or `--no-dependencies` only for
 offline staging. Python process entrypoints use the same plugin environment.
 
-### aiogram reference plugin
+### Telegram reference plugin
 
-The repository includes `examples/plugins/telegram-aiogram`. Copy it into a
-separate Git repository, publish it, and install it by URL. It follows the same
-transport contract as `builtin.telegram`, while keeping `aiogram` inside the
-plugin's private environment. Configure `bot_token_secret` and optionally
-`proxy_url` after installation.
+The maintained [Telegram transport](https://github.com/KOSFin/nagient-transport-telegram)
+is a complete production example. Read it to understand a real implementation,
+but start new work from the template instead of deleting Telegram-specific code.
+Its `aiogram` dependency remains inside the plugin's private environment.
 
 ## Transport Plugins
 
@@ -485,6 +489,33 @@ def build_plugin() -> MyToolPlugin:
     return MyToolPlugin()
 ```
 
+## Provider Plugins
+
+Provider plugins connect Nagient to model APIs and declare authentication modes,
+model discovery, configuration fields, and credential fields in `provider.toml`.
+Generate a complete starting point with:
+
+```bash
+nagient provider scaffold --plugin-id vendor.provider --output ./vendor-provider
+```
+
+The scaffold contains `provider.toml`, `provider.py`, `schema.json`, a README,
+and a contract test. A Python entrypoint extends `BaseProviderPlugin` and handles
+configuration validation, authentication status, model listing, and assistant
+response generation. Keep API keys behind `api_key_secret` or credential records;
+never put raw credentials in the manifest.
+
+Install and verify it like any other repository:
+
+```bash
+nagient plugin install https://github.com/owner/vendor-provider.git --ref v1.0.0
+nagient provider list
+nagient preflight
+```
+
+The exact provider runtime calls and response types are documented in the
+[plugin contracts](plugin-contracts.md).
+
 ## Best Practices
 
 ### Security
@@ -552,12 +583,12 @@ def test_send_message():
 
 ## Examples
 
-### Study Bundled Plugins
+### Study Real Plugins
 
 **Telegram Transport** (Full-featured):
-- Location: `src/nagient/bundled_transports/telegram/`
+- Repository: [nagient-transport-telegram](https://github.com/KOSFin/nagient-transport-telegram)
 - Features: HTTP client, proxy, state management, message chunking
-- ~680 lines, production-ready
+- Separately versioned, production-ready
 
 **Console Transport** (Minimal):
 - Location: `src/nagient/bundled_transports/console/`
@@ -565,13 +596,11 @@ def test_send_message():
 - ~55 lines, simple example
 
 **GitHub API Tool**:
-- Location: `src/nagient/bundled_tools/github_api/`
+- Repository: [nagient-tool-github-api](https://github.com/KOSFin/nagient-tool-github-api)
 - Features: REST API integration, authentication
 - Great example of tool plugin
 
-### Community Plugins
-
-(Add links to community plugins here)
+Start a new repository from the [official plugin template](https://github.com/KOSFin/nagient-plugin-template).
 
 ## Troubleshooting
 
@@ -597,10 +626,11 @@ Make sure your plugin doesn't import Nagient internals except:
 
 ## Resources
 
-- **Architecture:** [docs/architecture.md](../docs/architecture.md)
+- **Architecture:** [Runtime architecture and plugin boundaries](architecture.md)
 - **API Reference:** Inline docstrings in base classes
-- **Examples:** Bundled plugins in `src/nagient/bundled_*/`
-- **Issues:** [GitHub Issues](https://github.com/YOUR_ORG/nagient/issues)
+- **Template:** [Official plugin starter](https://github.com/KOSFin/nagient-plugin-template)
+- **Examples:** [Telegram Transport](https://github.com/KOSFin/nagient-transport-telegram) and [GitHub API Tool](https://github.com/KOSFin/nagient-tool-github-api)
+- **Issues:** [Nagient issue tracker](https://github.com/KOSFin/nagient/issues)
 
 ---
 

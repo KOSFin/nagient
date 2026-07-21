@@ -22,8 +22,8 @@ class ConfigurationTests(unittest.TestCase):
             self.assertTrue(
                 any(
                     tool.tool_id == "github_api"
-                    and tool.plugin_id == "github.api"
-                    and tool.enabled
+                    and tool.plugin_id == "nagient.github_api"
+                    and not tool.enabled
                     for tool in runtime_config.tools
                 )
             )
@@ -176,8 +176,8 @@ class ConfigurationTests(unittest.TestCase):
             self.assertTrue(
                 any(
                     tool.tool_id == "github_api"
-                    and tool.plugin_id == "github.api"
-                    and tool.enabled
+                    and tool.plugin_id == "nagient.github_api"
+                    and not tool.enabled
                     for tool in runtime_config.tools
                 )
             )
@@ -274,7 +274,7 @@ class ConfigurationTests(unittest.TestCase):
             runtime_config = load_runtime_configuration(
                 settings,
                 environ={
-                    "NAGIENT_TRANSPORT__TELEGRAM__PLUGIN": "builtin.telegram",
+                    "NAGIENT_TRANSPORT__TELEGRAM__PLUGIN": "nagient.telegram",
                     "NAGIENT_TRANSPORT__TELEGRAM__ENABLED": "true",
                     "NAGIENT_TRANSPORT__TELEGRAM__BOT_TOKEN_SECRET": "TELEGRAM_BOT_TOKEN",
                     "NAGIENT_TRANSPORT__TELEGRAM__DEFAULT_CHAT_ID": "1522105862",
@@ -283,7 +283,7 @@ class ConfigurationTests(unittest.TestCase):
 
             self.assertEqual(len(runtime_config.transports), 1)
             self.assertEqual(runtime_config.transports[0].transport_id, "telegram")
-            self.assertEqual(runtime_config.transports[0].plugin_id, "builtin.telegram")
+            self.assertEqual(runtime_config.transports[0].plugin_id, "nagient.telegram")
             self.assertTrue(runtime_config.transports[0].enabled)
             self.assertEqual(
                 runtime_config.transports[0].config["default_chat_id"],

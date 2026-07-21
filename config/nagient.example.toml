@@ -62,7 +62,7 @@ path = "/events"
 shared_secret_name = "NAGIENT_WEBHOOK_SHARED_SECRET"
 
 [transports.telegram]
-plugin = "builtin.telegram"
+plugin = "nagient.telegram"
 enabled = false
 bot_token_secret = "TELEGRAM_BOT_TOKEN"
 default_chat_id = ""
@@ -160,7 +160,7 @@ plugin = "system.config"
 enabled = true
 
 [tools.github_api]
-plugin = "github.api"
+plugin = "nagient.github_api"
 enabled = false
 token_secret = "GITHUB_TOKEN"
 base_url = "https://api.github.com"

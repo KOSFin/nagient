@@ -2,7 +2,7 @@
 Compatibility module for builtin transport plugins.
 
 This module is kept for backward compatibility but no longer contains
-transport implementations. All bundled transports (Console, Webhook, Telegram)
+transport implementations. All bundled transports (Console and Webhook)
 now load through the standard manifest-driven plugin discovery system from
 src/nagient/bundled_transports/.
 

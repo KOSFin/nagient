@@ -1,8 +1,22 @@
-# Developer Guide
+# Repository Operations Guide
 
-Language: English | [Русский](README.ru.md)
+English · [Русская версия](README.ru.md) · [Developer documentation](../docs/developer/README.md) · [Project overview](../README.md)
 
 This guide documents repository operations, release automation, and delivery contracts.
+
+## Contents
+
+| Section | Focus |
+| --- | --- |
+| [Release model](#1-release-model) | Version, tags, artifacts, Docker, and update center. |
+| [Centralized configuration](#2-centralized-configuration) | Sources used to render release assets. |
+| [Runtime layout](#3-runtime-layout) | Persistent files, state, and workspace data. |
+| [GitHub variables and secrets](#4-github-variables-and-secrets) | Required repository settings. |
+| [Local development](#5-local-development) | Environment and quality gates. |
+| [Bootstrap and reconcile](#6-bootstrap-and-reconcile-cycle) | Local activation workflow. |
+| [Release checklist](#7-release-checklist) | Publication verification sequence. |
+| [Change matrix](#8-change-matrix) | Ownership by file and subsystem. |
+| [Guardrails](#9-guardrails) | Contracts that must remain stable. |
 
 ## 1. Release Model
 

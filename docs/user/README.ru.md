@@ -1,27 +1,33 @@
 # Руководство пользователя
 
-Язык: [English](README.md) | Русский
+[English](README.md) · Русский · [Вся документация](../README.ru.md)
 
-Этот раздел предназначен для оператора, который устанавливает, настраивает,
-обновляет и использует Nagient. Знания Python не нужны.
+Этот раздел предназначен для эксплуатации Nagient. Знания Python не нужны.
 
-## С чего начать
+## Рекомендуемый маршрут
 
-- [Установка на Linux/macOS/Windows](../install.ru.md)
-- [Запуск без Docker](../install.ru.md#runtime-без-docker)
-- [Запуск через Docker Compose](../deploy.ru.md)
-- [Поиск и установка плагинов](plugins.ru.md)
-- [Секреты и переменные окружения](../env.ru.md)
-- [Ежедневные CLI-команды](../commands.ru.md)
-- [Диагностика запуска](../troubleshooting.ru.md)
+1. [Установите Nagient](../install.ru.md).
+2. Запустите `nagient setup` и [настройте provider и секреты](../configuration.ru.md).
+3. Откройте диалог командой `nagient chat`.
+4. [Установите нужные transports и tools](plugins.ru.md).
+5. Выполните `nagient preflight`, затем `nagient up` и `nagient status`.
 
-## Варианты установки
+## Содержание руководства
 
-| Установка | Установить плагин | Проверить |
+| Статья | Когда она нужна |
+| --- | --- |
+| [Установка и обновления](../install.ru.md) | Установка, обновление или удаление Nagient на компьютере. |
+| [Развёртывание на сервере](../deploy.ru.md) | Эксплуатация Nagient через Docker Compose. |
+| [Команды и ежедневная работа](../commands.ru.md) | CLI, chat, status, logs и lifecycle-команды. |
+| [Конфигурация и секреты](../configuration.ru.md) | Выбор providers, tools, workspace и хранилища секретов. |
+| [Работа с плагинами](plugins.ru.md) | Подключение Telegram, GitHub API и других внешних расширений. |
+| [Переменные окружения](../env.ru.md) | Настройка Compose или автоматизации без интерактивного setup. |
+| [Диагностика проблем](../troubleshooting.ru.md) | Ошибка preflight, запуска, Docker, provider или активации плагина. |
+
+## Установка плагинов
+
+| Runtime | Открыть Plugin Hub | Проверить |
 | --- | --- | --- |
-| Установщик на компьютере | `nagient plugin catalog list`, затем `nagient plugin catalog install <id>` | `nagient preflight` |
-| Docker Compose | `docker compose exec nagient nagient plugin catalog list`, затем `docker compose exec nagient nagient plugin catalog install <id>` | `docker compose exec nagient nagient status` |
-| Прямой Git-репозиторий | `nagient plugin install <url>#<tag>` | `nagient preflight` |
-
-Проверенный каталог — безопасный вариант по умолчанию. `bundled` означает, что
-расширение уже входит в поставку и его не нужно устанавливать.
+| Личный компьютер | `nagient plugin install` | `nagient preflight` |
+| Docker Compose | `docker compose exec nagient nagient plugin install` | `docker compose exec nagient nagient preflight` |
+| Автоматизация | `nagient plugin install <verified-id-or-git-url>` | `nagient plugin list` |

@@ -876,8 +876,9 @@ def _build_structured_assistant_prompt(
                 "the future step needs fresh model reasoning."
             ),
             (
-                "For git commit/push workflows, prefer workspace.git.run. Use github.api.request "
-                "for GitHub REST operations such as repository metadata or settings endpoints."
+                "For git commit/push workflows, prefer workspace.git.run. Use "
+                "nagient.github_api.request for GitHub REST operations such as repository "
+                "metadata or settings endpoints."
             ),
             (
                 "Use system.config.read to inspect runtime configuration and system.config.patch "

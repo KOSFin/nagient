@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.11] - 2026-07-21
+
+### Added
+
+- Plugin Hub interactive installer with verified IDs, Git URL installation, and
+  installed/available status display.
+- Complete English and Russian documentation indexes with validated local links
+  and anchors.
+
+### Changed
+
+- Telegram and GitHub API integrations are now separate external plugins rather
+  than bundled core implementations.
+- Refreshed root README presentation and restored the Nagient ASCII cover.
+
 ## [0.9.10] - 2026-07-20
 
 ### Added

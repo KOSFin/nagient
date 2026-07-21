@@ -30,9 +30,10 @@ NAGIENT_AGENT_REQUIRE_PROVIDER=false
 # DEEPSEEK_API_KEY=вставьте-ключ-сюда
 # Для OpenAI-совместимого API задайте также NAGIENT_PROVIDER__ID__BASE_URL.
 
-# Telegram: раскомментируйте весь блок, если нужен Telegram-транспорт.
+# Telegram — внешний плагин. Сначала добавьте его закреплённый репозиторий в
+# NAGIENT_PLUGIN_SPECS, затем включите профиль.
 # NAGIENT_TRANSPORT__CONSOLE__ENABLED=false
-# NAGIENT_TRANSPORT__TELEGRAM__PLUGIN=builtin.telegram
+# NAGIENT_TRANSPORT__TELEGRAM__PLUGIN=nagient.telegram
 # NAGIENT_TRANSPORT__TELEGRAM__ENABLED=true
 # NAGIENT_TRANSPORT__TELEGRAM__BOT_TOKEN_SECRET=TELEGRAM_BOT_TOKEN
 # NAGIENT_TRANSPORT__TELEGRAM__DEFAULT_CHAT_ID=123456789
@@ -57,11 +58,11 @@ NAGIENT_AGENT_REQUIRE_PROVIDER=false
 # NAGIENT_WEBHOOK_PORT=8080
 
 # Установка внешних плагинов при первом запуске контейнера.
-# Один репозиторий на элемент, разделитель — запятая. Рекомендуется фиксировать tag/commit.
-# Формат: provider:https://github.com/owner/repo.git#v1.0.0
-# NAGIENT_PLUGIN_SPECS=provider:https://github.com/example/nagient-provider.git#v1.0.0
+# Один репозиторий на элемент, разделитель — запятая. Фиксируйте tag/commit.
+# NAGIENT_PLUGIN_SPECS=https://github.com/KOSFin/nagient-transport-telegram.git#v0.1.0
 
-# Дополнительные секреты инструментов:
+# GitHub API — внешний плагин. Добавьте его репозиторий в NAGIENT_PLUGIN_SPECS.
+# NAGIENT_TOOL__GITHUB_API__PLUGIN=nagient.github_api
 # NAGIENT_TOOL__GITHUB_API__ENABLED=true
 # NAGIENT_TOOL__GITHUB_API__TOKEN_SECRET=GITHUB_TOKEN
 # GITHUB_TOKEN=вставьте-токен-сюда

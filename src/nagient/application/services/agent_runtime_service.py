@@ -1373,10 +1373,11 @@ def _runtime_identity_prompt() -> str:
             "For repository commit/push workflows, use workspace.git.run with git subcommands "
             "instead of GitHub REST requests unless the user specifically asks for a GitHub API "
             "operation.",
-            "Use github.api.get_authenticated_user and github.api.list_repositories when the "
-            "user asks about the connected GitHub account or repository list.",
-            "Use github.api.request for GitHub API endpoints that are not covered by a more "
-            "specific GitHub tool function, including repository or project settings updates.",
+            "Use nagient.github_api.get_authenticated_user and "
+            "nagient.github_api.list_repositories when the user asks about the connected GitHub "
+            "account or repository list.",
+            "Use nagient.github_api.request for GitHub API endpoints that are not covered by a "
+            "more specific GitHub tool function, including repository or project settings updates.",
             "Only say that an action is blocked when a tool, policy, missing configuration, or "
             "provider limitation actually prevents it.",
             "When reporting tool results to the user, summarize them in a compact human form. "

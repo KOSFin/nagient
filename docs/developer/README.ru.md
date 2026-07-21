@@ -1,23 +1,27 @@
 # Руководство разработчика
 
-Язык: [English](README.md) | Русский
+[English](README.md) · Русский · [Вся документация](../README.ru.md)
 
-Этот раздел предназначен для разработчиков provider, transport, tool и runtime-
-интеграций. Сначала изучите контракт, затем выберите Python или process-плагин.
+Nagient поддерживает два runtime расширений: Python-плагины предоставляют `build_plugin()`, а process-плагины обмениваются одной JSON-парой через stdin/stdout. Оба варианта используют общие манифесты и discovery-модель.
 
-## Навигация
+## Выберите направление
 
-- [Разработка плагинов](../PLUGIN_DEVELOPMENT.ru.md)
-- [Контракты плагинов](../plugin-contracts.ru.md)
-- [Шаблон и структура репозитория](../PLUGIN_DEVELOPMENT.ru.md#репозиторий-шаблон)
-- [Архитектура и политика зависимостей](../architecture.ru.md)
-- [Тестирование и CI](testing.ru.md)
+| Задача | С чего начать |
+| --- | --- |
+| Создать новый плагин | [Руководство по разработке плагинов](../PLUGIN_DEVELOPMENT.ru.md) |
+| Начать с чистого репозитория | [Официальный шаблон плагина](https://github.com/KOSFin/nagient-plugin-template) |
+| Реализовать runtime adapter | [Контракты плагинов](../plugin-contracts.ru.md) |
+| Разобраться в ownership и discovery | [Архитектура](../architecture.ru.md) |
+| Подготовить contribution | [Тестирование и CI](testing.ru.md) |
 
-## Поддерживаемые языки
+## Содержание для разработчика
 
-- Модули Python 3.11+ с фабрикой `build_plugin()`.
-- Любой язык, который читает и пишет одну JSON-пару через stdin/stdout, с
-  `runtime = "process"` и протоколом `nagient.process.v1`.
+| Статья | Что внутри |
+| --- | --- |
+| [Создание первого плагина](../PLUGIN_DEVELOPMENT.ru.md) | Структура репозитория, манифесты, поля, зависимости, проверка и публикация. |
+| [Контракты плагинов](../plugin-contracts.ru.md) | Протоколы transport, provider, tool, Python и process runtime. |
+| [Архитектура](../architecture.ru.md) | Границы ядра, зависимости, runtime flow, безопасность и state. |
+| [Тестирование и CI](testing.ru.md) | Unit, integration, smoke, lint и release checks. |
+| [Как внести вклад](../../CONTRIBUTING.md) | Локальная настройка, code style, commits и pull requests. |
 
-SDK и нативные зависимости держите внутри плагина. Ядро остаётся небольшим и
-кроссплатформенным Python-пакетом.
+Сетевые SDK и нативные зависимости должны находиться в репозитории плагина. В ядре остаются только console, webhook, providers и системные tools, необходимые для полезного первого запуска.

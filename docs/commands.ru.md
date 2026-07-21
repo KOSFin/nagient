@@ -47,9 +47,10 @@ nagient <command> [subcommand] [options]
 - `nagient init [--force] [--format text|json]`
 - `nagient help`
 - `nagient plugins [--format text|json]`
-- `nagient plugin install <url>[#ref]`, `nagient plugin list`, `nagient plugin remove <id>`
+- `nagient plugin install [<verified-id-or-git-url>] [--ref <tag-or-commit>]`
+- `nagient plugin list`, `nagient plugin remove <id>`
 - `nagient plugin catalog list [--family transport|provider|tool] [--format text|json]`
-- `nagient plugin catalog install <plugin-id> [--format text|json]`
+- `nagient plugin catalog install <plugin-id> [--format text|json]` (compatibility alias)
 - `nagient status [--format text|json]`
 - `nagient doctor [--format text|json]`
 - `nagient paths [--format text|json]`

@@ -11,19 +11,7 @@
       "version": "0.1.0",
       "verified": true,
       "bundled": true,
-      "docs": "docs/commands.md#chat"
-    },
-    {
-      "plugin_id": "builtin.telegram",
-      "family": "transport",
-      "display_name": "Telegram Transport",
-      "description": "Telegram Bot API polling, replies, callbacks, and chat allowlists.",
-      "source": "builtin",
-      "version": "0.1.0",
-      "verified": true,
-      "bundled": true,
-      "docs": "docs/plugins.md#telegram",
-      "env": ["NAGIENT_TRANSPORT__TELEGRAM__BOT_TOKEN_SECRET", "TELEGRAM_BOT_TOKEN"]
+      "docs": "docs/commands.md#21-core"
     },
     {
       "plugin_id": "builtin.webhook",
@@ -35,18 +23,6 @@
       "verified": true,
       "bundled": true,
       "docs": "docs/plugin-contracts.md"
-    },
-    {
-      "plugin_id": "github.api",
-      "family": "tool",
-      "display_name": "GitHub API",
-      "description": "Scoped GitHub issue, pull request, repository, and release operations.",
-      "source": "builtin",
-      "version": "0.1.0",
-      "verified": true,
-      "bundled": true,
-      "docs": "docs/plugins.md#github-api",
-      "env": ["NAGIENT_TOOL__GITHUB_API__TOKEN_SECRET", "GITHUB_TOKEN"]
     },
     {
       "plugin_id": "nagient.telegram",

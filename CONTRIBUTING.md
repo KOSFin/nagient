@@ -212,16 +212,17 @@ nagient/
        return MyTransportPlugin()
    ```
 
-4. **Reference bundled transports** as examples:
-   - `src/nagient/bundled_transports/telegram/` - Full-featured example
-   - `src/nagient/bundled_transports/console/` - Minimal example
-   - `src/nagient/bundled_transports/webhook/` - HTTP example
+4. **Choose the right reference:**
+   - [Plugin template](https://github.com/KOSFin/nagient-plugin-template) - clean starting point
+   - [Telegram Transport](https://github.com/KOSFin/nagient-transport-telegram) - full transport example
+   - `src/nagient/bundled_transports/console/` - minimal transport example
+   - `src/nagient/bundled_transports/webhook/` - HTTP transport example
 
 #### Creating a Tool Plugin
 
 Similar to transport plugins, but use `tool.toml` and inherit from `BaseToolPlugin`.
 
-See `src/nagient/bundled_tools/github_api/` for a complete example.
+See the [GitHub API Tool](https://github.com/KOSFin/nagient-tool-github-api) for a complete external tool example.
 
 ### Documentation
 
@@ -293,10 +294,10 @@ Use type hints everywhere, enforce with mypy in strict mode.
 
 ## Getting Help
 
-- **Documentation:** [docs/README.md](docs/README.md)
-- **Architecture:** [docs/architecture.md](docs/architecture.md)
-- **Examples:** Bundled plugins in `src/nagient/bundled_*/`
-- **Issues:** [GitHub Issues](https://github.com/YOUR_ORG/nagient/issues)
+- [Complete documentation](docs/README.md)
+- [Architecture and runtime boundaries](docs/architecture.md)
+- [Plugin template](https://github.com/KOSFin/nagient-plugin-template)
+- [GitHub Issues](https://github.com/KOSFin/nagient/issues)
 
 ## License
 

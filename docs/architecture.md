@@ -21,7 +21,7 @@ cross-platform benefit.
 - `nagient.application.services` contains use-cases such as health checks and update discovery.
 - `nagient.domain` owns release entities and semantic version comparison.
 - `nagient.infrastructure` handles manifests, registry loading, runtime heartbeat writing, and file transport.
-- `nagient.tools` provides the tool plugin framework plus built-in workspace, backup, interaction, reconcile, and GitHub tools.
+- `nagient.tools` provides the tool plugin framework plus built-in workspace, backup, interaction, and reconcile tools.
 - `nagient.workspace` owns bounded/unsafe workspace policy, `.nagient/` layout, and job persistence.
 - `nagient.security` owns the secret broker plus file-backed interaction and approval workflows.
 - `nagient.migrations` plans ordered upgrade steps from release metadata.
@@ -42,14 +42,10 @@ Safe mode is enabled by default. When it is disabled, the runtime may still star
 
 ## Bundled Versus External Plugins
 
-Bundled plugins are compatibility defaults, not a second installation source. They
-are loaded from `nagient/bundled_*` inside the wheel so first-run setup works
-offline. External repositories use separate IDs and are installed under the
-runtime home. Today Telegram and GitHub exist in both forms intentionally: the
-bundled IDs preserve existing configurations, while the reviewed repositories
-enable independent releases. Once an external replacement is stable, a future
-major release can retire the bundled copy behind a migration instead of silently
-breaking existing profiles.
+The wheel bundles only the console and webhook transports required for an offline
+first run. Optional integrations use separate repositories and are installed
+under the runtime home. Telegram and GitHub API are verified external plugins;
+their dependencies and releases are deliberately independent from the core.
 
 Custom provider, transport, and tool plugins can run as native Python modules or as external processes written in any language.
 

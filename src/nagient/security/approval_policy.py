@@ -121,14 +121,14 @@ def _can_auto_approve_expected_action(
         subcommand = str(args[0]).strip().lower()
         return subcommand in {"clone", "add", "commit", "push", "status", "diff", "log"}
 
-    if function_name == "github.api.request":
+    if function_name == "nagient.github_api.request":
         method = str(arguments.get("method", "GET")).strip().upper()
         path = str(arguments.get("path", "")).strip()
         return method in {"GET", "HEAD", "POST", "PATCH", "PUT"} and path.startswith("/")
 
     if function_name in {
-        "github.api.create_issue",
-        "github.api.add_issue_comment",
+        "nagient.github_api.create_issue",
+        "nagient.github_api.add_issue_comment",
         "transport.router.send_message",
         "transport.router.send_notification",
         "transport.router.send_typing",

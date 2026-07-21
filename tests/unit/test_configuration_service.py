@@ -9,6 +9,19 @@ from nagient.app.settings import Settings
 
 
 class ConfigurationServiceTests(unittest.TestCase):
+    def test_external_transport_configuration_points_to_plugin_installer(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir) / ".nagient"
+            settings = Settings.from_env({"NAGIENT_HOME": str(home_dir)})
+            container = build_container(settings)
+            container.configuration_service.initialize(force=True)
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "nagient plugin install nagient.telegram",
+            ):
+                container.configuration_service.configure_transport("telegram")
+
     def test_secret_reference_updates_reject_raw_secret_values(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             home_dir = Path(temp_dir) / ".nagient"
@@ -18,8 +31,8 @@ class ConfigurationServiceTests(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "secret name like MY_SECRET"):
                 container.configuration_service.configure_transport(
-                    "telegram",
-                    config_updates={"bot_token_secret": "123456:telegram-token"},
+                    "webhook",
+                    config_updates={"shared_secret_name": "123456:webhook-secret"},
                 )
 
     def test_tool_secret_reference_updates_reject_raw_secret_values(self) -> None:

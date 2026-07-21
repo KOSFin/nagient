@@ -1,41 +1,37 @@
 # Документация Nagient
 
-Язык: [English](README.md) | Русский
+[English](README.md) · Русский · [Обзор проекта](../README.ru.md)
 
-## Быстрый старт
+Здесь собрана вся документация Nagient. Пользователю достаточно раздела эксплуатации; contributors и авторы плагинов могут сразу перейти к разделу разработки.
 
-Linux/macOS:
+## Выберите свой путь
 
-```bash
-curl -fsSL https://ngnt-in.ruka.me/install.sh | bash
-nagient setup
-nagient chat
-nagient up
-nagient status
-```
+| Я хочу... | С чего начать |
+| --- | --- |
+| Установить и запустить Nagient | [Руководство пользователя](user/README.ru.md) |
+| Развернуть Nagient на сервере | [Развёртывание через Docker Compose](deploy.ru.md) |
+| Подключить Telegram, GitHub API или другое расширение | [Plugin Hub](plugins.ru.md) |
+| Создать transport, provider или tool | [Руководство разработчика](developer/README.ru.md) |
+| Разобраться во внутреннем устройстве runtime | [Архитектура](architecture.ru.md) |
 
-Windows PowerShell:
+## Полное содержание
 
-```powershell
-irm https://ngnt-in.ruka.me/install.ps1 | iex
-powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagient.ps1" up
-powershell -ExecutionPolicy Bypass -File "$HOME/.nagient/bin/nagient.ps1" status
-```
+| Область | Статья | Что внутри |
+| --- | --- | --- |
+| **Начало работы** | [Установка и обновления](install.ru.md) | Установка на компьютер, локальный runtime, обновление и удаление. |
+| **Начало работы** | [Развёртывание на сервере](deploy.ru.md) | Docker Compose через `.env` и проверка запуска. |
+| **Эксплуатация** | [Команды и ежедневная работа](commands.ru.md) | Chat, setup, status, logs, диагностика и управление. |
+| **Эксплуатация** | [Конфигурация и секреты](configuration.ru.md) | Runtime layout, профили, алиасы, tools и секреты. |
+| **Эксплуатация** | [Переменные окружения](env.ru.md) | Полный справочник env для установщика, Compose, providers, transports и плагинов. |
+| **Эксплуатация** | [Диагностика проблем](troubleshooting.ru.md) | Ошибки запуска, конфигурации, плагинов, Docker и обновлений. |
+| **Плагины** | [Plugin Hub и проверенный каталог](plugins.ru.md) | Интерактивный установщик, короткие ID, Git URL, доверие и официальные плагины. |
+| **Плагины** | [Работа с плагинами](user/plugins.ru.md) | Установка на компьютере и в Docker, настройка, обновление и удаление. |
+| **Разработка** | [Руководство разработчика](developer/README.ru.md) | Точка входа для contributors и авторов плагинов. |
+| **Разработка** | [Создание первого плагина](PLUGIN_DEVELOPMENT.ru.md) | Репозиторий-шаблон, манифесты, packaging, проверка и публикация. |
+| **Разработка** | [Контракты плагинов](plugin-contracts.ru.md) | Протоколы Python и process runtime. |
+| **Разработка** | [Тестирование и CI](developer/testing.ru.md) | Уровни тестов и локальные проверки. |
+| **Внутреннее устройство** | [Архитектура](architecture.ru.md) | Границы runtime, зависимости, discovery и безопасность. |
 
-## Навигация
+## Языки
 
-Выберите раздел по роли:
-
-- **Пользователь:** [Руководство пользователя](user/README.ru.md)
-- **Разработчик:** [Руководство разработчика](developer/README.ru.md)
-
-- Установка и обновления: [install.ru.md](install.ru.md)
-- Развёртывание через Docker Compose: [deploy.ru.md](deploy.ru.md)
-- Команды runtime и CLI: [commands.ru.md](commands.ru.md)
-- Конфигурация и секреты: [configuration.ru.md](configuration.ru.md)
-- Контракты плагинов: [plugin-contracts.ru.md](plugin-contracts.ru.md)
-- Каталог плагинов и Telegram: [plugins.ru.md](plugins.ru.md)
-- Разработка и установка плагинов: [PLUGIN_DEVELOPMENT.ru.md](PLUGIN_DEVELOPMENT.ru.md)
-- Переменные окружения: [env.ru.md](env.ru.md)
-- Диагностика проблем: [troubleshooting.ru.md](troubleshooting.ru.md)
-- Архитектура: [architecture.ru.md](architecture.ru.md)
+У каждой статьи есть русская и английская версия. Ссылка вверху страницы переключает язык, сохраняя текущий раздел.

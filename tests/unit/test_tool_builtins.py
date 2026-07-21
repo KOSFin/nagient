@@ -9,9 +9,7 @@ from types import SimpleNamespace
 from nagient.app.container import build_container
 from nagient.app.settings import Settings
 from nagient.domain.entities.tooling import ToolExecutionRequest
-from nagient.tools.base import ToolExecutionContext
 from nagient.tools.builtin import (
-    GitHubApiToolPlugin,
     _plan_shell_command,
     _workspace_git_env,
 )
@@ -196,93 +194,6 @@ class ToolBuiltinsTests(unittest.TestCase):
             self.assertNotIn("payload", jobs[0])
             self.assertNotIn("notes", jobs[0])
 
-    def test_github_api_tool_uses_structured_requests(self) -> None:
-        seen: dict[str, object] = {}
-        responses = [
-            (
-                b'{"number": 7, "title": "Bug", "state": "open", '
-                b'"html_url": "https://github.test/acme/repo/issues/7"}'
-            ),
-            (
-                b'{"login": "octo", "id": 42, "name": "Octo", '
-                b'"html_url": "https://github.test/octo", "type": "User"}'
-            ),
-            (
-                b'[{"full_name": "octo/repo", "private": false, '
-                b'"default_branch": "main", "html_url": "https://github.test/octo/repo"}]'
-            ),
-        ]
-
-        class _Response:
-            def __enter__(self) -> object:
-                return self
-
-            def __exit__(self, exc_type: object, exc: object, tb: object) -> object:
-                return None
-
-            def read(self) -> bytes:
-                return responses.pop(0)
-
-        def _opener(request: object, timeout: float = 15.0) -> _Response:
-            seen["url"] = request.full_url
-            seen["method"] = request.get_method()
-            seen["data"] = request.data
-            seen["timeout"] = timeout
-            return _Response()
-
-        plugin = GitHubApiToolPlugin(opener=_opener)
-        context = _tool_context(
-            config={
-                "token_secret": "GITHUB_TOKEN",
-                "base_url": "https://github.test/api/v3",
-                "timeout_seconds": 3,
-            },
-            secret_value="ghp_secret",
-        )
-
-        result = plugin.create_issue(
-            {
-                "owner": "acme",
-                "repo": "repo",
-                "title": "Bug",
-                "body": "Details",
-            },
-            context,
-        )
-
-        self.assertEqual(result["number"], 7)
-        self.assertEqual(seen["method"], "POST")
-        self.assertEqual(seen["url"], "https://github.test/api/v3/repos/acme/repo/issues")
-        self.assertEqual(seen["timeout"], 3.0)
-        self.assertIn(b'"title": "Bug"', seen["data"])
-
-        user = plugin.get_authenticated_user({}, context)
-        self.assertEqual(user["login"], "octo")
-        self.assertEqual(seen["method"], "GET")
-        self.assertEqual(seen["url"], "https://github.test/api/v3/user")
-
-        repositories = plugin.list_repositories({"per_page": 1}, context)
-        self.assertEqual(repositories["repositories"][0]["full_name"], "octo/repo")
-        self.assertEqual(
-            seen["url"],
-            "https://github.test/api/v3/user/repos?per_page=1",
-        )
-
-        dry_run = plugin.add_issue_comment(
-            {
-                "owner": "acme",
-                "repo": "repo",
-                "issue_number": 7,
-                "body": "Thanks",
-            },
-            _tool_context(
-                config={"base_url": "https://api.github.com"},
-                secret_value="ghp_secret",
-                dry_run=True,
-            ),
-        )
-        self.assertTrue(dry_run["dry_run"])
-        self.assertEqual(dry_run["method"], "POST")
 
 
 def _container_with_workspace(root: Path) -> object:
@@ -295,36 +206,6 @@ def _container_with_workspace(root: Path) -> object:
     _set_workspace_root(settings.config_file, workspace_root)
     return container
 
-
-def _tool_context(
-    *,
-    config: dict[str, object],
-    secret_value: str,
-    dry_run: bool = False,
-) -> ToolExecutionContext:
-    root = Path("/tmp/nagient-workspace")
-    secret_broker = SimpleNamespace(
-        resolve_secret=lambda name, scope_hint=None: secret_value,
-    )
-    return ToolExecutionContext(
-        settings=SimpleNamespace(),
-        workspace=SimpleNamespace(
-            root=root,
-            mode="bounded",
-            metadata=SimpleNamespace(workspace_id="workspace-1"),
-        ),
-        workspace_manager=SimpleNamespace(),
-        tool_id="github_api",
-        plugin_id="github.api",
-        config=config,
-        secret_broker=secret_broker,
-        backup_manager=SimpleNamespace(),
-        request_interaction=lambda request: request,
-        request_approval=lambda request: request,
-        invoke_reconcile=lambda: {},
-        invoke_assistant_resume=lambda response: {},
-        dry_run=dry_run,
-    )
 
 
 def _set_workspace_root(config_file: Path, workspace_root: Path) -> None:

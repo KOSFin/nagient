@@ -141,18 +141,19 @@ GIT_PASSWORD=
 GITHUB_TOKEN=
 ```
 
-## 6. Встроенный GitHub tool
+## 6. Плагин GitHub API
 
-Профиль `github_api` есть из коробки и включен по умолчанию, чтобы агент видел GitHub-возможности в каталоге tools. Он умеет получать подключенного пользователя, список репозиториев, читать репозитории, получать issues, создавать issues, писать комментарии и выполнять общий `github.api.request`. Сохраните токен в `@tool_secrets` как `GITHUB_TOKEN`:
+GitHub API — внешний проверенный плагин, который выключен до установки. Установите его, включите профиль `github_api` и сохраните токен в `@tool_secrets` под именем `GITHUB_TOKEN`:
 
 ```bash
+nagient plugin install nagient.github_api
 nagient setup tool github_api --set token_secret=GITHUB_TOKEN
 ```
 
-Используйте `github.api.request` для GitHub REST endpoints, для которых пока нет отдельного helper, например для обновления настроек репозитория:
+Плагин предоставляет отдельные helpers и `nagient.github_api.request` для остальных GitHub REST endpoints, например для обновления настроек репозитория:
 
 ```bash
-nagient tool invoke github.api.request \
+nagient tool invoke nagient.github_api.request \
   --tool-id github_api \
   --args-json '{"method":"PATCH","path":"/repos/OWNER/REPO","json":{"description":"Updated by Nagient"}}' \
   --auto-approve

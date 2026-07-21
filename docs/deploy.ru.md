@@ -66,11 +66,13 @@ NAGIENT_PROVIDER__OPENAI__MODEL=gpt-4.1-mini
 OPENAI_API_KEY=sk-...
 
 NAGIENT_TRANSPORT__CONSOLE__ENABLED=false
-NAGIENT_TRANSPORT__TELEGRAM__PLUGIN=builtin.telegram
+NAGIENT_TRANSPORT__TELEGRAM__PLUGIN=nagient.telegram
 NAGIENT_TRANSPORT__TELEGRAM__ENABLED=true
 NAGIENT_TRANSPORT__TELEGRAM__BOT_TOKEN_SECRET=TELEGRAM_BOT_TOKEN
 NAGIENT_TRANSPORT__TELEGRAM__DEFAULT_CHAT_ID=123456789
 TELEGRAM_BOT_TOKEN=123456:ABC...
+
+NAGIENT_PLUGIN_SPECS=https://github.com/KOSFin/nagient-transport-telegram.git#v0.1.0
 ```
 
 Если серверу нужен прокси для Telegram, добавьте в `.env`:
@@ -113,7 +115,7 @@ docker compose logs -f nagient
 В `.env` можно перечислить Git-репозитории:
 
 ```dotenv
-NAGIENT_PLUGIN_SPECS=provider:https://github.com/example/nagient-provider.git#v1.0.0,tool:https://github.com/example/nagient-tool.git#8f31abc
+NAGIENT_PLUGIN_SPECS=https://github.com/KOSFin/nagient-transport-telegram.git#v0.1.0,https://github.com/KOSFin/nagient-tool-github-api.git#v0.1.0
 ```
 
 При первом запуске entrypoint клонирует репозитории, проверяет манифест и
@@ -134,7 +136,7 @@ docker compose exec nagient nagient plugins --all
 Ручная установка без изменения Compose:
 
 ```bash
-docker compose exec nagient nagient plugin install provider:https://github.com/owner/repo.git#v1.0.0
+docker compose exec nagient nagient plugin install https://github.com/owner/repo.git --ref v1.0.0
 docker compose restart nagient
 ```
 

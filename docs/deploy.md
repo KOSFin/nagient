@@ -45,17 +45,36 @@ NAGIENT_PROVIDER__OPENAI__MODEL=gpt-4.1-mini
 OPENAI_API_KEY=sk-...
 
 NAGIENT_TRANSPORT__CONSOLE__ENABLED=false
-NAGIENT_TRANSPORT__TELEGRAM__PLUGIN=builtin.telegram
+NAGIENT_TRANSPORT__TELEGRAM__PLUGIN=nagient.telegram
 NAGIENT_TRANSPORT__TELEGRAM__ENABLED=true
 NAGIENT_TRANSPORT__TELEGRAM__BOT_TOKEN_SECRET=TELEGRAM_BOT_TOKEN
 NAGIENT_TRANSPORT__TELEGRAM__DEFAULT_CHAT_ID=123456789
 TELEGRAM_BOT_TOKEN=123456:ABC...
+
+NAGIENT_PLUGIN_SPECS=https://github.com/KOSFin/nagient-transport-telegram.git#v0.1.0
 ```
 
 The compose service loads the entire `.env` into the container. You do not need
 to run `nagient setup`, edit TOML, or edit a generated secrets file.
 
-## 3. First start
+## 3. Install External Plugins
+
+For unattended deployment, list pinned Git repositories in `.env`:
+
+```dotenv
+NAGIENT_PLUGIN_SPECS=https://github.com/KOSFin/nagient-transport-telegram.git#v0.1.0,https://github.com/KOSFin/nagient-tool-github-api.git#v0.1.0
+```
+
+On first boot, the entrypoint clones each repository, validates its manifest,
+and stores it under persistent `./data`. For an existing container, open Plugin
+Hub or install a verified ID directly:
+
+```bash
+docker compose exec nagient nagient plugin install
+docker compose exec nagient nagient plugin install nagient.telegram
+```
+
+## 4. First start
 
 ```bash
 docker compose up -d
@@ -65,7 +84,7 @@ On first start the container also seeds compatibility files under `./data`.
 They are useful for persistence and CLI workflows, but environment values take
 precedence and no manual interaction with those files is required.
 
-## 4. Verify
+## 5. Verify
 
 ```bash
 docker compose exec nagient nagient status

@@ -1,85 +1,113 @@
-# Plugins
+# Plugin Hub
 
-Language: English | [Русский](plugins.ru.md)
+English · [Русская версия](plugins.ru.md) · [Documentation index](README.md)
 
-Nagient separates the runtime from extensions. A plugin is a repository with a
-manifest (`plugin.toml`, `provider.toml`, or `tool.toml`), its own instructions,
-and optional isolated dependencies. Installed plugins live under `~/.nagient`;
-they are never copied into the core package.
+Nagient keeps optional integrations outside the core package. A plugin has its own repository, manifest, version, dependencies, documentation, and release cycle. Installed plugins live under `~/.nagient` and are never copied into the Python package.
 
-## Discover and install
+## Open The Installer
 
-Start with the reviewed catalog:
+```bash
+nagient plugin install
+```
+
+In an interactive terminal, Plugin Hub shows every verified external plugin with its type and `installed` or `available` status. Choose a plugin or select the Git URL option. In a non-interactive shell, the same command prints the verified catalog and ready-to-run install commands instead of waiting for input.
+
+## Install Directly
+
+A verified short ID is the simplest reproducible source:
+
+```bash
+nagient plugin install nagient.telegram
+nagient plugin install nagient.github_api
+```
+
+Nagient resolves the reviewed repository and pinned release from the catalog. A compatible Git repository can also be installed without a prefix:
+
+```bash
+nagient plugin install https://github.com/owner/nagient-plugin.git
+nagient plugin install https://github.com/owner/nagient-plugin.git --ref v1.2.0
+```
+
+Use `--force` to reinstall, `--no-dependencies` for a repository that needs no isolated environment, and `--format json` in automation.
+
+## Verified Catalog
+
+| Plugin | Family | Status | Install |
+| --- | --- | --- | --- |
+| [Console Transport](commands.md#21-core) | Transport | Bundled | No installation needed |
+| [Webhook Transport](plugin-contracts.md) | Transport | Bundled | No installation needed |
+| [Telegram Transport](https://github.com/KOSFin/nagient-transport-telegram) | Transport | Verified external | `nagient plugin install nagient.telegram` |
+| [GitHub API Tool](https://github.com/KOSFin/nagient-tool-github-api) | Tool | Verified external | `nagient plugin install nagient.github_api` |
+
+List the machine-readable catalog or filter it by family:
 
 ```bash
 nagient plugin catalog list
 nagient plugin catalog list --family transport
-nagient plugin list
+nagient plugin catalog list --format json
 ```
 
-`bundled` entries are already part of Nagient. External entries can be installed
-without hunting through GitHub:
+## Configure An Installed Plugin
 
-```bash
-nagient plugin catalog install <plugin-id>
-nagient preflight
-nagient status
+Installation makes a plugin discoverable; configuration decides whether a profile is enabled. Every manifest declares its own fields. Environment overrides follow one shape:
+
+```text
+NAGIENT_<FAMILY>__<PROFILE_ID>__<FIELD>=value
 ```
 
-Official separately versioned repositories:
-
-| Plugin | Install |
-| --- | --- |
-| `nagient.telegram` | `nagient plugin catalog install nagient.telegram` |
-| `nagient.github_api` | `nagient plugin catalog install nagient.github_api` |
-
-Use `--format json` in scripts. The catalog distinguishes `verified` entries
-from arbitrary repositories. A repository installed directly is still supported,
-but it is not treated as reviewed:
-
-```bash
-nagient plugin install transport:https://github.com/ORG/REPO.git#v1.0.0
-```
-
-## Telegram
-
-Telegram is bundled and enabled by configuration. The token is always a secret
-reference, never a value committed to a config file:
+Telegram example:
 
 ```env
+NAGIENT_TRANSPORT__TELEGRAM__PLUGIN=nagient.telegram
 NAGIENT_TRANSPORT__TELEGRAM__ENABLED=true
 NAGIENT_TRANSPORT__TELEGRAM__BOT_TOKEN_SECRET=TELEGRAM_BOT_TOKEN
+NAGIENT_TRANSPORT__TELEGRAM__ALLOWED_USER_IDS=123456789
 TELEGRAM_BOT_TOKEN=123456:replace-me
 ```
 
-Group and sender restrictions are opt-in. If a list is non-empty, events outside
-the list are acknowledged and ignored before they reach the agent:
+GitHub API example:
 
 ```env
-NAGIENT_TRANSPORT__TELEGRAM__ALLOWED_CHAT_IDS=-1001234567890,123456789
-NAGIENT_TRANSPORT__TELEGRAM__ALLOWED_USER_IDS=123456789
-NAGIENT_TRANSPORT__TELEGRAM__ALLOWED_CHAT_TYPES=private,supergroup
+NAGIENT_TOOL__GITHUB_API__PLUGIN=nagient.github_api
+NAGIENT_TOOL__GITHUB_API__ENABLED=true
+NAGIENT_TOOL__GITHUB_API__TOKEN_SECRET=GITHUB_TOKEN
+GITHUB_TOKEN=github_pat_replace_me
 ```
 
-The transport also exposes `telegram.streamMessage`. A runtime integration can
-send cumulative provider snapshots in one message and progressively edit it, while
-respecting Telegram's rate limits by batching updates.
+Secret fields contain a secret name. Keep the actual value in the environment, `secrets.env`, `tool-secrets.env`, or the corresponding JSON secret override.
 
-## Configuration owned by a plugin
+## Docker Compose
 
-Every plugin declares its fields in its manifest. The environment name follows
-one rule, so adding a plugin does not require a Compose change:
+Use the same Plugin Hub inside the persistent container:
 
-```text
-NAGIENT_<FAMILY>__<PLUGIN_ID>__<FIELD>=value
+```bash
+docker compose exec nagient nagient plugin install
+docker compose exec nagient nagient plugin install nagient.telegram
+docker compose exec nagient nagient preflight
+docker compose restart nagient
 ```
 
-For example, `allowed_chat_ids` becomes
-`NAGIENT_TRANSPORT__TELEGRAM__ALLOWED_CHAT_IDS`. Secret fields contain a secret
-name; the value belongs in the environment or `NAGIENT_SECRETS_JSON`.
+For unattended first boot, pin sources in `.env`:
 
-## Trust and updates
+```env
+NAGIENT_PLUGIN_SPECS=https://github.com/KOSFin/nagient-transport-telegram.git#v0.1.0,https://github.com/KOSFin/nagient-tool-github-api.git#v0.1.0
+```
 
-Review `plugin.toml`, the source URL, and the pinned `#ref` before installing an
-unverified plugin. Run `nagient preflight` after every install and keep tools in
-bounded workspace mode unless a workflow explicitly needs broader access.
+The persistent `./data` mount keeps installed plugins across container restarts.
+
+## Inspect, Update, And Remove
+
+```bash
+nagient plugin list
+nagient plugin install nagient.telegram --force
+nagient plugin remove nagient.telegram
+nagient preflight
+```
+
+Reinstalling a verified ID uses its currently pinned catalog ref. For an arbitrary repository, pass the desired `--ref` explicitly.
+
+## Trust Model
+
+`verified` means the Nagient catalog pins a reviewed source and ref. It does not sandbox arbitrary plugin code. Before installing an unverified URL, review its manifest, source, dependencies, permissions, and network behavior. Keep workspace mode `bounded` unless a workflow explicitly requires broader access.
+
+Plugin authors should start from the [official template](https://github.com/KOSFin/nagient-plugin-template) and continue with [Build your first plugin](PLUGIN_DEVELOPMENT.md).

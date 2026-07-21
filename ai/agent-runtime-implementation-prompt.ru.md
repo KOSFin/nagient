@@ -16,11 +16,11 @@
 
 Перед любыми изменениями обязательно прочитай и пойми:
 
-- [ai/README.ru.md](./README.ru.md)
-- [docs/architecture.ru.md](../docs/architecture.ru.md)
-- [docs/architecture.md](../docs/architecture.md)
-- [README.ru.md](../README.ru.md)
-- [README.md](../README.md)
+- [Контекст для AI и автоматизации](README.ru.md)
+- [Архитектура runtime](../docs/architecture.ru.md)
+- [Runtime architecture in English](../docs/architecture.md)
+- [Обзор проекта](../README.ru.md)
+- [Project overview in English](../README.md)
 - [src/nagient/app/settings.py](../src/nagient/app/settings.py)
 - [src/nagient/app/configuration.py](../src/nagient/app/configuration.py)
 - [src/nagient/app/container.py](../src/nagient/app/container.py)
@@ -622,11 +622,11 @@ Approval flow должен уметь жить поверх текущего tra
 
 Минимально проверь и при необходимости обнови:
 
-- [ai/README.ru.md](./README.ru.md)
-- [docs/architecture.ru.md](../docs/architecture.ru.md)
-- [docs/architecture.md](../docs/architecture.md)
-- [README.ru.md](../README.ru.md)
-- [README.md](../README.md)
+- [Контекст для AI и автоматизации](README.ru.md)
+- [Архитектура runtime](../docs/architecture.ru.md)
+- [Runtime architecture in English](../docs/architecture.md)
+- [Обзор проекта](../README.ru.md)
+- [Project overview in English](../README.md)
 - developer docs, если они затрагиваются
 
 Документация должна честно отражать текущее состояние проекта. Не пиши, что система умеет то, чего на самом деле еще нет.

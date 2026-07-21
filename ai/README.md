@@ -1,8 +1,20 @@
-# AI Project Context
+# AI And Automation Context
 
-Language: English | [Русский](README.ru.md)
+English · [Русская версия](README.ru.md) · [Developer documentation](../docs/developer/README.md) · [Project overview](../README.md)
 
 This document is for AI agents and automation workflows that continue development of Nagient.
+
+## Contents
+
+| Section | Purpose |
+| --- | --- |
+| [Project intent](#1-project-intent) | Product and delivery goals. |
+| [Current scope](#2-current-scope) | Implemented runtime capabilities. |
+| [Repository map](#3-repository-map) | Core modules and extension boundaries. |
+| [Stable contracts](#4-contracts-that-must-stay-stable) | Cross-cutting invariants. |
+| [CLI surface](#5-cli-surface-current) | Supported command groups. |
+| [Testing focus](#6-testing-focus) | Required regression coverage. |
+| [Working prompt](#8-working-prompt) | Detailed implementation context. |
 
 ## 1. Project Intent
 
@@ -36,7 +48,7 @@ Implemented foundation:
 - release metadata generation and update center flow
 - CI, release automation, and smoke/integration/unit tests
 
-Important: the repository is still a platform scaffold, not a fully autonomous agent runtime.
+The runtime now includes provider execution, tool calls, approvals, jobs, session memory, transports, health reporting, and managed lifecycle. Treat the detailed implementation prompt as historical context where it conflicts with current code.
 
 ## 3. Repository Map
 
@@ -55,17 +67,20 @@ Core references:
 - `src/nagient/security/`
 - `src/nagient/migrations/`
 
-Bundled extensions (manifest-driven, loaded exactly like user plugins):
+Bundled transports (manifest-driven, loaded exactly like user plugins):
 
-- `src/nagient/bundled_transports/telegram/`
 - `src/nagient/bundled_transports/console/`
 - `src/nagient/bundled_transports/webhook/`
-- `src/nagient/bundled_tools/github_api/`
+
+Verified external integrations:
+
+- [Telegram Transport](https://github.com/KOSFin/nagient-transport-telegram)
+- [GitHub API Tool](https://github.com/KOSFin/nagient-tool-github-api)
 
 ## 3a. Plugin Architecture Convention (Important)
 
-Bundled transports and tools are NOT special-cased. Each one is a self-contained
-directory with a `plugin.toml`/`tool.toml` manifest and an `entrypoint` module that
+Bundled transports are not special-cased. Each one is a self-contained
+directory with a `plugin.toml` manifest and an `entrypoint` module that
 exports `build_plugin()`. The registries in `src/nagient/plugins/registry.py` and
 `src/nagient/tools/registry.py` discover the bundled directories first, then the
 user plugin/tool directories, using the same code path.
@@ -74,10 +89,8 @@ Rules to preserve:
 
 - Do not reintroduce hardcoded transport/tool classes into `plugins/builtin.py`
   or a central registry. `plugins/builtin.py` is only a thin compatibility stub.
-- A new bundled transport is added as a new directory under `bundled_transports/`
-  with a manifest and a `transport.py` exposing `build_plugin()`.
-- Bundled plugins double as reference implementations for users writing their own,
-  so keep them clean and idiomatic.
+- Optional product integrations belong in separate repositories and the verified
+  catalog. Keep the core bundle limited to first-run infrastructure.
 
 Delivery references:
 

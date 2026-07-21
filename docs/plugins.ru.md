@@ -1,81 +1,113 @@
-# Плагины
+# Plugin Hub
 
-Язык: [English](plugins.md) | Русский
+[English](plugins.md) · Русский · [Содержание документации](README.ru.md)
 
-Nagient отделяет runtime от расширений. Плагин — это репозиторий с манифестом
-(`plugin.toml`, `provider.toml` или `tool.toml`), инструкциями и, при необходимости,
-изолированными зависимостями. Установленные плагины находятся в `~/.nagient` и
-не попадают в пакет ядра.
+Nagient хранит необязательные интеграции вне ядра. У каждого плагина свой репозиторий, манифест, версия, зависимости, документация и release cycle. Установленные плагины находятся в `~/.nagient` и не копируются в Python-пакет.
 
-## Каталог и установка
+## Открыть установщик
+
+```bash
+nagient plugin install
+```
+
+В интерактивном терминале Plugin Hub показывает все проверенные внешние плагины, их тип и статус `installed` или `available`. Можно выбрать плагин из списка или пункт установки по Git URL. В неинтерактивном shell эта же команда печатает проверенный каталог и готовые команды, не ожидая ввода.
+
+## Установить напрямую
+
+Короткий проверенный ID — самый простой воспроизводимый источник:
+
+```bash
+nagient plugin install nagient.telegram
+nagient plugin install nagient.github_api
+```
+
+Nagient берёт проверенный репозиторий и закреплённый релиз из каталога. Совместимый Git-репозиторий можно установить обычной ссылкой без префикса:
+
+```bash
+nagient plugin install https://github.com/owner/nagient-plugin.git
+nagient plugin install https://github.com/owner/nagient-plugin.git --ref v1.2.0
+```
+
+`--force` переустанавливает плагин, `--no-dependencies` пропускает создание изолированного окружения, а `--format json` предназначен для автоматизации.
+
+## Проверенный каталог
+
+| Плагин | Семейство | Статус | Установка |
+| --- | --- | --- | --- |
+| [Console Transport](commands.ru.md#21-базовые) | Transport | Встроен | Не требуется |
+| [Webhook Transport](plugin-contracts.ru.md) | Transport | Встроен | Не требуется |
+| [Telegram Transport](https://github.com/KOSFin/nagient-transport-telegram) | Transport | Проверенный внешний | `nagient plugin install nagient.telegram` |
+| [GitHub API Tool](https://github.com/KOSFin/nagient-tool-github-api) | Tool | Проверенный внешний | `nagient plugin install nagient.github_api` |
+
+Полный каталог и фильтр по семейству:
 
 ```bash
 nagient plugin catalog list
 nagient plugin catalog list --family transport
-nagient plugin list
+nagient plugin catalog list --format json
 ```
 
-Записи `bundled` уже входят в Nagient. Внешний проверенный плагин можно поставить
-по его ID, не разыскивая репозиторий вручную:
+## Настроить установленный плагин
 
-```bash
-nagient plugin catalog install <plugin-id>
-nagient preflight
-nagient status
+Установка делает плагин доступным для discovery, а конфигурация включает конкретный профиль. Все поля объявлены в манифесте. Env overrides используют одну форму:
+
+```text
+NAGIENT_<FAMILY>__<PROFILE_ID>__<FIELD>=value
 ```
 
-`--format json` предназначен для скриптов. Прямую установку Git-репозитория тоже
-можно использовать, но она не считается проверенной:
-
-```bash
-nagient plugin install transport:https://github.com/ORG/REPO.git#v1.0.0
-```
-
-Официальные отдельные репозитории:
-
-| Плагин | Установка |
-| --- | --- |
-| `nagient.telegram` | `nagient plugin catalog install nagient.telegram` |
-| `nagient.github_api` | `nagient plugin catalog install nagient.github_api` |
-
-## Telegram
-
-Telegram входит в поставку и включается настройкой. Токен задаётся только через
-имя секрета:
+Пример Telegram:
 
 ```env
+NAGIENT_TRANSPORT__TELEGRAM__PLUGIN=nagient.telegram
 NAGIENT_TRANSPORT__TELEGRAM__ENABLED=true
 NAGIENT_TRANSPORT__TELEGRAM__BOT_TOKEN_SECRET=TELEGRAM_BOT_TOKEN
+NAGIENT_TRANSPORT__TELEGRAM__ALLOWED_USER_IDS=123456789
 TELEGRAM_BOT_TOKEN=123456:replace-me
 ```
 
-Ограничения групп и пользователей включаются списками. Если список непустой,
-события вне списка отбрасываются до передачи агенту:
+Пример GitHub API:
 
 ```env
-NAGIENT_TRANSPORT__TELEGRAM__ALLOWED_CHAT_IDS=-1001234567890,123456789
-NAGIENT_TRANSPORT__TELEGRAM__ALLOWED_USER_IDS=123456789
-NAGIENT_TRANSPORT__TELEGRAM__ALLOWED_CHAT_TYPES=private,supergroup
+NAGIENT_TOOL__GITHUB_API__PLUGIN=nagient.github_api
+NAGIENT_TOOL__GITHUB_API__ENABLED=true
+NAGIENT_TOOL__GITHUB_API__TOKEN_SECRET=GITHUB_TOKEN
+GITHUB_TOKEN=github_pat_replace_me
 ```
 
-Транспорт предоставляет `telegram.streamMessage`: runtime может отправить части
-накопленные части ответа и постепенно редактировать одно сообщение, группируя обновления с учётом
-лимитов Telegram.
+Секретное поле содержит имя секрета. Само значение храните в environment, `secrets.env`, `tool-secrets.env` или соответствующем JSON override.
 
-## Поля плагина и env
+## Docker Compose
 
-Каждый плагин объявляет собственные поля в манифесте. Имя env строится одинаково:
+Используйте тот же Plugin Hub внутри постоянного контейнера:
 
-```text
-NAGIENT_<FAMILY>__<PLUGIN_ID>__<FIELD>=value
+```bash
+docker compose exec nagient nagient plugin install
+docker compose exec nagient nagient plugin install nagient.telegram
+docker compose exec nagient nagient preflight
+docker compose restart nagient
 ```
 
-Например, `allowed_chat_ids` превращается в
-`NAGIENT_TRANSPORT__TELEGRAM__ALLOWED_CHAT_IDS`. Секретное поле содержит имя
-секрета, а его значение хранится в окружении или `NAGIENT_SECRETS_JSON`.
+Для автоматической установки при первом запуске закрепите источники в `.env`:
 
-## Доверие и обновления
+```env
+NAGIENT_PLUGIN_SPECS=https://github.com/KOSFin/nagient-transport-telegram.git#v0.1.0,https://github.com/KOSFin/nagient-tool-github-api.git#v0.1.0
+```
 
-Перед установкой непроверенного плагина проверьте `plugin.toml`, URL и закреплённый
-`#ref`. После установки запускайте `nagient preflight`; рабочий каталог оставляйте
-в режиме `bounded`, если расширенный доступ не нужен конкретному workflow.
+Установленные плагины сохраняются в постоянном mount `./data` после перезапуска контейнера.
+
+## Проверка, обновление и удаление
+
+```bash
+nagient plugin list
+nagient plugin install nagient.telegram --force
+nagient plugin remove nagient.telegram
+nagient preflight
+```
+
+Переустановка по verified ID использует ref, закреплённый в текущем каталоге. Для произвольного репозитория передайте нужный `--ref` явно.
+
+## Модель доверия
+
+`verified` означает, что каталог Nagient закрепляет проверенные source и ref. Это не sandbox для произвольного кода. Перед установкой непроверенного URL изучите манифест, исходный код, зависимости, разрешения и сетевое поведение. Оставляйте workspace в режиме `bounded`, если конкретному workflow не нужен более широкий доступ.
+
+Авторам плагинов стоит начать с [официального шаблона](https://github.com/KOSFin/nagient-plugin-template), а затем открыть статью [Создание первого плагина](PLUGIN_DEVELOPMENT.ru.md).

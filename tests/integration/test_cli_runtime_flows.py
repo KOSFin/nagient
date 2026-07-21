@@ -165,7 +165,7 @@ class CliRuntimeFlowsTests(unittest.TestCase):
             self.assertEqual(heartbeat["runtime_status"], "ready")
             self.assertEqual(heartbeat["transports"][0]["plugin_id"], "builtin.console")
 
-    def test_transport_test_reports_builtin_telegram_ready_when_token_is_configured(self) -> None:
+    def test_transport_test_reports_missing_external_telegram_plugin(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             home_dir = Path(temp_dir) / ".nagient"
             env = {
@@ -185,8 +185,8 @@ class CliRuntimeFlowsTests(unittest.TestCase):
             config_file = home_dir / "config.toml"
             config_file.write_text(
                 config_file.read_text(encoding="utf-8").replace(
-                    "[transports.telegram]\nplugin = \"builtin.telegram\"\nenabled = false",
-                    "[transports.telegram]\nplugin = \"builtin.telegram\"\nenabled = true",
+                    "[transports.telegram]\nplugin = \"nagient.telegram\"\nenabled = false",
+                    "[transports.telegram]\nplugin = \"nagient.telegram\"\nenabled = true",
                 ),
                 encoding="utf-8",
             )
@@ -214,9 +214,13 @@ class CliRuntimeFlowsTests(unittest.TestCase):
             )
             test_payload = json.loads(test_process.stdout)
 
-            self.assertEqual(test_payload["status"], "ready")
+            self.assertEqual(test_payload["status"], "failed")
             self.assertEqual(len(test_payload["transports"]), 1)
-            self.assertEqual(test_payload["issues"], [])
+            self.assertEqual(test_payload["issues"][0]["code"], "transport.plugin_not_found")
+            self.assertIn(
+                "nagient plugin install nagient.telegram",
+                test_payload["issues"][0]["hint"],
+            )
 
     def test_serve_once_stays_alive_enough_to_write_blocked_heartbeat(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
