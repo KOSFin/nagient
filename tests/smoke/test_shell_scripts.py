@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 
+from nagient.version import __version__
 from tests.bootstrap import PROJECT_ROOT
 
 
@@ -58,7 +59,7 @@ class ShellScriptSmokeTests(unittest.TestCase):
                 capture_output=True,
                 text=True,
             )
-            self.assertRegex(version.stdout.strip(), r"^0\.9\.11$")
+            self.assertEqual(version.stdout.strip(), __version__)
 
 
 if __name__ == "__main__":

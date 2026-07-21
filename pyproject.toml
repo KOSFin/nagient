@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "nagient"
-version = "0.9.11"
+dynamic = ["version"]
 description = "Infrastructure-first scaffold for a lightweight autonomous agent platform."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -41,6 +41,9 @@ nagient = "nagient.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/nagient"]
+
+[tool.hatch.version]
+path = "src/nagient/version.py"
 
 [tool.hatch.build.targets.sdist]
 include = [
