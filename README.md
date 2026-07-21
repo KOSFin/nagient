@@ -1,15 +1,8 @@
 <h1 align="center">Nagient</h1>
 
-<div align="center">
-<pre>
-███╗░░██╗░█████╗░░██████╗░██╗███████╗███╗░░██╗████████╗
-████╗░██║██╔══██╗██╔════╝░██║██╔════╝████╗░██║╚══██╔══╝
-██╔██╗██║███████║██║░░██╗░██║█████╗░░██╔██╗██║░░░██║░░░
-██║╚████║██╔══██╗██║░░╚██╗██║██╔══╝░░██║╚████║░░░██║░░░
-██║░╚███║██║██╔██║╚██████╔╝██║███████╗██║░╚███║░░░██║░░░
-╚═╝░░╚══╝╚═╝░░░╚═════╝░╚═╝╚══════╝╚═╝░░╚══╝░░░╚═╝░░░
-</pre>
-</div>
+<p align="center">
+  <img src="assets/nagient-logo.svg" alt="Nagient" width="760">
+</p>
 
 <p align="center">
   A self-hosted AI agent runtime with controlled tools, pluggable transports, and predictable operations.
